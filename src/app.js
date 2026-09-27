@@ -2,7 +2,7 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, sessionLoad, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
+import { assessDay, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
@@ -214,6 +214,63 @@ function wireCheckin(form) {
   loadPreview();
 }
 
+// "Same as yesterday": the most recent earlier check-in with answers.
+function previousAnswers(date) {
+  return loadEntries().filter((x) => x.date < date && x.wellness).at(-1) || null;
+}
+
+function sameAsLabel(prev, date) {
+  if (prev.date === shiftDate(date, -1)) return 'yesterday';
+  return new Date(`${prev.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
+}
+
+// Offered only when this day has no answers yet.
+function sameAsCard(date, e) {
+  const prev = e.wellness ? null : previousAnswers(date);
+  if (!prev) return '';
+  return `
+      <section class="card" id="same-card">
+        <button class="btn secondary block" type="button" id="same-as">↺ Same as ${esc(sameAsLabel(prev, date))}</button>
+        <p class="muted small">Fills in your answers from ${esc(prettyDate(prev.date))}. Change anything that’s different, then save.</p>
+      </section>`;
+}
+
+// Copy a previous day's answers into the form (not its notes).
+function fillCheckin(form, prev) {
+  const w = prev.wellness || {};
+  const check = (name, value) => {
+    const input = form.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (input) input.checked = true;
+  };
+  if (Number.isFinite(w.sleepHours)) {
+    if (SLEEP_STEPS.includes(w.sleepHours)) check('sleepHours', w.sleepHours);
+    else { check('sleepHours', 'other'); form.sleepOther.value = w.sleepHours; }
+  }
+  for (const i of WELLNESS_ITEMS) if (w[i.key]) check(i.key, w[i.key]);
+  check('painLevel', prev.pain?.level || 0);
+  form.painLocation.value = prev.pain?.level ? prev.pain.location || '' : '';
+  const minutes = prev.training?.durationMin ?? 0;
+  if (![...form.durationMin.options].some((o) => +o.value === minutes)) {
+    form.durationMin.add(new Option(hoursLabel(minutes), minutes));
+  }
+  form.durationMin.value = String(minutes);
+  form.rpe.value = String(prev.training?.rpe ?? 0);
+  // Update the dependent bits (location/other fields, load preview).
+  form.querySelector('#pain-location').hidden = !prev.pain?.level;
+  form.querySelector('#sleep-other').hidden = SLEEP_STEPS.includes(w.sleepHours) || !Number.isFinite(w.sleepHours);
+  form.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function wireSameAs(form, date) {
+  const btn = form.querySelector('#same-as');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    fillCheckin(form, previousAnswers(date));
+    btn.textContent = '✓ Filled in – check and save';
+    btn.disabled = true;
+  });
+}
+
 // Read the answers: { missing: [labels] } or { patch } ready to save.
 function readCheckin(form) {
   const fd = new FormData(form);
@@ -253,6 +310,7 @@ function renderCheckin(dateArg) {
         <h2>Daily check-in</h2>
         <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
       </section>
+      ${sameAsCard(date, e)}
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit">Save check-in</button>
@@ -260,6 +318,7 @@ function renderCheckin(dateArg) {
 
   const form = view.querySelector('#checkin');
   wireCheckin(form);
+  wireSameAs(form, date);
   form.date.addEventListener('change', () => {
     if (form.date.value && form.date.value !== date) location.hash = `#checkin/${form.date.value}`;
   });
@@ -307,6 +366,7 @@ function renderMorning() {
     </section>
 
     <form id="checkin" class="stack" novalidate>
+      ${sameAsCard(date, e)}
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit" id="save">Save check-in</button>
@@ -316,6 +376,7 @@ function renderMorning() {
   const $ = (sel) => view.querySelector(sel);
   const form = $('#checkin');
   wireCheckin(form);
+  wireSameAs(form, date);
 
   let state = 'idle'; // idle | running | done | failed
   let hrv = null;

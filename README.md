@@ -21,6 +21,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 - **Check-in (morning)** — the heart reading runs in a bar pinned at the top while the athlete answers
   the questions with their other hand (about a minute in total). Saving early waits for the reading to
   finish; if the reading fails they can retry or save the answers without it.
+  **Same as yesterday** fills in the previous check-in's answers (not notes) to review and save.
 - **HRV** — a heart reading on its own (1–3 min), ending in "Reading saved ✓". Manual entry for chest
   straps.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
