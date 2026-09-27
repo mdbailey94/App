@@ -22,7 +22,8 @@ const hoursLabel = (min) => {
 };
 
 function trainingTimeOptions(current) {
-  const steps = Array.from({ length: 13 }, (_, i) => i * 30); // 0 … 6 h
+  // Rest day, then 1 h to 5 h in half-hour steps.
+  const steps = [0, ...Array.from({ length: 9 }, (_, i) => 60 + i * 30)];
   // Keep an older entry's exact time (e.g. 75 min) rather than silently rounding it.
   if (Number.isFinite(current) && !steps.includes(current)) steps.push(current);
   steps.sort((a, b) => a - b);
