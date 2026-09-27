@@ -11,8 +11,8 @@ A phone web app that tracks an athlete's daily state from two sources:
 These are combined into a 0–100 **readiness score** with plain-language advice and flags
 (short sleep, pain, illness, HRV below normal, elevated resting HR, training-load spikes).
 
-No install, no account, no backend: it's an installable PWA and all data stays on the device
-(export to CSV for a coach, or JSON for backup/restore).
+No install and no accounts: it's an installable PWA. Data stays on the device unless the athlete joins
+a **practice group**, in which case each day's check-in is also sent to a Google Sheet the coach owns.
 
 ## Using it
 
@@ -21,6 +21,8 @@ No install, no account, no backend: it's an installable PWA and all data stays o
 - **HRV** — 1–3 minute camera measurement. Best done every morning right after waking, in the same
   position. Rest the hand on something, cover the lens *and* flash lightly with a fingertip, stay still.
   If you own a chest strap, you can type its HR/RMSSD in instead.
+- **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
+  edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
 - **History** — trend charts (readiness, ln RMSSD with your normal band, resting HR, wellness,
   daily load), the entry table, export/import.
 
@@ -63,6 +65,30 @@ parabolic sub-sample refinement → inter-beat intervals → artifact rejection 
 >25 % from local median) → HRV metrics from successive clean pairs only. Both channels are analysed
 and the cleaner one is kept.
 
+## Practice groups (coach setup)
+
+The group's data lives in a Google Sheet the coach owns, via a small Apps Script
+([`apps-script/Code.gs`](apps-script/Code.gs)). One-time setup (also shown in the app under Team → coach dashboard):
+
+1. Create a Google Sheet, open **Extensions → Apps Script**, paste `Code.gs`.
+2. Set `GROUP_CODE` (athletes type it) and `COACH_PASSWORD` (dashboard access) at the top. Save.
+3. **Deploy → New deployment → Web app**, *Execute as: Me*, *Who has access: Anyone*. Authorize.
+4. In the app, open Team → coach dashboard, paste the web app URL, password and group code.
+5. Copy the invite link from the dashboard and send it to athletes.
+
+What the coach gets:
+
+- **Coach dashboard**: per day, who checked in (worst readiness first, with flags for illness, pain,
+  short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
+  athlete's trends and notes.
+- **Entries** tab: one row per athlete per day (readiness, status, flags, every answer, HR/HRV, notes),
+  colour-coded. Editing a day updates its row. **Today** tab: today's check-ins, lowest readiness first.
+
+Security notes: the web app URL plus group code allows sending data; reading it needs the coach
+password. Data sits in the coach's Google account. Treat it as health data: tell athletes what is
+shared (the app does), and use anonymous names if your organisation requires it. Text that looks like a
+spreadsheet formula is stored as plain text.
+
 ## Running it
 
 Camera access requires HTTPS (or `localhost`).
@@ -86,6 +112,11 @@ src/readiness.js  questionnaire definition, scoring, baselines, workload (pure, 
 src/camera.js     camera + torch capture, per-frame brightness
 src/storage.js    localStorage, CSV/JSON export & import
 src/charts.js     small SVG charts with tooltips
+src/team.js       sending entries to the group sheet (retries, invite links)
+src/group.js      coach-side group summary (pure, tested)
+src/coach.js      Team tab and coach dashboard
+src/ui.js         shared UI helpers and trend charts
 src/app.js        UI and routing
+apps-script/      Google Apps Script for the group sheet (tested against a simulated Sheet)
 tests/            node:test suites
 ```

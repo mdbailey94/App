@@ -113,3 +113,42 @@ export function exportCSV() {
   for (const e of loadEntries()) rows.push(CSV_COLUMNS.map(([, f]) => esc(f(e))).join(','));
   return rows.join('\n');
 }
+
+// ------------------------------------------------------------ group sharing
+
+const TEAM_KEY = 'athlete-readiness/team/v1';
+const COACH_KEY = 'athlete-readiness/coach/v1';
+
+// Athlete side: { url, group, athlete, lastSync, lastError }
+export function loadTeam() {
+  return read(TEAM_KEY, null);
+}
+
+export function saveTeam(team) {
+  if (team) write(TEAM_KEY, team);
+  else localStorage.removeItem(TEAM_KEY);
+}
+
+// Coach side: { url, password, group }
+export function loadCoach() {
+  return read(COACH_KEY, null);
+}
+
+export function saveCoach(coach) {
+  if (coach) write(COACH_KEY, coach);
+  else localStorage.removeItem(COACH_KEY);
+}
+
+// Record that these dates reached the sheet. An entry edited after `stamp`
+// stays pending so the newer version is sent too.
+export function markSynced(dates, stamp) {
+  const set = new Set(dates);
+  write(ENTRIES_KEY, loadEntries().map((e) => (
+    set.has(e.date) && (!e.updatedAt || e.updatedAt <= stamp) ? { ...e, syncedAt: stamp } : e
+  )));
+}
+
+// Mark everything as unsent, e.g. after joining a (new) group.
+export function resetSync() {
+  write(ENTRIES_KEY, loadEntries().map(({ syncedAt, ...e }) => e));
+}

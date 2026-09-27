@@ -2,45 +2,44 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, sessionLoad, SYMPTOMS, WELLNESS_ITEMS, wellnessScore, baseline } from './readiness.js';
+import { assessDay, sessionLoad, SYMPTOMS, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { analyzePPG, bandpass, fingerDetected, liveHeartRate, dominantPeriod, findPeaks } from './signal.js';
 import { PpgCamera, cameraSupported } from './camera.js';
-import { barChart, drawWaveform, lineChart } from './charts.js';
+import { drawWaveform, lineChart } from './charts.js';
+import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import { renderCoach, renderTeam, syncLine } from './coach.js';
+import { syncPending, syncStatus } from './team.js';
 
 const view = document.getElementById('view');
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}[c]));
-const fmt = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : '–');
-const prettyDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-
-const STATUS_ICON = { good: '✓', warning: '!', serious: '▼', critical: '✕' };
 const RPE_LABELS = ['Rest', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
 const PAIN_LEVELS = ['None', 'Mild – doesn’t affect training', 'Moderate – affects training', 'Severe – can’t train normally'];
 
 // ------------------------------------------------------------------ router
 
-const routes = { today: renderToday, checkin: renderCheckin, measure: renderMeasure, history: renderHistory };
+const routes = {
+  today: renderToday,
+  checkin: renderCheckin,
+  measure: renderMeasure,
+  history: renderHistory,
+  team: (arg, query) => renderTeam(view, query, route),
+  coach: (arg, query) => renderCoach(view, query),
+};
 let cleanup = null;
 
 async function route() {
   if (cleanup) { await cleanup(); cleanup = null; }
-  const [name, arg] = (location.hash.slice(1) || 'today').split('/');
+  const [path, qs] = (location.hash.slice(1) || 'today').split('?');
+  const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === name));
+  const tab = name === 'coach' ? 'team' : name;
+  document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
-  render(arg);
+  render(arg, new URLSearchParams(qs || ''));
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
-
-function statusBadge(status) {
-  if (!status) return '';
-  return `<span class="status status-${status.level}"><span class="status-icon" aria-hidden="true">${STATUS_ICON[status.level]}</span>${esc(status.label)}</span>`;
-}
 
 // ------------------------------------------------------------------- today
 
@@ -105,6 +104,8 @@ function renderToday() {
       </div>
       <p class="muted small">Load = session minutes × session RPE.${a.load.acwr === null ? ' Acute:chronic ratio appears after 3 weeks of check-ins.' : ''}</p>
     </section>
+
+    ${syncStatus().joined ? `<p class="sync-line" id="sync-line">${syncLine(syncStatus())}</p>` : ''}
 
     <p class="disclaimer">For training guidance only — not a medical device. If you feel unwell, speak to a doctor.</p>`;
 }
@@ -410,7 +411,7 @@ function renderMeasure() {
     if (!r.ok) { showError(r.reason); return; }
     const qualityStatus = { good: 'good', fair: 'warning', poor: 'critical' }[r.quality];
     box.innerHTML = `
-      <h3>Result ${statusBadge({ level: qualityStatus, label: `${r.quality} signal` })}</h3>
+      <h3>Result ${statusBadge({ level: qualityStatus, label: `${r.quality[0].toUpperCase()}${r.quality.slice(1)} signal` })}</h3>
       <div class="stats">
         <div><span class="stat-num">${fmt(r.hr)}</span><span class="stat-label">bpm</span></div>
         <div><span class="stat-num">${fmt(r.rmssd)}</span><span class="stat-label">RMSSD ms</span></div>
@@ -461,15 +462,8 @@ function download(name, type, text) {
 
 function renderHistory() {
   const entries = loadEntries();
-  const recent = entries.slice(-42);
-  const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
-
   view.innerHTML = `
-    <section class="card"><h3>Readiness</h3><div id="c-ready"></div></section>
-    <section class="card"><h3>HRV (ln RMSSD)</h3><p class="muted small">Shaded band = your normal range (mean ± 1 SD of recent readings).</p><div id="c-hrv"></div></section>
-    <section class="card"><h3>Resting heart rate</h3><div id="c-hr"></div></section>
-    <section class="card"><h3>Wellness</h3><div id="c-well"></div></section>
-    <section class="card"><h3>Daily training load</h3><div id="c-load"></div></section>
+    <div id="trends"></div>
 
     <section class="card"><h3>Entries</h3>
       ${entries.length ? `<div class="table-wrap"><table>
@@ -489,7 +483,9 @@ function renderHistory() {
     </section>
 
     <section class="card"><h3>Your data</h3>
-      <p class="muted small">Everything is stored only on this device. Export regularly to back it up or share with your coach.</p>
+      <p class="muted small">${syncStatus().joined
+    ? 'Stored on this device and shared with your coach’s group sheet (see Team).'
+    : 'Everything is stored only on this device. Export regularly to back it up, or join your group in the Team tab.'}</p>
       <div class="actions wrap">
         <button class="btn secondary" id="csv">Export CSV</button>
         <button class="btn secondary" id="json">Backup</button>
@@ -499,20 +495,7 @@ function renderHistory() {
     </section>`;
 
   const $ = (sel) => view.querySelector(sel);
-  const series = (fn) => recent.map((e) => ({ x: dayIndex(e.date), y: fn(e), label: shortDate(e.date) }));
-
-  requestAnimationFrame(() => {
-    lineChart($('#c-ready'), series((e) => assessDay(entries, e.date).score ?? NaN), { yMin: 0, yMax: 100 });
-    const hrvBase = baseline(entries.map((e) => e.hrv?.lnRmssd));
-    lineChart($('#c-hrv'), series((e) => e.hrv?.lnRmssd ?? NaN), {
-      yFormat: (v) => v.toFixed(1),
-      band: hrvBase ? { lo: hrvBase.mean - hrvBase.sd, hi: hrvBase.mean + hrvBase.sd } : null,
-      tip: (d) => `${d.label}: <b>${fmt(d.y, 2)}</b>`,
-    });
-    lineChart($('#c-hr'), series((e) => e.hrv?.hr ?? NaN), { yFormat: (v) => `${Math.round(v)}`, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
-    lineChart($('#c-well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });
-    barChart($('#c-load'), series((e) => sessionLoad(e.training)), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
-  });
+  renderTrends($('#trends'), entries);
 
   view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
     if (confirm(`Delete the entry for ${b.dataset.del}?`)) { deleteEntry(b.dataset.del); route(); }
@@ -540,4 +523,17 @@ function renderHistory() {
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+// Send new or edited days to the group sheet whenever there's a chance.
+function sync() {
+  syncPending().then(() => {
+    const line = document.getElementById('sync-line');
+    if (line) line.innerHTML = syncLine(syncStatus());
+  });
+}
+window.addEventListener('hashchange', sync);
+window.addEventListener('online', sync);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+setInterval(() => { if (syncStatus().pending) sync(); }, 60000);
+
 route();
+sync();
