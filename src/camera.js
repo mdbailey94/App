@@ -30,10 +30,43 @@ export function rankCameras(devices) {
     if (idx) s -= Number(idx[1]) * 0.1;
     return s;
   };
+  // Copy fields explicitly: MediaDeviceInfo keeps them on its prototype, so
+  // object spread would silently drop them.
   return devices
     .filter((d) => !FRONT.test(d.label || ''))
-    .map((d) => ({ ...d, score: score(d) }))
+    .map((d) => ({ deviceId: d.deviceId, label: d.label, score: score(d) }))
     .sort((a, b) => b.score - a.score);
+}
+
+// Per-frame summary: mean colour plus how textured the picture is (standard
+// deviation of brightness across the frame).
+export function frameStats(px) {
+  let r = 0, g = 0, b = 0, sum = 0, sumSq = 0;
+  const n = px.length / 4;
+  for (let i = 0; i < px.length; i += 4) {
+    r += px[i]; g += px[i + 1]; b += px[i + 2];
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    sum += lum; sumSq += lum * lum;
+  }
+  const mean = sum / n;
+  return { r: r / n, g: g / n, b: b / n, lum: mean, texture: Math.sqrt(Math.max(0, sumSq / n - mean * mean)) };
+}
+
+const isRedGlow = (s) => s.r > 60 && s.r > 1.5 * s.g && s.r > 1.5 * s.b;
+
+// A lens covered by a fingertip sees a smooth red glow (lit) or near-black
+// (unlit) instead of the detail of a room.
+export function looksCovered(s) {
+  return s.texture < 18 && (isRedGlow(s) || s.lum < 30);
+}
+
+// Given [{ deviceId, stats }] for each rear camera, return the one the
+// finger is covering, or null if it can't be told apart (e.g. dark room).
+export function pickCoveredCamera(results) {
+  const covered = results.filter((x) => looksCovered(x.stats));
+  if (covered.length === 1) return covered[0].deviceId;
+  const glowing = covered.filter((x) => isRedGlow(x.stats));
+  return glowing.length === 1 ? glowing[0].deviceId : null;
 }
 
 function hasTorch(track) {
@@ -71,17 +104,45 @@ export class PpgCamera {
     return this.track;
   }
 
-  // Find the rear camera that sits next to the flashlight. Browsers don't
-  // expose lens positions, but the flashlight is controlled through the
-  // camera module beside it, so the camera reporting torch support is the
-  // one to use. `preferredId` (last successful pick) is tried first.
-  async openFlashCamera(preferredId) {
-    if (preferredId) {
+  // Look through one camera briefly (flashlight on if it has one) and
+  // summarise what it sees.
+  async probe(deviceId) {
+    await this.open(deviceId);
+    this.video.srcObject = this.stream;
+    this.video.muted = true;
+    this.video.playsInline = true;
+    await this.video.play();
+    await this.setTorch(true);
+    await new Promise((r) => setTimeout(r, 700)); // let exposure settle
+    const { videoWidth: w, videoHeight: h } = this.video;
+    this.ctx.drawImage(this.video, 0, 0, w, h, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+    return frameStats(this.ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
+  }
+
+  // Find the rear lens the fingertip is covering. Browsers don't reveal where
+  // each lens sits, so rather than guess, check what each camera sees.
+  // `rememberedId` (the lens found last time) is checked first.
+  async findCoveredCamera(rememberedId) {
+    if (rememberedId) {
       try {
-        const track = await this.open(preferredId);
-        if (hasTorch(track)) return;
-      } catch { /* camera gone or renamed; fall through */ }
+        if (looksCovered(await this.probe(rememberedId))) return rememberedId;
+      } catch { /* camera gone; search all */ }
     }
+    if (!this.track) await this.open(); // camera names are only visible after permission
+    const results = [];
+    for (const cam of rankCameras(await listCameras()).slice(0, 6)) {
+      try {
+        results.push({ deviceId: cam.deviceId, stats: await this.probe(cam.deviceId) });
+      } catch { /* skip cameras that won't open */ }
+    }
+    return pickCoveredCamera(results);
+  }
+
+  // Fallback when the covered lens can't be identified: the rear camera that
+  // sits next to the flashlight. Browsers don't expose lens positions, but the flashlight is controlled through the
+  // camera module beside it, so the camera reporting torch support is the
+  // one to use.
+  async openFlashCamera() {
     const first = await this.open();
     if (hasTorch(first) && !AVOID.test(first.label)) return;
     const firstId = first.getSettings?.().deviceId;
@@ -103,10 +164,19 @@ export class PpgCamera {
     if (best && best !== this.track?.getSettings?.().deviceId) await this.open(best);
   }
 
-  // `deviceId` forces a specific camera; otherwise one is chosen automatically.
-  async start(deviceId, preferredId) {
-    if (deviceId) await this.open(deviceId);
-    else await this.openFlashCamera(preferredId);
+  // Uses the lens the fingertip is covering; `rememberedId` is the lens
+  // found last time, used as the fallback if no covered lens is detected.
+  async start(rememberedId) {
+    const found = await this.findCoveredCamera(rememberedId);
+    const fallback = found ? null : rememberedId;
+    const target = found || fallback;
+    if (target) {
+      if (target !== this.track?.getSettings?.().deviceId) {
+        try { await this.open(target); } catch { await this.openFlashCamera(); }
+      }
+    } else {
+      await this.openFlashCamera();
+    }
     this.video.srcObject = this.stream;
     this.video.muted = true;
     this.video.playsInline = true;
@@ -114,7 +184,7 @@ export class PpgCamera {
     this.torch = await this.setTorch(true);
     this.running = true;
     this.scheduleFrame();
-    return { torch: this.torch, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
+    return { torch: this.torch, identified: Boolean(found), label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
   }
 
   async setTorch(on) {

@@ -44,9 +44,12 @@ This is training guidance, **not a medical device**.
 - **iPhone (Safari and all iOS browsers)**: works, but Apple doesn't let web pages turn on the torch,
   so measure with a bright lamp or window shining through the fingertip. A native iOS wrapper
   would be needed for torch control.
-- Phones with several rear cameras: the app automatically uses the lens next to the flash (the camera
-  that controls the flashlight; on iPhone, the main wide lens) and remembers it. A manual override is
-  available if a phone reports its cameras unusually.
+- Camera choice is automatic (no selector): cover the lens **directly below the flash** before tapping
+  Start. Browsers don't reveal where lenses sit, so the app briefly looks through each rear camera and
+  uses the one that sees a fingertip (smooth red glow or darkness) instead of the room. The lens is
+  remembered and re-checked each time. If it can't tell (e.g. in a dark room), it uses the lens found
+  last time, or the camera beside the flash. Some Android phones only allow the flashlight from the
+  main camera; if the covered lens isn't that one, measure next to a bright light.
 - Accuracy: validated against synthetic signals (see tests) to within ~1 ms RMSSD at typical athlete
   HRV. At ~30 fps, very low HRV (RMSSD < ~15 ms) reads a few ms high due to frame-timing jitter.
   Movement is the main error source — the app rejects artifact beats and grades the signal
