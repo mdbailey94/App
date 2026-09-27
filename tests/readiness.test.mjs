@@ -60,10 +60,10 @@ test('assessDay: low HRV vs baseline lowers score and raises a flag', () => {
   assert.ok(r.flags.some((f) => /Resting heart rate/.test(f.text)));
 });
 
-test('assessDay: an injury that prevents training overrides the score', () => {
+test('assessDay: a major injury overrides the score', () => {
   const r = assessDay([{ date: '2026-09-27', wellness: perfect, pain: { level: 3, location: 'ankle sprain' } }], '2026-09-27');
   assert.equal(r.status.level, 'critical');
-  assert.ok(r.flags.some((f) => f.text === 'Injury preventing training (ankle sprain).'));
+  assert.ok(r.flags.some((f) => f.text === 'Injury stopping certain strokes or movements (ankle sprain).'));
 });
 
 test('assessDay: injury levels 1–2 flag without overriding', () => {
@@ -71,5 +71,5 @@ test('assessDay: injury levels 1–2 flag without overriding', () => {
   assert.equal(minor.flags.length, 0);
   const moderate = assessDay([{ date: '2026-09-27', wellness: perfect, pain: { level: 2, location: 'knee' } }], '2026-09-27');
   assert.equal(moderate.status.label, 'Ready');
-  assert.ok(moderate.flags.some((f) => f.level === 'warning' && f.text === 'Injury limiting training (knee).'));
+  assert.ok(moderate.flags.some((f) => f.level === 'warning' && f.text === 'Injury affecting stroke (knee).'));
 });

@@ -35,7 +35,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 | Resting HR | 15 % | Today's HR vs your baseline (higher = worse) |
 
 Components without data are left out and the rest re-weighted, so the score works from day one
-with the questionnaire alone. An injury that prevents training overrides the score with
+with the questionnaire alone. A major injury (unable to perform certain strokes or movements) overrides the score with
 "talk to your coach/medical staff". Acute:chronic workload ratio appears after 3 weeks of data.
 
 This is training guidance, **not a medical device**.

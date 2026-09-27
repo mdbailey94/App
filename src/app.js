@@ -32,9 +32,9 @@ function trainingTimeOptions(current) {
 
 const INJURY_LEVELS = [
   'No injury',
-  'Minor – I can still train fully',
-  'Moderate – I have to change or cut back training',
-  'Severe – I can’t train',
+  'Minor – discomfort, but manageable',
+  'Moderate – affecting my stroke',
+  'Major – unable to perform certain strokes or movements',
 ];
 
 // Quick sleep choices: 4 h to 10 h in half hours; anything else via "Other".

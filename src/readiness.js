@@ -98,12 +98,13 @@ export function assessDay(entries, date) {
 
   const w = today?.wellness;
   if (w?.sleepHours > 0 && w.sleepHours < 6) flags.push({ level: 'warning', text: `Short sleep (${w.sleepHours} h).` });
-  // `pain` holds the injury answer (0 none … 3 can't train).
+  // `pain` holds the injury answer: 0 none, 1 minor (manageable),
+  // 2 moderate (affecting stroke), 3 major (can't perform some strokes).
   if (today?.pain?.level >= 2) {
     const where = today.pain.location ? ` (${today.pain.location})` : '';
     flags.push({
       level: today.pain.level >= 3 ? 'critical' : 'warning',
-      text: `${today.pain.level >= 3 ? 'Injury preventing training' : 'Injury limiting training'}${where}.`,
+      text: `${today.pain.level >= 3 ? 'Injury stopping certain strokes or movements' : 'Injury affecting stroke'}${where}.`,
     });
   }
   const load = workload(sorted.filter((e) => e.date <= date), date);
