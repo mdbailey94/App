@@ -30,10 +30,28 @@ export function rankCameras(devices) {
     if (idx) s -= Number(idx[1]) * 0.1;
     return s;
   };
+  // Copy fields explicitly: MediaDeviceInfo keeps them on its prototype, so
+  // object spread would silently drop them.
   return devices
     .filter((d) => !FRONT.test(d.label || ''))
-    .map((d) => ({ ...d, score: score(d) }))
+    .map((d) => ({ deviceId: d.deviceId, label: d.label, score: score(d) }))
     .sort((a, b) => b.score - a.score);
+}
+
+const TELE = /tele/i; // "Back Telephoto Camera", "Teleobjektiv", …
+const TELE_MIN_FOCUS_M = 0.25;
+
+// Pick the telephoto lens from rear cameras ({ deviceId, label, minFocus }).
+// Uses the lens name when the browser provides one (iPhone). Android names
+// lenses generically, so there the telephoto is recognised as the lens that
+// can't focus close: its minimum focus distance (metres) is far longer.
+export function chooseTelephoto(cams) {
+  const named = cams.find((c) => TELE.test(c.label || ''));
+  if (named) return named.deviceId;
+  const byFocus = cams.filter((c) => c.minFocus > 0).sort((a, b) => b.minFocus - a.minFocus);
+  if (byFocus.length < 2) return null;
+  const [far, next] = byFocus;
+  return far.minFocus >= TELE_MIN_FOCUS_M && far.minFocus >= 1.5 * next.minFocus ? far.deviceId : null;
 }
 
 function hasTorch(track) {
@@ -71,17 +89,38 @@ export class PpgCamera {
     return this.track;
   }
 
-  // Find the rear camera that sits next to the flashlight. Browsers don't
-  // expose lens positions, but the flashlight is controlled through the
-  // camera module beside it, so the camera reporting torch support is the
-  // one to use. `preferredId` (last successful pick) is tried first.
-  async openFlashCamera(preferredId) {
+  // Open the telephoto lens. Returns false if the phone doesn't have (or the
+  // browser doesn't expose) one. `preferredId` is the last telephoto found.
+  async openTelephoto(preferredId) {
     if (preferredId) {
       try {
-        const track = await this.open(preferredId);
-        if (hasTorch(track)) return;
-      } catch { /* camera gone or renamed; fall through */ }
+        await this.open(preferredId);
+        return true;
+      } catch { /* camera gone or renamed; search again */ }
     }
+    await this.open(); // camera names are only visible after permission
+    const rear = rankCameras(await listCameras());
+    let pick = chooseTelephoto(rear);
+    if (!pick && rear.length > 1) {
+      const probed = [];
+      for (const cam of rear.slice(0, 5)) {
+        try {
+          const track = await this.open(cam.deviceId);
+          probed.push({ ...cam, minFocus: track.getCapabilities?.().focusDistance?.min });
+        } catch { /* skip cameras that won't open */ }
+      }
+      pick = chooseTelephoto(probed);
+    }
+    if (!pick) return false;
+    if (pick !== this.track?.getSettings?.().deviceId) await this.open(pick);
+    return true;
+  }
+
+  // Fallback when there's no telephoto: find the rear camera that sits next to the flashlight. Browsers don't
+  // expose lens positions, but the flashlight is controlled through the
+  // camera module beside it, so the camera reporting torch support is the
+  // one to use.
+  async openFlashCamera() {
     const first = await this.open();
     if (hasTorch(first) && !AVOID.test(first.label)) return;
     const firstId = first.getSettings?.().deviceId;
@@ -103,10 +142,10 @@ export class PpgCamera {
     if (best && best !== this.track?.getSettings?.().deviceId) await this.open(best);
   }
 
-  // `deviceId` forces a specific camera; otherwise one is chosen automatically.
-  async start(deviceId, preferredId) {
-    if (deviceId) await this.open(deviceId);
-    else await this.openFlashCamera(preferredId);
+  // Always prefers the telephoto lens; `telephotoId` is the one found last time.
+  async start(telephotoId) {
+    const telephoto = await this.openTelephoto(telephotoId);
+    if (!telephoto) await this.openFlashCamera();
     this.video.srcObject = this.stream;
     this.video.muted = true;
     this.video.playsInline = true;
@@ -114,7 +153,7 @@ export class PpgCamera {
     this.torch = await this.setTorch(true);
     this.running = true;
     this.scheduleFrame();
-    return { torch: this.torch, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
+    return { torch: this.torch, telephoto, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
   }
 
   async setTorch(on) {

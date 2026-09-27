@@ -4,7 +4,7 @@ import {
 } from './storage.js';
 import { assessDay, sessionLoad, SYMPTOMS, WELLNESS_ITEMS, wellnessScore, baseline } from './readiness.js';
 import { analyzePPG, bandpass, fingerDetected, liveHeartRate, dominantPeriod, findPeaks } from './signal.js';
-import { PpgCamera, cameraSupported, listCameras, rankCameras } from './camera.js';
+import { PpgCamera, cameraSupported } from './camera.js';
 import { barChart, drawWaveform, lineChart } from './charts.js';
 
 const view = document.getElementById('view');
@@ -239,7 +239,7 @@ function renderMeasure() {
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
-        <li>Rest your hand so it can’t move. Place a fingertip <b>gently</b> over the rear camera lens <b>and</b> the flash — pressing hard blocks the pulse.</li>
+        <li>Rest your hand so it can’t move. Place a fingertip <b>gently</b> over the <b>telephoto</b> (zoom) lens <b>and</b> the flash — pressing hard blocks the pulse.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>
       <div class="row">
@@ -252,9 +252,6 @@ function renderMeasure() {
             ${[60, 120, 180].map((s) => `<option value="${s}" ${settings.durationSec === s ? 'selected' : ''}>${s / 60} min</option>`).join('')}
           </select></label>
       </div>
-      <label class="field" id="camera-pick" hidden>Camera
-        <select id="camera-select"></select>
-        <span class="muted small">Leave on Automatic unless the pulse won’t show.</span></label>
       ${supported ? '<button class="btn block" id="start">Start measurement</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
       <details class="small"><summary>Have a chest strap or other HRV app?</summary>
@@ -304,39 +301,22 @@ function renderMeasure() {
   let session = null;
   cleanup = async () => { session?.stop(); await cam.stop(); };
 
-  // The camera beside the flash is picked automatically. On phones with
-  // several rear lenses, a manual override is offered in case a phone
-  // reports its cameras unusually.
-  const fillCameras = async () => {
-    const all = await listCameras();
-    // Names and IDs are hidden until camera permission has been granted.
-    if (!all.every((c) => c.deviceId && c.label)) return;
-    const cams = rankCameras(all);
-    if (cams.length < 2) return;
-    const sel = $('#camera-select');
-    if (!sel) return;
-    sel.innerHTML = `<option value="">Automatic – lens next to the flash</option>${
-      cams.map((c, i) => `<option value="${esc(c.deviceId)}" ${c.deviceId === settings.cameraOverride ? 'selected' : ''}>${esc(c.label || `Camera ${i + 1}`)}</option>`).join('')}`;
-    $('#camera-pick').hidden = false;
-    sel.onchange = () => saveSettings({ cameraOverride: sel.value || null });
-  };
-  fillCameras();
-
   $('#start').addEventListener('click', async () => {
     const durationSec = +$('#duration').value;
     $('#measure-intro').hidden = true;
     $('#measure-live').hidden = false;
     $('#measure-result').hidden = true;
-    $('#live-msg').textContent = 'Finding the camera next to the flash…';
+    $('#live-msg').textContent = 'Finding the telephoto camera…';
     try {
-      const override = $('#camera-select')?.value || null;
-      const info = await cam.start(override, loadSettings().flashCameraId);
-      if (!override && info.torch) saveSettings({ flashCameraId: info.deviceId });
-      fillCameras();
-      const using = info.label ? `Using ${info.label}. ` : '';
+      const info = await cam.start(loadSettings().telephotoCameraId);
+      if (info.telephoto) saveSettings({ telephotoCameraId: info.deviceId });
+      const name = info.label ? ` (${info.label})` : '';
+      const using = info.telephoto
+        ? `Using the telephoto camera${name}. `
+        : `No telephoto camera found, so using the camera next to the flash${name}. `;
       $('#live-msg').textContent = info.torch
-        ? `${using}Cover the lens right beside the lit flashlight.`
-        : `${using}Flashlight control isn’t available in this browser (e.g. iPhone Safari). Measure next to a bright lamp or window so light shines through your fingertip.`;
+        ? `${using}Cover that lens and the lit flashlight with your fingertip.`
+        : `${using}The flashlight can’t be switched on for this camera in this browser (iPhone browsers never allow it). Measure next to a bright lamp or window so light shines through your fingertip.`;
       session = measureSession(cam, durationSec, $('#posture').value);
     } catch (err) {
       await cam.stop();
