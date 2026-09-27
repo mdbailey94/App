@@ -288,7 +288,8 @@ function renderMorning() {
     <section class="card">
       <h2>Morning check-in</h2>
       <ol class="steps">
-        <li>Lay your phone flat. Gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too, and keep that hand still.</li>
+        <li>Hold your phone in one hand and rest a fingertip of that hand gently on the back, over the lens <b>directly below the flash</b> and touching the flash too.</li>
+        <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
         <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
         <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
       </ol>
@@ -409,7 +410,7 @@ function renderMeasure() {
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
         <li><b>Before tapping Start</b>, gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
-        <li>Rest your hand so it can’t move. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
+        <li>Hold the phone steady – resting your arm on your lap or a table helps. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>
       <div class="row">
@@ -509,7 +510,7 @@ function renderMeasure() {
         return;
       }
       showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>
-        <p class="muted small">Tip: rest your hand on a table, press lightly, and stay still and quiet.</p>
+        <p class="muted small">Tip: rest your arm on your lap or a table, press lightly, and stay still and quiet.</p>
         <button class="btn block" id="retry">Try again</button>`);
       $('#retry').onclick = () => route();
     });

@@ -82,7 +82,7 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
         if (covered && s.t - fingerSince >= SETTLE_MS) startT = s.t;
       } else {
         if (s.t - lastFinger > LOST_MS) {
-          finish({ ok: false, reason: 'Your finger moved off the lens. Rest your hand on something steady and try again.' });
+          finish({ ok: false, reason: 'Your finger moved off the lens. Rest your arm on your lap or a table to keep the phone steady, and try again.' });
           return;
         }
         times.push(s.t); red.push(s.r); green.push(s.g);
