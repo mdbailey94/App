@@ -239,7 +239,8 @@ function renderMeasure() {
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
-        <li>Rest your hand so it can’t move. Place a fingertip <b>gently</b> over the <b>telephoto</b> (zoom) lens <b>and</b> the flash — pressing hard blocks the pulse.</li>
+        <li><b>Before tapping Start</b>, gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
+        <li>Rest your hand so it can’t move. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>
       <div class="row">
@@ -306,17 +307,17 @@ function renderMeasure() {
     $('#measure-intro').hidden = true;
     $('#measure-live').hidden = false;
     $('#measure-result').hidden = true;
-    $('#live-msg').textContent = 'Finding the telephoto camera…';
+    $('#live-msg').textContent = 'Checking which lens your finger is covering…';
     try {
-      const info = await cam.start(loadSettings().telephotoCameraId);
-      if (info.telephoto) saveSettings({ telephotoCameraId: info.deviceId });
+      const info = await cam.start(loadSettings().fingerCameraId);
+      if (info.identified) saveSettings({ fingerCameraId: info.deviceId });
       const name = info.label ? ` (${info.label})` : '';
-      const using = info.telephoto
-        ? `Using the telephoto camera${name}. `
-        : `No telephoto camera found, so using the camera next to the flash${name}. `;
+      const using = info.identified
+        ? `Using the lens under your finger${name}. `
+        : `Couldn’t tell which lens your finger is on, so using ${info.label || 'the camera next to the flash'}. If the preview shows the room, tap Cancel, cover the lens directly below the flash and try again in a lit room. `;
       $('#live-msg').textContent = info.torch
-        ? `${using}Cover that lens and the lit flashlight with your fingertip.`
-        : `${using}The flashlight can’t be switched on for this camera in this browser (iPhone browsers never allow it). Measure next to a bright lamp or window so light shines through your fingertip.`;
+        ? using
+        : `${using}The flashlight can’t be switched on for this lens in this browser (iPhone browsers never allow it), so measure next to a bright lamp or window.`;
       session = measureSession(cam, durationSec, $('#posture').value);
     } catch (err) {
       await cam.stop();

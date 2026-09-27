@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseTelephoto, rankCameras } from '../src/camera.js';
+import { frameStats, looksCovered, pickCoveredCamera, rankCameras } from '../src/camera.js';
 
 // Mimic MediaDeviceInfo, which keeps its fields as prototype getters.
 class FakeDevice {
@@ -27,33 +27,49 @@ test('Android: main rear sensor first, front camera excluded', () => {
   assert.deepEqual(ids(ranked), ['main', 'uw', 'tele']);
 });
 
-test('iPhone: telephoto chosen by name', () => {
-  const rear = rankCameras([
-    dev('triple', 'Back Triple Camera'),
-    dev('uw', 'Back Ultra Wide Camera'),
-    dev('front', 'Front Camera'),
-    dev('wide', 'Back Camera'),
-    dev('tele', 'Back Telephoto Camera'),
-  ]);
-  assert.equal(chooseTelephoto(rear), 'tele');
+// 40×40 RGBA frames.
+function frame(fn) {
+  const px = new Uint8ClampedArray(40 * 40 * 4);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) {
+    const [r, g, b] = fn(x, y);
+    px.set([r, g, b, 255], (y * 40 + x) * 4);
+  }
+  return px;
+}
+// A room: bright window, dark furniture, edges.
+const room = frameStats(frame((x, y) => (x < 15 ? [220, 225, 230] : y > 25 ? [40, 35, 30] : [120, 110, 90])));
+// Fingertip lit by the flash: red glow, brighter in the middle.
+const litFinger = frameStats(frame((x, y) => {
+  const d = Math.hypot(x - 20, y - 20);
+  return [230 - d * 1.2, 40, 30];
+}));
+// Fingertip with no light behind it: nearly black.
+const darkFinger = frameStats(frame(() => [12, 4, 4]));
+// A dim bedroom before the lights are on.
+const darkRoom = frameStats(frame((x, y) => (x < 20 ? [22, 22, 24] : [8, 8, 9])));
+
+test('looksCovered: fingertip vs room', () => {
+  assert.equal(looksCovered(litFinger), true);
+  assert.equal(looksCovered(darkFinger), true);
+  assert.equal(looksCovered(room), false);
 });
 
-test('Android: telephoto recognised by its long minimum focus distance', () => {
-  assert.equal(chooseTelephoto([
-    { deviceId: 'main', label: 'camera2 0, facing back', minFocus: 0.1 },
-    { deviceId: 'uw', label: 'camera2 2, facing back', minFocus: 0.03 },
-    { deviceId: 'tele', label: 'camera2 3, facing back', minFocus: 0.8 },
+test('pickCoveredCamera finds the lens under the finger', () => {
+  assert.equal(pickCoveredCamera([
+    { deviceId: 'main', stats: room },
+    { deviceId: 'uw', stats: room },
+    { deviceId: 'tele', stats: litFinger },
+  ]), 'tele');
+  // Unlit covered lens (flashlight belongs to another camera) still found.
+  assert.equal(pickCoveredCamera([
+    { deviceId: 'main', stats: room },
+    { deviceId: 'tele', stats: darkFinger },
   ]), 'tele');
 });
 
-test('no telephoto: main + ultra-wide or missing focus data gives null', () => {
-  assert.equal(chooseTelephoto([
-    { deviceId: 'main', label: 'camera2 0, facing back', minFocus: 0.1 },
-    { deviceId: 'uw', label: 'camera2 2, facing back', minFocus: 0.03 },
-  ]), null);
-  assert.equal(chooseTelephoto([
-    { deviceId: 'a', label: 'camera2 0, facing back' },
-    { deviceId: 'b', label: 'camera2 2, facing back' },
-  ]), null);
-  assert.equal(chooseTelephoto([{ deviceId: 'wide', label: 'Back Camera' }]), null);
+test('pickCoveredCamera refuses to guess when nothing or everything looks covered', () => {
+  assert.equal(pickCoveredCamera([{ deviceId: 'a', stats: room }, { deviceId: 'b', stats: room }]), null);
+  assert.equal(pickCoveredCamera([{ deviceId: 'a', stats: darkRoom }, { deviceId: 'b', stats: darkFinger }]), null);
+  // In a dark room the flash-lit fingertip still stands out.
+  assert.equal(pickCoveredCamera([{ deviceId: 'a', stats: darkRoom }, { deviceId: 'b', stats: litFinger }]), 'b');
 });

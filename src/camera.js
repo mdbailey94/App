@@ -38,20 +38,35 @@ export function rankCameras(devices) {
     .sort((a, b) => b.score - a.score);
 }
 
-const TELE = /tele/i; // "Back Telephoto Camera", "Teleobjektiv", …
-const TELE_MIN_FOCUS_M = 0.25;
+// Per-frame summary: mean colour plus how textured the picture is (standard
+// deviation of brightness across the frame).
+export function frameStats(px) {
+  let r = 0, g = 0, b = 0, sum = 0, sumSq = 0;
+  const n = px.length / 4;
+  for (let i = 0; i < px.length; i += 4) {
+    r += px[i]; g += px[i + 1]; b += px[i + 2];
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    sum += lum; sumSq += lum * lum;
+  }
+  const mean = sum / n;
+  return { r: r / n, g: g / n, b: b / n, lum: mean, texture: Math.sqrt(Math.max(0, sumSq / n - mean * mean)) };
+}
 
-// Pick the telephoto lens from rear cameras ({ deviceId, label, minFocus }).
-// Uses the lens name when the browser provides one (iPhone). Android names
-// lenses generically, so there the telephoto is recognised as the lens that
-// can't focus close: its minimum focus distance (metres) is far longer.
-export function chooseTelephoto(cams) {
-  const named = cams.find((c) => TELE.test(c.label || ''));
-  if (named) return named.deviceId;
-  const byFocus = cams.filter((c) => c.minFocus > 0).sort((a, b) => b.minFocus - a.minFocus);
-  if (byFocus.length < 2) return null;
-  const [far, next] = byFocus;
-  return far.minFocus >= TELE_MIN_FOCUS_M && far.minFocus >= 1.5 * next.minFocus ? far.deviceId : null;
+const isRedGlow = (s) => s.r > 60 && s.r > 1.5 * s.g && s.r > 1.5 * s.b;
+
+// A lens covered by a fingertip sees a smooth red glow (lit) or near-black
+// (unlit) instead of the detail of a room.
+export function looksCovered(s) {
+  return s.texture < 18 && (isRedGlow(s) || s.lum < 30);
+}
+
+// Given [{ deviceId, stats }] for each rear camera, return the one the
+// finger is covering, or null if it can't be told apart (e.g. dark room).
+export function pickCoveredCamera(results) {
+  const covered = results.filter((x) => looksCovered(x.stats));
+  if (covered.length === 1) return covered[0].deviceId;
+  const glowing = covered.filter((x) => isRedGlow(x.stats));
+  return glowing.length === 1 ? glowing[0].deviceId : null;
 }
 
 function hasTorch(track) {
@@ -89,35 +104,42 @@ export class PpgCamera {
     return this.track;
   }
 
-  // Open the telephoto lens. Returns false if the phone doesn't have (or the
-  // browser doesn't expose) one. `preferredId` is the last telephoto found.
-  async openTelephoto(preferredId) {
-    if (preferredId) {
-      try {
-        await this.open(preferredId);
-        return true;
-      } catch { /* camera gone or renamed; search again */ }
-    }
-    await this.open(); // camera names are only visible after permission
-    const rear = rankCameras(await listCameras());
-    let pick = chooseTelephoto(rear);
-    if (!pick && rear.length > 1) {
-      const probed = [];
-      for (const cam of rear.slice(0, 5)) {
-        try {
-          const track = await this.open(cam.deviceId);
-          probed.push({ ...cam, minFocus: track.getCapabilities?.().focusDistance?.min });
-        } catch { /* skip cameras that won't open */ }
-      }
-      pick = chooseTelephoto(probed);
-    }
-    if (!pick) return false;
-    if (pick !== this.track?.getSettings?.().deviceId) await this.open(pick);
-    return true;
+  // Look through one camera briefly (flashlight on if it has one) and
+  // summarise what it sees.
+  async probe(deviceId) {
+    await this.open(deviceId);
+    this.video.srcObject = this.stream;
+    this.video.muted = true;
+    this.video.playsInline = true;
+    await this.video.play();
+    await this.setTorch(true);
+    await new Promise((r) => setTimeout(r, 700)); // let exposure settle
+    const { videoWidth: w, videoHeight: h } = this.video;
+    this.ctx.drawImage(this.video, 0, 0, w, h, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+    return frameStats(this.ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
   }
 
-  // Fallback when there's no telephoto: find the rear camera that sits next to the flashlight. Browsers don't
-  // expose lens positions, but the flashlight is controlled through the
+  // Find the rear lens the fingertip is covering. Browsers don't reveal where
+  // each lens sits, so rather than guess, check what each camera sees.
+  // `rememberedId` (the lens found last time) is checked first.
+  async findCoveredCamera(rememberedId) {
+    if (rememberedId) {
+      try {
+        if (looksCovered(await this.probe(rememberedId))) return rememberedId;
+      } catch { /* camera gone; search all */ }
+    }
+    if (!this.track) await this.open(); // camera names are only visible after permission
+    const results = [];
+    for (const cam of rankCameras(await listCameras()).slice(0, 6)) {
+      try {
+        results.push({ deviceId: cam.deviceId, stats: await this.probe(cam.deviceId) });
+      } catch { /* skip cameras that won't open */ }
+    }
+    return pickCoveredCamera(results);
+  }
+
+  // Fallback when the covered lens can't be identified: the rear camera that
+  // sits next to the flashlight. Browsers don't expose lens positions, but the flashlight is controlled through the
   // camera module beside it, so the camera reporting torch support is the
   // one to use.
   async openFlashCamera() {
@@ -142,10 +164,19 @@ export class PpgCamera {
     if (best && best !== this.track?.getSettings?.().deviceId) await this.open(best);
   }
 
-  // Always prefers the telephoto lens; `telephotoId` is the one found last time.
-  async start(telephotoId) {
-    const telephoto = await this.openTelephoto(telephotoId);
-    if (!telephoto) await this.openFlashCamera();
+  // Uses the lens the fingertip is covering; `rememberedId` is the lens
+  // found last time, used as the fallback if no covered lens is detected.
+  async start(rememberedId) {
+    const found = await this.findCoveredCamera(rememberedId);
+    const fallback = found ? null : rememberedId;
+    const target = found || fallback;
+    if (target) {
+      if (target !== this.track?.getSettings?.().deviceId) {
+        try { await this.open(target); } catch { await this.openFlashCamera(); }
+      }
+    } else {
+      await this.openFlashCamera();
+    }
     this.video.srcObject = this.stream;
     this.video.muted = true;
     this.video.playsInline = true;
@@ -153,7 +184,7 @@ export class PpgCamera {
     this.torch = await this.setTorch(true);
     this.running = true;
     this.scheduleFrame();
-    return { torch: this.torch, telephoto, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
+    return { torch: this.torch, identified: Boolean(found), label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
   }
 
   async setTorch(on) {
