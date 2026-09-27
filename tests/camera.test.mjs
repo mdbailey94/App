@@ -73,3 +73,7 @@ test('pickCoveredCamera refuses to guess when nothing or everything looks covere
   // In a dark room the flash-lit fingertip still stands out.
   assert.equal(pickCoveredCamera([{ deviceId: 'a', stats: darkRoom }, { deviceId: 'b', stats: litFinger }]), 'b');
 });
+
+test('front filter does not trip on unrelated words in a label', () => {
+  assert.deepEqual(ids(rankCameras([dev('a', '/home/user/cam.y4m'), dev('f', 'Front Camera'), dev('s', 'camera2 1, facing front')])), ['a']);
+});

@@ -11,7 +11,7 @@ export async function listCameras() {
   return devices.filter((d) => d.kind === 'videoinput');
 }
 
-const FRONT = /front|user|selfie|facetime/i;
+const FRONT = /front|selfie|facetime|facing user/i;
 const BACK = /back|rear|environment/i;
 // Secondary lenses sit away from the flash; iPhone "Dual"/"Triple" cameras
 // are virtual devices that can switch lenses mid-reading.
