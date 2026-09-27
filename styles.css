@@ -258,3 +258,19 @@ tr:has(+ .flag-row) td { border-bottom: 0; }
 }
 code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
 .tabs a { font-size: 11px; }
+
+/* ---------- morning check-in */
+.reading-bar {
+  position: sticky; top: calc(env(safe-area-inset-top) + 52px); z-index: 4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+.reading-bar[data-state="ok"] { border-color: var(--good); }
+.reading-bar[data-state="warn"] { border-color: var(--warning); }
+.reading-head { display: flex; align-items: center; gap: 12px; }
+.reading-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.reading-head .btn { flex-shrink: 0; }
+.preview.small { width: 44px; height: 44px; flex-shrink: 0; }
+.reading-bar .progress { margin: 10px 0 0; }
+.done-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.done-list li { padding: 2px 0; }
+.hero .actions + p { margin-top: 12px; }

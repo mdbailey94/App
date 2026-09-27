@@ -16,11 +16,13 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 
 ## Using it
 
-- **Today** — readiness score, breakdown, flags, training load.
-- **Check-in** — the questionnaire. Past days can be edited from History.
-- **HRV** — 1–3 minute camera measurement. Best done every morning right after waking, in the same
-  position. Rest the hand on something, cover the lens *and* flash lightly with a fingertip, stay still.
-  If you own a chest strap, you can type its HR/RMSSD in instead.
+- **Today** — one button: **Start my morning check-in**. Afterwards: a readiness score from the athlete's
+  own answers, and ✓ for questions answered / heart reading saved.
+- **Check-in (morning)** — the heart reading runs in a bar pinned at the top while the athlete answers
+  the questions with their other hand (about a minute in total). Saving early waits for the reading to
+  finish; if the reading fails they can retry or save the answers without it.
+- **HRV** — a heart reading on its own (1–3 min), ending in "Reading saved ✓". Manual entry for chest
+  straps.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
   edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
 - **History** — trend charts (readiness, ln RMSSD with your normal band, resting HR, wellness,
@@ -39,6 +41,13 @@ with the questionnaire alone. A major injury (unable to perform certain strokes 
 "talk to your coach/medical staff". Acute:chronic workload ratio appears after 3 weeks of data.
 
 This is training guidance, **not a medical device**.
+
+### What athletes see about HRV
+
+Single HRV readings swing a lot from day to day, so athletes aren't shown them: no numbers after a
+reading, no HRV flags, and their readiness score uses their answers only. History shows **7-day
+averages** of HRV and resting heart rate. The coach dashboard and group sheet get the full picture,
+including each day's HRV and the score that combines everything.
 
 ## Camera HRV — what to expect
 

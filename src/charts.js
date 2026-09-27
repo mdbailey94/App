@@ -114,7 +114,7 @@ export function lineChart(container, data, opts = {}) {
     height: 160, yFormat: (v) => String(v), xLabel: (d) => d.label, tip: (d) => `${d.label}: <b>${o.yFormat(d.y)}</b>`,
     showDots: true, ...opts,
   };
-  if (!data.length) { container.innerHTML = '<p class="muted">No data yet.</p>'; return; }
+  if (!data.some((d) => Number.isFinite(d.y))) { container.innerHTML = '<p class="muted small">Not enough readings yet.</p>'; return; }
   const { svg, sx, sy, height } = frame(container, { ...o, data });
   const pts = data.map((d) => [sx(d.x), Number.isFinite(d.y) ? sy(d.y) : NaN]);
   // Break the line at missing values rather than bridging them.

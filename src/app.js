@@ -3,10 +3,10 @@ import {
   saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
 import { assessDay, sessionLoad, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
-import { analyzePPG, bandpass, fingerDetected, liveHeartRate, dominantPeriod, findPeaks } from './signal.js';
 import { PpgCamera, cameraSupported } from './camera.js';
-import { drawWaveform, lineChart } from './charts.js';
-import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import { drawWaveform } from './charts.js';
+import { startReading } from './reading.js';
+import { esc, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
 import { renderCoach, renderTeam, syncLine } from './coach.js';
 import { syncPending, syncStatus } from './team.js';
 
@@ -45,6 +45,7 @@ const SLEEP_STEPS = Array.from({ length: 13 }, (_, i) => 4 + i * 0.5);
 const routes = {
   today: renderToday,
   checkin: renderCheckin,
+  morning: renderMorning,
   measure: renderMeasure,
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
@@ -57,7 +58,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || 'today').split('?');
   const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  const tab = !routes[name] ? 'today' : name === 'coach' ? 'team' : name;
+  const tab = !routes[name] ? 'today' : { coach: 'team', morning: 'checkin' }[name] || name;
   document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
   render(arg, new URLSearchParams(qs || ''));
@@ -72,54 +73,37 @@ function renderToday() {
   const date = todayISO();
   const entries = loadEntries();
   const entry = entries.find((e) => e.date === date);
-  const a = assessDay(entries, date);
-
-  const components = [];
-  if (a.components.wellness !== undefined) components.push(['Wellness', a.components.wellness, 'From your check-in answers']);
-  if (a.components.hrv !== undefined) {
-    components.push(['HRV', a.components.hrv, `ln RMSSD ${fmt(entry.hrv.lnRmssd, 2)} vs normal ${fmt(a.hrvBaseline.mean, 2)} ± ${fmt(a.hrvBaseline.sd, 2)}`]);
-  }
-  if (a.components.restingHr !== undefined) {
-    components.push(['Resting HR', a.components.restingHr, `${fmt(entry.hrv.hr)} bpm vs normal ${fmt(a.hrBaseline.mean)} bpm`]);
-  }
+  // Athletes see a score from their own answers only; HRV goes to the coach
+  // and into weekly trends, so one noisy morning reading can't colour the day.
+  const a = assessDay(entries, date, { heart: false });
+  const answered = Boolean(entry?.wellness);
+  const heartDone = Boolean(entry?.hrv);
 
   view.innerHTML = `
     <section class="card hero">
       <p class="eyebrow">${esc(prettyDate(date))}</p>
-      ${a.score !== null ? `
+      ${answered && a.score !== null ? `
         <div class="score-row">
           <div class="score"><span class="score-num">${a.score}</span><span class="score-max">/100</span></div>
           <div>${statusBadge(a.status)}<p class="advice">${esc(a.status.advice)}</p></div>
+        </div>
+        <ul class="done-list">
+          <li>✓ Questions answered</li>
+          <li>${heartDone ? '✓ Heart reading saved' : '<span class="muted">– No heart reading today</span>'}</li>
+        </ul>
+        <div class="actions">
+          <a class="btn secondary" href="#checkin">Edit answers</a>
+          <a class="btn secondary" href="#measure">${heartDone ? 'Redo reading' : 'Add reading'}</a>
         </div>` : `
-        <h2>How are you today?</h2>
-        <p class="muted">Complete your check-in to get a readiness score. Adding a morning HRV reading makes it more objective.</p>`}
-      <div class="actions">
-        <a class="btn ${entry?.wellness ? 'secondary' : ''}" href="#checkin">${entry?.wellness ? 'Edit check-in' : 'Start check-in'}</a>
-        <a class="btn ${entry?.hrv ? 'secondary' : ''}" href="#measure">${entry?.hrv ? 'Redo HRV' : 'Measure HRV'}</a>
-      </div>
+        <h2>Good morning</h2>
+        <p class="muted">About a minute: answer a few questions while your phone reads your pulse.</p>
+        <a class="btn block" href="#morning">Start my morning check-in</a>`}
+      ${a.baselineReadingsNeeded && heartDone ? `<p class="muted small">Keep taking morning readings – after ${a.baselineReadingsNeeded} more, the app knows your normal range.</p>` : ''}
     </section>
 
-    ${a.flags.length ? `<section class="card"><h3>Things to note</h3><ul class="flags">
+    ${answered && a.flags.length ? `<section class="card"><h3>Things to note</h3><ul class="flags">
       ${a.flags.map((f) => `<li>${statusBadge({ level: f.level, label: f.level === 'critical' ? 'Important' : 'Note' })} ${esc(f.text)}</li>`).join('')}
     </ul></section>` : ''}
-
-    ${components.length ? `<section class="card"><h3>Breakdown</h3>
-      ${components.map(([name, v, sub]) => `
-        <div class="meter">
-          <div class="meter-head"><span>${name}</span><b>${v}</b></div>
-          <div class="meter-track"><div class="meter-fill" style="width:${v}%"></div></div>
-          <p class="muted small">${esc(sub)}</p>
-        </div>`).join('')}
-    </section>` : ''}
-
-    ${entry?.hrv ? `<section class="card"><h3>This morning’s heart</h3>
-      <div class="stats">
-        <div><span class="stat-num">${fmt(entry.hrv.hr)}</span><span class="stat-label">bpm</span></div>
-        <div><span class="stat-num">${fmt(entry.hrv.rmssd)}</span><span class="stat-label">RMSSD ms</span></div>
-        <div><span class="stat-num">${fmt(entry.hrv.lnRmssd, 2)}</span><span class="stat-label">ln RMSSD</span></div>
-      </div>
-      ${a.baselineReadingsNeeded ? `<p class="muted small">${a.baselineReadingsNeeded} more daily reading${a.baselineReadingsNeeded > 1 ? 's' : ''} until your personal HRV baseline is ready.</p>` : ''}
-    </section>` : ''}
 
     <section class="card"><h3>Training load</h3>
       <div class="stats">
@@ -127,7 +111,7 @@ function renderToday() {
         <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">4-week weekly avg</span></div>
         <div><span class="stat-num">${a.load.acwr !== null ? a.load.acwr.toFixed(2) : '–'}</span><span class="stat-label">acute:chronic</span></div>
       </div>
-      <p class="muted small">Load = session minutes × session RPE.${a.load.acwr === null ? ' Acute:chronic ratio appears after 3 weeks of check-ins.' : ''}</p>
+      <p class="muted small">Load = training minutes × session RPE.${a.load.acwr === null ? ' Acute:chronic ratio appears after 3 weeks of check-ins.' : ''}</p>
     </section>
 
     ${syncStatus().joined ? `<p class="sync-line" id="sync-line">${syncLine(syncStatus())}</p>` : ''}
@@ -149,21 +133,13 @@ function scaleField(item, value) {
     </fieldset>`;
 }
 
-function renderCheckin(dateArg) {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
-  const e = getEntry(date) || {};
+// The questionnaire sections, shared by the Check-in and Morning screens.
+function checkinSections(e) {
   const w = e.wellness || {};
   const t = e.training || {};
   const pain = e.pain || { level: 0 };
   const otherSleep = Number.isFinite(w.sleepHours) && !SLEEP_STEPS.includes(w.sleepHours);
-
-  view.innerHTML = `
-    <form id="checkin" class="stack" novalidate>
-      <section class="card">
-        <h2>Daily check-in</h2>
-        <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
-      </section>
-
+  return `
       <section class="card">
         <h3>Sleep</h3>
         <fieldset class="scale">
@@ -212,13 +188,10 @@ function renderCheckin(dateArg) {
         <h3>Notes <span class="muted small">(optional)</span></h3>
         <label class="field">
           <textarea name="notes" rows="3" aria-label="Notes" placeholder="Anything your coach should know">${esc(e.notes)}</textarea></label>
-      </section>
+      </section>`;
+}
 
-      <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit">Save check-in</button>
-    </form>`;
-
-  const form = view.querySelector('#checkin');
+function wireCheckin(form) {
   const loadPreview = () => {
     const load = sessionLoad({ durationMin: +form.durationMin.value, rpe: +form.rpe.value });
     form.querySelector('#load-preview').textContent = load ? `Session load: ${load} AU` : '';
@@ -226,37 +199,200 @@ function renderCheckin(dateArg) {
   form.addEventListener('input', (ev) => {
     if (ev.target.name === 'painLevel') form.querySelector('#pain-location').hidden = ev.target.value === '0';
     if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
-    if (ev.target.name === 'date' && ev.target.value && ev.target.value !== date) location.hash = `#checkin/${ev.target.value}`;
     loadPreview();
   });
   loadPreview();
+}
 
-  form.addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    const fd = new FormData(form);
-    const missing = WELLNESS_ITEMS.filter((i) => !fd.get(i.key)).map((i) => i.label);
-    const sleepHours = fd.get('sleepHours') === 'other' ? Number(fd.get('sleepOther')) : Number(fd.get('sleepHours'));
-    if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
-      missing.unshift('Hours slept');
-    }
-    const err = form.querySelector('#form-error');
-    if (missing.length) {
-      err.textContent = `Please answer: ${missing.join(', ')}.`;
-      err.hidden = false;
-      err.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
-    const painLevel = num('painLevel') || 0;
-    const wellness = { sleepHours };
-    for (const i of WELLNESS_ITEMS) wellness[i.key] = num(i.key);
-    upsertEntry(fd.get('date'), {
+// Read the answers: { missing: [labels] } or { patch } ready to save.
+function readCheckin(form) {
+  const fd = new FormData(form);
+  const missing = WELLNESS_ITEMS.filter((i) => !fd.get(i.key)).map((i) => i.label);
+  const sleepHours = fd.get('sleepHours') === 'other' ? Number(fd.get('sleepOther')) : Number(fd.get('sleepHours'));
+  if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
+    missing.unshift('Hours slept');
+  }
+  if (missing.length) return { missing };
+  const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
+  const painLevel = num('painLevel') || 0;
+  const wellness = { sleepHours };
+  for (const i of WELLNESS_ITEMS) wellness[i.key] = num(i.key);
+  return {
+    patch: {
       wellness,
       pain: { level: painLevel, location: painLevel ? fd.get('painLocation').trim() : '' },
       training: { durationMin: num('durationMin') || 0, rpe: num('rpe') || 0 },
       notes: fd.get('notes').trim(),
+    },
+  };
+}
+
+function showFormError(form, text) {
+  const err = form.querySelector('#form-error');
+  err.textContent = text;
+  err.hidden = !text;
+  if (text) err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderCheckin(dateArg) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
+  const e = getEntry(date) || {};
+  view.innerHTML = `
+    <form id="checkin" class="stack" novalidate>
+      <section class="card">
+        <h2>Daily check-in</h2>
+        <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
+      </section>
+      ${checkinSections(e)}
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <button class="btn block" type="submit">Save check-in</button>
+    </form>`;
+
+  const form = view.querySelector('#checkin');
+  wireCheckin(form);
+  form.date.addEventListener('change', () => {
+    if (form.date.value && form.date.value !== date) location.hash = `#checkin/${form.date.value}`;
+  });
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const { missing, patch } = readCheckin(form);
+    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
+    upsertEntry(form.date.value, patch);
+    location.hash = form.date.value === todayISO() ? '#today' : '#history';
+  });
+}
+
+// ------------------------------------------------------ morning check-in
+// Questions and the heart reading at the same time: the reading runs in a
+// bar pinned at the top while the athlete answers with their other hand.
+
+function renderMorning() {
+  const date = todayISO();
+  const e = getEntry(date) || {};
+  const settings = loadSettings();
+  const supported = cameraSupported();
+
+  view.innerHTML = `
+    <section class="card reading-bar" id="reading">
+      <div class="reading-head">
+        <video id="camera" class="preview small" playsinline muted></video>
+        <div class="reading-text">
+          <b id="reading-title">Heart reading</b>
+          <span id="reading-msg" class="muted small">${supported ? 'Cover the lens below the flash, then tap Start.' : 'Camera not available in this browser.'}</span>
+        </div>
+        ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
+      </div>
+      <div class="progress" id="reading-progress" hidden><div id="progress-bar"></div></div>
+    </section>
+
+    <section class="card">
+      <h2>Morning check-in</h2>
+      <ol class="steps">
+        <li>Lay your phone flat. Gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too, and keep that hand still.</li>
+        <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
+        <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
+      </ol>
+      ${e.hrv ? '<p class="muted small">You already have a heart reading today. Start only if you want to redo it.</p>' : ''}
+    </section>
+
+    <form id="checkin" class="stack" novalidate>
+      ${checkinSections(e)}
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <button class="btn block" type="submit" id="save">Save check-in</button>
+      <button class="btn secondary block" type="button" id="save-without" hidden>Save answers without a heart reading</button>
+    </form>`;
+
+  const $ = (sel) => view.querySelector(sel);
+  const form = $('#checkin');
+  wireCheckin(form);
+
+  let state = 'idle'; // idle | running | done | failed
+  let hrv = null;
+  let pending = null; // answers waiting for the reading to finish
+  let reading = null;
+  const cam = supported ? new PpgCamera($('#camera')) : null;
+  cleanup = async () => { reading?.stop(); await cam?.stop(); };
+
+  const setReading = (title, msg, level) => {
+    $('#reading-title').textContent = title;
+    $('#reading-msg').textContent = msg;
+    $('#reading').dataset.state = level || '';
+  };
+  const save = (patch) => {
+    upsertEntry(date, hrv ? { ...patch, hrv } : patch);
+    location.hash = '#today';
+  };
+  const resetSave = () => { $('#save').disabled = false; $('#save').textContent = 'Save check-in'; };
+
+  const start = () => {
+    state = 'running';
+    hrv = null;
+    $('#reading-start').hidden = true;
+    $('#reading-progress').hidden = false;
+    $('#save-without').hidden = true;
+    reading = startReading(cam, {
+      durationSec: settings.durationSec,
+      posture: settings.posture,
+      onMessage: (m) => setReading('Heart reading', m),
+      onFinger: (f) => {
+        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the lens below the flash.', 'warn');
+        else if (f === 'settling') setReading('Hold still…', 'Finding your pulse.');
+        else if (f === 'lost') setReading('Finger moved', 'Put it back on the lens.', 'warn');
+      },
+      onProgress: (frac, left) => {
+        $('#progress-bar').style.width = `${frac * 100}%`;
+        if (frac > 0) setReading('Reading…', `${left} s left – keep your finger still and carry on answering.`);
+      },
     });
-    location.hash = fd.get('date') === todayISO() ? '#today' : '#history';
+    reading.done.then((out) => {
+      reading = null;
+      $('#reading-progress').hidden = true;
+      if (out.cancelled) return;
+      $('#reading-start').hidden = false;
+      if (out.ok) {
+        state = 'done';
+        hrv = out.hrv;
+        $('#reading-start').textContent = 'Redo';
+        setReading('✓ Heart reading done', 'You can take your finger off the lens.', 'ok');
+        if (pending) save(pending);
+        return;
+      }
+      state = 'failed';
+      $('#reading-start').textContent = 'Try again';
+      setReading('Heart reading didn’t work', out.reason, 'warn');
+      if (pending) {
+        pending = null;
+        resetSave();
+        $('#save-without').hidden = false;
+        showFormError(form, 'The heart reading didn’t work. Try it again, or save your answers without it.');
+      }
+    });
+  };
+  $('#reading-start')?.addEventListener('click', start);
+
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const { missing, patch } = readCheckin(form);
+    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
+    showFormError(form, '');
+    if (state === 'running') {
+      pending = patch;
+      $('#save').disabled = true;
+      $('#save').textContent = 'Saving when the heart reading finishes…';
+      return;
+    }
+    if (state === 'done' || e.hrv || !supported) { save(patch); return; }
+    $('#save-without').hidden = false;
+    showFormError(form, state === 'failed'
+      ? 'The heart reading didn’t work. Try it again, or save your answers without it.'
+      : 'You haven’t taken today’s heart reading. Tap Start at the top, or save your answers without it.');
+  });
+  $('#save-without').addEventListener('click', () => {
+    const { missing, patch } = readCheckin(form);
+    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
+    hrv = null;
+    reading?.stop();
+    save(patch);
   });
 }
 
@@ -267,8 +403,9 @@ function renderMeasure() {
   const supported = cameraSupported();
   view.innerHTML = `
     <section class="card" id="measure-intro">
-      <h2>Heart rate &amp; HRV</h2>
-      <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
+      <h2>Heart reading</h2>
+      <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip. Your coach sees the results;
+        you’ll see your weekly trend in History.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
         <li><b>Before tapping Start</b>, gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
@@ -285,7 +422,7 @@ function renderMeasure() {
             ${[60, 120, 180].map((s) => `<option value="${s}" ${settings.durationSec === s ? 'selected' : ''}>${s / 60} min</option>`).join('')}
           </select></label>
       </div>
-      ${supported ? '<button class="btn block" id="start">Start measurement</button>'
+      ${supported ? '<button class="btn block" id="start">Start reading</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
       <details class="small"><summary>Have a chest strap or other HRV app?</summary>
         <form id="manual" class="stack">
@@ -305,9 +442,8 @@ function renderMeasure() {
       </div>
       <div class="live-main">
         <video id="camera" class="preview" playsinline muted></video>
-        <div class="live-bpm"><span id="bpm">--</span> <small>bpm</small></div>
       </div>
-      <canvas id="wave" class="wave" aria-label="Live pulse waveform"></canvas>
+      <canvas id="wave" class="wave" aria-label="Pulse detected"></canvas>
       <div class="progress"><div id="progress-bar"></div></div>
       <p id="live-msg" class="muted small"></p>
       <button class="btn secondary block" id="cancel">Cancel</button>
@@ -331,156 +467,54 @@ function renderMeasure() {
 
   if (!supported) return;
   const cam = new PpgCamera($('#camera'));
-  let session = null;
-  cleanup = async () => { session?.stop(); await cam.stop(); };
+  let reading = null;
+  cleanup = async () => { reading?.stop(); await cam.stop(); };
 
-  $('#start').addEventListener('click', async () => {
-    const durationSec = +$('#duration').value;
+  const setFinger = (ok, text) => {
+    $('#finger').className = `status status-${ok ? 'good' : 'warning'}`;
+    $('#finger').innerHTML = `<span class="status-icon" aria-hidden="true">${ok ? '✓' : '!'}</span>${text}`;
+  };
+  const showResult = (html) => {
+    $('#measure-live').hidden = true;
+    const box = $('#measure-result');
+    box.hidden = false;
+    box.innerHTML = html;
+  };
+
+  $('#start').addEventListener('click', () => {
     $('#measure-intro').hidden = true;
     $('#measure-live').hidden = false;
-    $('#measure-result').hidden = true;
-    $('#live-msg').textContent = 'Checking which lens your finger is covering…';
-    try {
-      const info = await cam.start(loadSettings().fingerCameraId, (n, total) => {
-        $('#live-msg').textContent = `Checking which lens your finger is covering… (lens ${n}${total ? ` of ${total}` : ''})`;
-      });
-      if (info.identified) saveSettings({ fingerCameraId: info.deviceId });
-      const name = info.label ? ` (${info.label})` : '';
-      const using = info.identified
-        ? `Using the lens under your finger${name}. `
-        : `Couldn’t tell which lens your finger is on, so using ${info.label || 'the camera next to the flash'}. If the preview shows the room, tap Cancel, cover the lens directly below the flash and try again in a lit room. `;
-      $('#live-msg').textContent = info.torch
-        ? using
-        : `${using}The flashlight can’t be switched on for this lens in this browser (iPhone browsers never allow it), so measure next to a bright lamp or window.`;
-      session = measureSession(cam, durationSec, $('#posture').value);
-    } catch (err) {
-      await cam.stop();
-      showError(err.name === 'NotAllowedError' ? 'Camera permission was denied. Allow camera access in your browser settings and try again.' : `Couldn’t start the camera: ${err.message}`);
-    }
-  });
-  $('#cancel').addEventListener('click', async () => { session?.stop(); await cam.stop(); route(); });
-
-  function showError(msg) {
-    $('#measure-live').hidden = true;
-    const box = $('#measure-result');
-    box.hidden = false;
-    box.innerHTML = `<h3>Measurement failed</h3><p>${esc(msg)}</p><button class="btn block" id="retry">Try again</button>`;
-    $('#retry').onclick = () => route();
-  }
-
-  function measureSession(camera, durationSec, posture) {
-    const SETTLE_MS = 3000; // let auto-exposure settle once the finger is on
-    const LOST_MS = 2500;
-    const times = [], red = [], green = [];
-    let fingerSince = null;
-    let lastFinger = null;
-    let startT = null;
-    let done = false;
-    let lastUi = 0;
-
-    const fingerEl = $('#finger');
-    const setFinger = (ok, text) => {
-      fingerEl.className = `status status-${ok ? 'good' : 'warning'}`;
-      fingerEl.innerHTML = `<span class="status-icon" aria-hidden="true">${ok ? '✓' : '!'}</span>${text}`;
-    };
-
-    camera.onSample = (s) => {
-      if (done) return;
-      const covered = fingerDetected(s);
-      if (covered) { lastFinger = s.t; fingerSince ??= s.t; } else if (startT === null) fingerSince = null;
-
-      if (startT === null) {
-        if (covered && s.t - fingerSince >= SETTLE_MS) startT = s.t;
-      } else {
-        if (s.t - lastFinger > LOST_MS) {
-          finish(false, 'Your finger moved off the lens. Rest your hand on something steady and try again.');
-          return;
-        }
-        times.push(s.t); red.push(s.r); green.push(s.g);
-        if (s.t - startT >= durationSec * 1000) { finish(true); return; }
-      }
-      const now = performance.now();
-      if (now - lastUi > 100) { lastUi = now; updateUi(covered, s.t); }
-    };
-
-    function updateUi(covered, t) {
-      if (startT === null) {
-        setFinger(covered, covered ? 'Hold still…' : 'Place finger on lens');
-        $('#countdown').textContent = '';
-        $('#progress-bar').style.width = '0%';
+    reading = startReading(cam, {
+      durationSec: +$('#duration').value,
+      posture: $('#posture').value,
+      onMessage: (m) => { $('#live-msg').textContent = m; },
+      onFinger: (f) => setFinger(f === 'recording' || f === 'settling',
+        { none: 'Place finger on lens', settling: 'Hold still…', recording: 'Reading', lost: 'Finger moved' }[f]),
+      onProgress: (frac, left) => {
+        $('#progress-bar').style.width = `${frac * 100}%`;
+        $('#countdown').textContent = frac > 0 ? `${left} s` : '';
+      },
+      onWave: (values, peaks) => drawWaveform($('#wave'), values, peaks),
+    });
+    reading.done.then((out) => {
+      reading = null;
+      if (out.cancelled) return;
+      if (out.ok) {
+        // No numbers here on purpose: single readings vary a lot, so the
+        // athlete sees the weekly trend and the coach sees the details.
+        upsertEntry(todayISO(), { hrv: out.hrv });
+        showResult(`<h3>✓ Reading saved</h3>
+          <p class="muted">Thanks! Your weekly trend is in History, and your coach can see the details.</p>
+          <a class="btn block" href="#today">Done</a>`);
         return;
       }
-      setFinger(covered, covered ? 'Recording' : 'Finger lost');
-      const elapsed = (t - startT) / 1000;
-      $('#countdown').textContent = `${Math.max(0, Math.ceil(durationSec - elapsed))} s`;
-      $('#progress-bar').style.width = `${Math.min(100, (elapsed / durationSec) * 100)}%`;
-
-      // Live waveform + rate from the trailing few seconds.
-      const from = times.findIndex((x) => x >= t - 8000);
-      const tt = times.slice(from), rr = red.slice(from);
-      const bpm = liveHeartRate(tt, rr);
-      $('#bpm').textContent = bpm ?? '--';
-      if (rr.length > 30) {
-        const wave = bandpass(rr.map((v) => -v), 30).slice(-150);
-        const { periodSamples } = dominantPeriod(wave, 30);
-        drawWaveform($('#wave'), wave, findPeaks(wave, 30, periodSamples));
-      }
-    }
-
-    async function finish(ok, message) {
-      done = true;
-      await camera.stop();
-      if (!ok) { showError(message); return; }
-      showResult(analyzePPG(times, { red, green }), posture, durationSec);
-    }
-
-    return { stop() { done = true; } };
-  }
-
-  function showResult(r, posture, durationSec) {
-    $('#measure-live').hidden = true;
-    const box = $('#measure-result');
-    box.hidden = false;
-    if (!r.ok) { showError(r.reason); return; }
-    const qualityStatus = { good: 'good', fair: 'warning', poor: 'critical' }[r.quality];
-    box.innerHTML = `
-      <h3>Result ${statusBadge({ level: qualityStatus, label: `${r.quality[0].toUpperCase()}${r.quality.slice(1)} signal` })}</h3>
-      <div class="stats">
-        <div><span class="stat-num">${fmt(r.hr)}</span><span class="stat-label">bpm</span></div>
-        <div><span class="stat-num">${fmt(r.rmssd)}</span><span class="stat-label">RMSSD ms</span></div>
-        <div><span class="stat-num">${fmt(r.lnRmssd, 2)}</span><span class="stat-label">ln RMSSD</span></div>
-      </div>
-      <div class="stats small-stats">
-        <div><span class="stat-num">${fmt(r.sdnn)}</span><span class="stat-label">SDNN ms</span></div>
-        <div><span class="stat-num">${fmt(r.pnn50)}%</span><span class="stat-label">pNN50</span></div>
-        <div><span class="stat-num">${Math.round(r.validFraction * 100)}%</span><span class="stat-label">clean beats</span></div>
-      </div>
-      <h4>Beat-to-beat intervals</h4>
-      <div id="tachogram"></div>
-      ${r.quality === 'poor' ? '<p class="form-error">Signal quality was poor, so these numbers may be unreliable. Consider measuring again.</p>' : ''}
-      <div class="actions">
-        <button class="btn" id="save">Save</button>
-        <button class="btn secondary" id="again">Retry</button>
-      </div>`;
-    const tacho = r.ibis
-      .map((ibi, i) => ({ x: (r.peakTimes[i + 1] - r.peakTimes[0]) / 1000, y: r.valid[i] ? ibi : NaN }))
-      .map((d) => ({ ...d, label: `${d.x.toFixed(0)} s` }));
-    lineChart($('#tachogram'), tacho, {
-      height: 140, showDots: false, yFormat: (v) => `${Math.round(v)} ms`,
-      tip: (d) => (Number.isFinite(d.y) ? `${d.label}: <b>${Math.round(d.y)} ms</b> (${Math.round(60000 / d.y)} bpm)` : `${d.label}: artifact removed`),
+      showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>
+        <p class="muted small">Tip: rest your hand on a table, press lightly, and stay still and quiet.</p>
+        <button class="btn block" id="retry">Try again</button>`);
+      $('#retry').onclick = () => route();
     });
-    $('#save').onclick = () => {
-      upsertEntry(todayISO(), {
-        hrv: {
-          hr: r.hr, rmssd: r.rmssd, lnRmssd: r.lnRmssd, sdnn: r.sdnn, pnn50: r.pnn50,
-          beats: r.beats, validFraction: r.validFraction, quality: r.quality, channel: r.channel,
-          durationSec, posture, source: 'camera', measuredAt: new Date().toISOString(),
-        },
-      });
-      location.hash = '#today';
-    };
-    $('#again').onclick = () => route();
-  }
+  });
+  $('#cancel').addEventListener('click', () => { reading?.stop(); route(); });
 }
 
 // ----------------------------------------------------------------- history
@@ -500,15 +534,14 @@ function renderHistory() {
 
     <section class="card"><h3>Entries</h3>
       ${entries.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>HR</th><th>RMSSD</th><th>Load</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Heart</th><th>Load</th><th></th></tr></thead>
         <tbody>${[...entries].reverse().map((e) => {
-    const a = assessDay(entries, e.date);
+    const a = assessDay(entries, e.date, { heart: false });
     return `<tr>
             <td><a href="#checkin/${e.date}">${esc(shortDate(e.date))}</a></td>
             <td>${a.score ?? '–'}</td>
             <td>${wellnessScore(e.wellness) ?? '–'}</td>
-            <td>${fmt(e.hrv?.hr)}</td>
-            <td>${fmt(e.hrv?.rmssd)}</td>
+            <td>${e.hrv ? '✓' : '–'}</td>
             <td>${sessionLoad(e.training) || '–'}</td>
             <td><button class="link danger" data-del="${e.date}" aria-label="Delete ${e.date}">Delete</button></td>
           </tr>`;
@@ -528,7 +561,7 @@ function renderHistory() {
     </section>`;
 
   const $ = (sel) => view.querySelector(sel);
-  renderTrends($('#trends'), entries);
+  renderTrends($('#trends'), entries, { athlete: true });
 
   view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
     if (confirm(`Delete the entry for ${b.dataset.del}?`)) { deleteEntry(b.dataset.del); route(); }
@@ -559,7 +592,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   // for the next screen change.
   const hadController = Boolean(navigator.serviceWorker.controller);
   let updateReady = false;
-  const busy = () => /^#(checkin|measure)/.test(location.hash);
+  const busy = () => /^#(checkin|measure|morning)/.test(location.hash);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || updateReady) return;
     updateReady = true;

@@ -70,7 +70,9 @@ export function daysBetween(a, b) {
 }
 
 // Combine everything for the entry on `date`, given the full history.
-export function assessDay(entries, date) {
+// `heart: false` leaves HRV and resting HR out of the score and flags: the
+// athlete's own view, so one noisy morning reading can't colour their day.
+export function assessDay(entries, date, { heart = true } = {}) {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const today = sorted.find((e) => e.date === date);
   const prior = sorted.filter((e) => e.date < date);
@@ -80,7 +82,7 @@ export function assessDay(entries, date) {
   const wellness = wellnessScore(today?.wellness);
   if (wellness !== null) components.wellness = wellness;
 
-  const hrv = today?.hrv;
+  const hrv = heart ? today?.hrv : null;
   const hrvBase = baseline(prior.map((e) => e.hrv?.lnRmssd));
   const hrBase = baseline(prior.map((e) => e.hrv?.hr));
   let hrvZ = null;
@@ -134,4 +136,16 @@ export function assessDay(entries, date) {
     hrvZ, hrZ, hrvBaseline: hrvBase, hrBaseline: hrBase,
     baselineReadingsNeeded: hrvBase ? 0 : Math.max(0, 5 - prior.filter((e) => Number.isFinite(e.hrv?.lnRmssd)).length),
   };
+}
+
+// 7-day rolling mean of `pick(entry)` for each entry, using readings from
+// that day and the six before it; needs `min` readings, else NaN. Smooths
+// out single noisy mornings for the athlete's trend charts.
+export function rollingMean(entries, pick, { days = 7, min = 3 } = {}) {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  return sorted.map((e) => {
+    const from = shiftDate(e.date, -(days - 1));
+    const vals = sorted.filter((x) => x.date >= from && x.date <= e.date).map(pick).filter(Number.isFinite);
+    return vals.length >= min ? mean(vals) : NaN;
+  });
 }
