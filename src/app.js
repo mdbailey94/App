@@ -4,7 +4,7 @@ import {
 } from './storage.js';
 import { assessDay, sessionLoad, SYMPTOMS, WELLNESS_ITEMS, wellnessScore, baseline } from './readiness.js';
 import { analyzePPG, bandpass, fingerDetected, liveHeartRate, dominantPeriod, findPeaks } from './signal.js';
-import { PpgCamera, cameraSupported, listCameras } from './camera.js';
+import { PpgCamera, cameraSupported, listCameras, rankCameras } from './camera.js';
 import { barChart, drawWaveform, lineChart } from './charts.js';
 
 const view = document.getElementById('view');
@@ -180,11 +180,9 @@ function renderCheckin(dateArg) {
       </section>
 
       <section class="card">
-        <h3>Optional</h3>
-        <label class="field">Body mass (kg)
-          <input type="number" name="bodyMassKg" inputmode="decimal" min="20" max="250" step="0.1" value="${e.bodyMassKg ?? ''}"></label>
-        <label class="field">Notes
-          <textarea name="notes" rows="3" placeholder="Anything your coach should know">${esc(e.notes)}</textarea></label>
+        <h3>Notes <span class="muted small">(optional)</span></h3>
+        <label class="field">
+          <textarea name="notes" rows="3" aria-label="Notes" placeholder="Anything your coach should know">${esc(e.notes)}</textarea></label>
       </section>
 
       <p class="form-error" id="form-error" role="alert" hidden></p>
@@ -224,7 +222,6 @@ function renderCheckin(dateArg) {
       pain: { level: painLevel, location: painLevel ? fd.get('painLocation').trim() : '' },
       illness: fd.getAll('illness'),
       training: { durationMin: num('durationMin') || 0, rpe: num('rpe') || 0 },
-      bodyMassKg: num('bodyMassKg'),
       notes: fd.get('notes').trim(),
     });
     location.hash = fd.get('date') === todayISO() ? '#today' : '#history';
@@ -256,7 +253,8 @@ function renderMeasure() {
           </select></label>
       </div>
       <label class="field" id="camera-pick" hidden>Camera
-        <select id="camera-select"></select></label>
+        <select id="camera-select"></select>
+        <span class="muted small">Leave on Automatic unless the pulse won’t show.</span></label>
       ${supported ? '<button class="btn block" id="start">Start measurement</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
       <details class="small"><summary>Have a chest strap or other HRV app?</summary>
@@ -306,16 +304,21 @@ function renderMeasure() {
   let session = null;
   cleanup = async () => { session?.stop(); await cam.stop(); };
 
-  // Offer a camera picker on phones with several rear lenses: the pulse is
-  // only visible through the lens that sits next to the flash.
+  // The camera beside the flash is picked automatically. On phones with
+  // several rear lenses, a manual override is offered in case a phone
+  // reports its cameras unusually.
   const fillCameras = async () => {
-    const cams = await listCameras();
+    const all = await listCameras();
+    // Names and IDs are hidden until camera permission has been granted.
+    if (!all.every((c) => c.deviceId && c.label)) return;
+    const cams = rankCameras(all);
     if (cams.length < 2) return;
     const sel = $('#camera-select');
     if (!sel) return;
-    sel.innerHTML = cams.map((c, i) => `<option value="${esc(c.deviceId)}" ${c.deviceId === settings.cameraId ? 'selected' : ''}>${esc(c.label || `Camera ${i + 1}`)}</option>`).join('');
+    sel.innerHTML = `<option value="">Automatic – lens next to the flash</option>${
+      cams.map((c, i) => `<option value="${esc(c.deviceId)}" ${c.deviceId === settings.cameraOverride ? 'selected' : ''}>${esc(c.label || `Camera ${i + 1}`)}</option>`).join('')}`;
     $('#camera-pick').hidden = false;
-    sel.onchange = () => saveSettings({ cameraId: sel.value });
+    sel.onchange = () => saveSettings({ cameraOverride: sel.value || null });
   };
   fillCameras();
 
@@ -324,12 +327,16 @@ function renderMeasure() {
     $('#measure-intro').hidden = true;
     $('#measure-live').hidden = false;
     $('#measure-result').hidden = true;
+    $('#live-msg').textContent = 'Finding the camera next to the flash…';
     try {
-      const info = await cam.start($('#camera-select')?.value || settings.cameraId);
+      const override = $('#camera-select')?.value || null;
+      const info = await cam.start(override, loadSettings().flashCameraId);
+      if (!override && info.torch) saveSettings({ flashCameraId: info.deviceId });
       fillCameras();
-      if (!info.torch) {
-        $('#live-msg').textContent = 'Flashlight control isn’t available in this browser (e.g. iPhone Safari). Measure next to a bright lamp or window so light shines through your fingertip.';
-      }
+      const using = info.label ? `Using ${info.label}. ` : '';
+      $('#live-msg').textContent = info.torch
+        ? `${using}Cover the lens right beside the lit flashlight.`
+        : `${using}Flashlight control isn’t available in this browser (e.g. iPhone Safari). Measure next to a bright lamp or window so light shines through your fingertip.`;
       session = measureSession(cam, durationSec, $('#posture').value);
     } catch (err) {
       await cam.stop();

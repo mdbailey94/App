@@ -92,7 +92,6 @@ const CSV_COLUMNS = [
   ['illness_symptoms', (e) => (e.illness || []).join('; ')],
   ['training_min', (e) => e.training?.durationMin],
   ['session_rpe', (e) => e.training?.rpe],
-  ['body_mass_kg', (e) => e.bodyMassKg],
   ['hr_bpm', (e) => e.hrv?.hr?.toFixed(1)],
   ['rmssd_ms', (e) => e.hrv?.rmssd?.toFixed(1)],
   ['ln_rmssd', (e) => e.hrv?.lnRmssd?.toFixed(3)],
