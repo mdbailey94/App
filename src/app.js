@@ -32,7 +32,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || 'today').split('?');
   const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  const tab = name === 'coach' ? 'team' : name;
+  const tab = !routes[name] ? 'today' : name === 'coach' ? 'team' : name;
   document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
   render(arg, new URLSearchParams(qs || ''));
@@ -520,8 +520,29 @@ function renderHistory() {
 
 // -------------------------------------------------------------------- boot
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  // When an update takes over, reload so every file comes from the new
+  // release — but not in the middle of a check-in or HRV reading; then wait
+  // for the next screen change.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let updateReady = false;
+  const busy = () => /^#(checkin|measure)/.test(location.hash);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || updateReady) return;
+    updateReady = true;
+    if (!busy()) location.reload();
+  });
+  window.addEventListener('hashchange', () => { if (updateReady) location.reload(); });
+  // Browsers check for updates lazily (iPhones especially), so ask on every
+  // open and whenever the app comes back on screen.
+  navigator.serviceWorker.register('sw.js')
+    .then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch(() => {});
 }
 // Send new or edited days to the group sheet whenever there's a chance.
 function sync() {
