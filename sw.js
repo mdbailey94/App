@@ -1,5 +1,7 @@
-// Offline support: cache the app shell, serve it cache-first, refresh in the background.
-const CACHE = 'athlete-readiness-v5';
+// Offline support. Every request goes to the network first (revalidated with
+// the server, so files from different releases are never mixed); the cached
+// copy is used only when offline.
+const CACHE = 'athlete-readiness-v6';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'src/app.js', 'src/camera.js', 'src/charts.js', 'src/readiness.js', 'src/signal.js', 'src/storage.js',
@@ -7,7 +9,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so the copy is current.
+  e.waitUntil(caches.open(CACHE)
+    .then((c) => c.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -19,18 +24,20 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const network = fetch(e.request).then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-        }
-        return res;
-      });
-      if (cached) network.catch(() => {});
-      return cached || network;
-    }),
-  );
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  e.respondWith((async () => {
+    try {
+      // A URL (not the request) so this also works for page navigations.
+      const res = await fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' });
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(url.href, copy));
+      }
+      return res;
+    } catch {
+      const cached = await caches.match(url.href, { ignoreSearch: true });
+      return cached || Response.error();
+    }
+  })());
 });
