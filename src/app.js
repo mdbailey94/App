@@ -6,7 +6,7 @@ import { assessDay, sessionLoad, WELLNESS_ITEMS, wellnessScore } from './readine
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
-import { esc, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
 import { renderCoach, renderTeam, syncLine } from './coach.js';
 import { syncPending, syncStatus } from './team.js';
 
@@ -67,6 +67,14 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
+// Heart numbers shown plainly: no comparisons, no verdicts.
+function heartStats(hrv) {
+  return `<div class="stats two">
+    <div><span class="stat-num">${fmt(hrv.hr)}</span><span class="stat-label">heart rate (bpm)</span></div>
+    <div><span class="stat-num">${fmt(hrv.rmssd)}</span><span class="stat-label">HRV (ms)</span></div>
+  </div>`;
+}
+
 // ------------------------------------------------------------------- today
 
 function renderToday() {
@@ -100,6 +108,8 @@ function renderToday() {
         <a class="btn block" href="#morning">Start my morning check-in</a>`}
       ${a.baselineReadingsNeeded && heartDone ? `<p class="muted small">Keep taking morning readings – after ${a.baselineReadingsNeeded} more, the app knows your normal range.</p>` : ''}
     </section>
+
+    ${heartDone ? `<section class="card"><h3>This morning’s heart</h3>${heartStats(entry.hrv)}</section>` : ''}
 
     ${answered && a.flags.length ? `<section class="card"><h3>Things to note</h3><ul class="flags">
       ${a.flags.map((f) => `<li>${statusBadge({ level: f.level, label: f.level === 'critical' ? 'Important' : 'Note' })} ${esc(f.text)}</li>`).join('')}
@@ -278,7 +288,7 @@ function renderMorning() {
         <video id="camera" class="preview small" playsinline muted></video>
         <div class="reading-text">
           <b id="reading-title">Heart reading</b>
-          <span id="reading-msg" class="muted small">${supported ? 'Cover the lens below the flash, then tap Start.' : 'Camera not available in this browser.'}</span>
+          <span id="reading-msg" class="muted small">${supported ? 'Cover the lens closest to the flash, then tap Start.' : 'Camera not available in this browser.'}</span>
         </div>
         ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
       </div>
@@ -288,7 +298,7 @@ function renderMorning() {
     <section class="card">
       <h2>Morning check-in</h2>
       <ol class="steps">
-        <li>Hold your phone in one hand and rest a fingertip of that hand gently on the back, over the lens <b>directly below the flash</b> and touching the flash too.</li>
+        <li>Hold your phone in one hand and rest a fingertip of that hand gently on the back, over the lens <b>closest to the flash</b> and touching the flash too.</li>
         <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
         <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
         <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
@@ -336,7 +346,7 @@ function renderMorning() {
       posture: settings.posture,
       onMessage: (m) => setReading('Heart reading', m),
       onFinger: (f) => {
-        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the lens below the flash.', 'warn');
+        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the lens closest to the flash.', 'warn');
         else if (f === 'settling') setReading('Hold still…', 'Finding your pulse.');
         else if (f === 'lost') setReading('Finger moved', 'Put it back on the lens.', 'warn');
       },
@@ -354,7 +364,7 @@ function renderMorning() {
         state = 'done';
         hrv = out.hrv;
         $('#reading-start').textContent = 'Redo';
-        setReading('✓ Heart reading done', 'You can take your finger off the lens.', 'ok');
+        setReading('✓ Heart reading done', `${fmt(hrv.hr)} bpm · HRV ${fmt(hrv.rmssd)} ms – you can take your finger off the lens.`, 'ok');
         if (pending) save(pending);
         return;
       }
@@ -405,11 +415,10 @@ function renderMeasure() {
   view.innerHTML = `
     <section class="card" id="measure-intro">
       <h2>Heart reading</h2>
-      <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip. Your coach sees the results;
-        you’ll see your weekly trend in History.</p>
+      <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
-        <li><b>Before tapping Start</b>, gently cover the lens <b>directly below the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
+        <li><b>Before tapping Start</b>, gently cover the lens <b>closest to the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
         <li>Hold the phone steady – resting your arm on your lap or a table helps. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>
@@ -505,7 +514,7 @@ function renderMeasure() {
         // athlete sees the weekly trend and the coach sees the details.
         upsertEntry(todayISO(), { hrv: out.hrv });
         showResult(`<h3>✓ Reading saved</h3>
-          <p class="muted">Thanks! Your weekly trend is in History, and your coach can see the details.</p>
+          ${heartStats(out.hrv)}
           <a class="btn block" href="#today">Done</a>`);
         return;
       }
@@ -535,14 +544,15 @@ function renderHistory() {
 
     <section class="card"><h3>Entries</h3>
       ${entries.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Heart</th><th>Load</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>HR</th><th>HRV</th><th>Load</th><th></th></tr></thead>
         <tbody>${[...entries].reverse().map((e) => {
     const a = assessDay(entries, e.date, { heart: false });
     return `<tr>
             <td><a href="#checkin/${e.date}">${esc(shortDate(e.date))}</a></td>
             <td>${a.score ?? '–'}</td>
             <td>${wellnessScore(e.wellness) ?? '–'}</td>
-            <td>${e.hrv ? '✓' : '–'}</td>
+            <td>${fmt(e.hrv?.hr)}</td>
+            <td>${fmt(e.hrv?.rmssd)}</td>
             <td>${sessionLoad(e.training) || '–'}</td>
             <td><button class="link danger" data-del="${e.date}" aria-label="Delete ${e.date}">Delete</button></td>
           </tr>`;

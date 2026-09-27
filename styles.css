@@ -274,3 +274,5 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .done-list { list-style: none; padding: 0; margin: 12px 0 0; }
 .done-list li { padding: 2px 0; }
 .hero .actions + p { margin-top: 12px; }
+.stats.two { grid-template-columns: repeat(2, 1fr); }
+.actions > .btn { white-space: nowrap; padding: 0 12px; }

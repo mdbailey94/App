@@ -55,7 +55,7 @@ including each day's HRV and the score that combines everything.
 - **iPhone (Safari and all iOS browsers)**: works, but Apple doesn't let web pages turn on the torch,
   so measure with a bright lamp or window shining through the fingertip. A native iOS wrapper
   would be needed for torch control.
-- Camera choice is automatic (no selector): cover the lens **directly below the flash** before tapping
+- Camera choice is automatic (no selector): cover the lens **closest to the flash** before tapping
   Start. Browsers don't reveal where lenses sit, so the app briefly looks through each rear camera and
   uses the one that sees a fingertip (smooth red glow or darkness) instead of the room. The lens is
   remembered and re-checked each time. If it can't tell (e.g. in a dark room), it uses the lens found
