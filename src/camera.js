@@ -16,6 +16,23 @@ const BACK = /back|rear|environment/i;
 // Secondary lenses sit away from the flash; iPhone "Dual"/"Triple" cameras
 // are virtual devices that can switch lenses mid-reading.
 const AVOID = /ultra|tele|macro|depth|dual|triple|zoom|periscope/i;
+// iPhone multi-lens cameras are virtual: they switch lenses on their own, so
+// they are never "the lens under the finger".
+const VIRTUAL = /dual|triple/i;
+
+const PROBE_TIMEOUT_MS = 2500;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Reject if `promise` takes longer than `ms`; `onTimeout` cleans up.
+function withTimeout(promise, ms, onTimeout) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => { onTimeout?.(); reject(new Error('Camera took too long to start.')); }, ms);
+    }),
+  ]);
+}
 
 // Order rear cameras by how likely they are to be the main lens beside the
 // flash. Pure, so it can be tested without a browser.
@@ -60,6 +77,11 @@ export function looksCovered(s) {
   return s.texture < 18 && (isRedGlow(s) || s.lum < 30);
 }
 
+// Lit fingertip: unmistakable, so the search can stop at this lens.
+export function clearlyCovered(s) {
+  return looksCovered(s) && isRedGlow(s);
+}
+
 // Given [{ deviceId, stats }] for each rear camera, return the one the
 // finger is covering, or null if it can't be told apart (e.g. dark room).
 export function pickCoveredCamera(results) {
@@ -91,21 +113,51 @@ export class PpgCamera {
     this.onSample = null;
     this.lastMediaTime = -1;
     this.lastT = -Infinity;
+    this.openToken = 0;
+  }
+
+  releaseStream() {
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.track = null;
   }
 
   async open(deviceId) {
-    this.stream?.getTracks().forEach((t) => t.stop());
+    const hadStream = Boolean(this.stream);
+    this.releaseStream();
+    // Phones often refuse a camera requested the instant another closed.
+    if (hadStream) await sleep(150);
+    const token = ++this.openToken;
     const video = deviceId
       ? { deviceId: { exact: deviceId } }
       : { facingMode: { ideal: 'environment' } };
     Object.assign(video, { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } });
-    this.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-    this.track = this.stream.getVideoTracks()[0];
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || token !== this.openToken) throw err;
+      await sleep(400); // camera still busy: one retry
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    }
+    // A timed-out attempt that finishes late must not leave a camera running.
+    if (token !== this.openToken) {
+      stream.getTracks().forEach((t) => t.stop());
+      throw new Error('Camera request was cancelled.');
+    }
+    this.stream = stream;
+    this.track = stream.getVideoTracks()[0];
     return this.track;
   }
 
+  // Abandon whatever camera request is in flight.
+  cancelOpen() {
+    this.openToken++;
+    this.releaseStream();
+  }
+
   // Look through one camera briefly (flashlight on if it has one) and
-  // summarise what it sees.
+  // summarise what it sees once the picture has settled.
   async probe(deviceId) {
     await this.open(deviceId);
     this.video.srcObject = this.stream;
@@ -113,27 +165,65 @@ export class PpgCamera {
     this.video.playsInline = true;
     await this.video.play();
     await this.setTorch(true);
-    await new Promise((r) => setTimeout(r, 700)); // let exposure settle
-    const { videoWidth: w, videoHeight: h } = this.video;
-    this.ctx.drawImage(this.video, 0, 0, w, h, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
-    return frameStats(this.ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
+    const read = () => {
+      const { videoWidth: w, videoHeight: h } = this.video;
+      if (!w || !h) return null;
+      this.ctx.drawImage(this.video, 0, 0, w, h, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+      return frameStats(this.ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
+    };
+    await sleep(300);
+    let stats = read();
+    // Auto-exposure settles quickly; stop once brightness stops changing.
+    for (let waited = 300; waited < 1200; waited += 150) {
+      await sleep(150);
+      const next = read();
+      if (stats && next && Math.abs(next.lum - stats.lum) < 4) return next;
+      stats = next;
+    }
+    if (!stats) throw new Error('Camera showed no picture.');
+    return stats;
+  }
+
+  // probe() with a time limit, so one stuck camera can't stall the search.
+  probeWithin(deviceId) {
+    return withTimeout(this.probe(deviceId), PROBE_TIMEOUT_MS, () => this.cancelOpen());
   }
 
   // Find the rear lens the fingertip is covering. Browsers don't reveal where
   // each lens sits, so rather than guess, check what each camera sees.
-  // `rememberedId` (the lens found last time) is checked first.
-  async findCoveredCamera(rememberedId) {
+  // `rememberedId` (the lens found last time) is checked first; the search
+  // stops as soon as a lens clearly shows a fingertip.
+  async findCoveredCamera(rememberedId, onProgress) {
     if (rememberedId) {
       try {
-        if (looksCovered(await this.probe(rememberedId))) return rememberedId;
-      } catch { /* camera gone; search all */ }
+        if (looksCovered(await this.probeWithin(rememberedId))) return rememberedId;
+      } catch { /* camera gone or busy; search */ }
     }
-    if (!this.track) await this.open(); // camera names are only visible after permission
     const results = [];
-    for (const cam of rankCameras(await listCameras()).slice(0, 6)) {
+    // The default rear camera first: it also unlocks camera names, and is
+    // often the right lens.
+    let firstId = null;
+    try {
+      onProgress?.(1, null);
+      const stats = await this.probeWithin(undefined);
+      firstId = this.track?.getSettings?.().deviceId ?? null;
+      if (firstId && !VIRTUAL.test(this.track.label)) {
+        if (clearlyCovered(stats)) return firstId;
+        results.push({ deviceId: firstId, stats });
+      }
+    } catch (err) {
+      if (err.name === 'NotAllowedError') throw err;
+    }
+    const others = rankCameras(await listCameras())
+      .filter((c) => c.deviceId !== firstId && !VIRTUAL.test(c.label || ''))
+      .slice(0, 5);
+    for (let i = 0; i < others.length; i++) {
+      onProgress?.(i + 2, others.length + 1);
       try {
-        results.push({ deviceId: cam.deviceId, stats: await this.probe(cam.deviceId) });
-      } catch { /* skip cameras that won't open */ }
+        const stats = await this.probeWithin(others[i].deviceId);
+        if (clearlyCovered(stats)) return others[i].deviceId;
+        results.push({ deviceId: others[i].deviceId, stats });
+      } catch { /* skip cameras that won't open in time */ }
     }
     return pickCoveredCamera(results);
   }
@@ -143,7 +233,8 @@ export class PpgCamera {
   // camera module beside it, so the camera reporting torch support is the
   // one to use.
   async openFlashCamera() {
-    const first = await this.open();
+    const openWithin = (id) => withTimeout(this.open(id), PROBE_TIMEOUT_MS, () => this.cancelOpen());
+    const first = await openWithin();
     if (hasTorch(first) && !AVOID.test(first.label)) return;
     const firstId = first.getSettings?.().deviceId;
     // A flashlight camera with an unexpected label still beats one without.
@@ -151,28 +242,33 @@ export class PpgCamera {
 
     // Labels are only available after permission, i.e. after the first open.
     const ranked = rankCameras(await listCameras());
-    for (const cam of ranked.slice(0, 5)) {
+    for (const cam of ranked.filter((c) => !VIRTUAL.test(c.label || '')).slice(0, 5)) {
       if (cam.deviceId === firstId) continue;
       try {
-        const track = await this.open(cam.deviceId);
+        const track = await openWithin(cam.deviceId);
         if (hasTorch(track)) return;
       } catch { /* try the next one */ }
     }
     // No other camera offers flashlight control (e.g. iPhone browsers): use
     // the most likely main rear lens.
-    const best = torchFallback || ranked[0]?.deviceId;
-    if (best && best !== this.track?.getSettings?.().deviceId) await this.open(best);
+    const best = torchFallback || ranked.find((c) => !VIRTUAL.test(c.label || ''))?.deviceId || ranked[0]?.deviceId;
+    if (best && best !== this.track?.getSettings?.().deviceId) await openWithin(best);
+    if (!this.track) await openWithin();
   }
 
   // Uses the lens the fingertip is covering; `rememberedId` is the lens
   // found last time, used as the fallback if no covered lens is detected.
-  async start(rememberedId) {
-    const found = await this.findCoveredCamera(rememberedId);
+  async start(rememberedId, onProgress) {
+    const found = await this.findCoveredCamera(rememberedId, onProgress);
     const fallback = found ? null : rememberedId;
     const target = found || fallback;
     if (target) {
-      if (target !== this.track?.getSettings?.().deviceId) {
-        try { await this.open(target); } catch { await this.openFlashCamera(); }
+      if (!this.track || target !== this.track.getSettings?.().deviceId) {
+        try {
+          await withTimeout(this.open(target), PROBE_TIMEOUT_MS, () => this.cancelOpen());
+        } catch {
+          await this.openFlashCamera();
+        }
       }
     } else {
       await this.openFlashCamera();
@@ -238,6 +334,7 @@ export class PpgCamera {
 
   async stop() {
     this.running = false;
+    this.openToken++; // abandon any camera request still in flight
     if (this.torch) await this.setTorch(false);
     this.stream?.getTracks().forEach((t) => t.stop());
     this.video.srcObject = null;

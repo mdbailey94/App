@@ -3,7 +3,7 @@
 A phone web app that tracks an athlete's daily state from two sources:
 
 1. **A short daily questionnaire** (~1 minute) — sleep, fatigue, soreness, stress, mood,
-   motivation, pain/injury, illness symptoms, and the last 24 h of training (minutes × session RPE).
+   motivation, pain/injury, illness symptoms, and yesterday’s training (time in half-hour steps × session RPE).
 2. **Camera heart rate & HRV** — the rear camera and flashlight read the pulse through a fingertip
    (photoplethysmography, the same principle as a pulse oximeter), giving resting HR, RMSSD,
    ln RMSSD, SDNN and pNN50.
