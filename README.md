@@ -3,13 +3,13 @@
 A phone web app that tracks an athlete's daily state from two sources:
 
 1. **A short daily questionnaire** (~1 minute) — sleep, fatigue, soreness, stress, mood,
-   motivation, pain/injury, illness symptoms, and yesterday’s training (time in half-hour steps × session RPE).
+   motivation, injury (kept separate from normal training soreness), and yesterday’s training (rest day or 1–5 h in half-hour steps × session RPE).
 2. **Camera heart rate & HRV** — the rear camera and flashlight read the pulse through a fingertip
    (photoplethysmography, the same principle as a pulse oximeter), giving resting HR, RMSSD,
    ln RMSSD, SDNN and pNN50.
 
 These are combined into a 0–100 **readiness score** with plain-language advice and flags
-(short sleep, pain, illness, HRV below normal, elevated resting HR, training-load spikes).
+(short sleep, injury, HRV below normal, elevated resting HR, training-load spikes).
 
 No install and no accounts: it's an installable PWA. Data stays on the device unless the athlete joins
 a **practice group**, in which case each day's check-in is also sent to a Google Sheet the coach owns.
@@ -35,7 +35,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 | Resting HR | 15 % | Today's HR vs your baseline (higher = worse) |
 
 Components without data are left out and the rest re-weighted, so the score works from day one
-with the questionnaire alone. Illness symptoms or severe pain override the score with
+with the questionnaire alone. A major injury (unable to perform certain strokes or movements) overrides the score with
 "talk to your coach/medical staff". Acute:chronic workload ratio appears after 3 weeks of data.
 
 This is training guidance, **not a medical device**.
@@ -78,7 +78,7 @@ The group's data lives in a Google Sheet the coach owns, via a small Apps Script
 
 What the coach gets:
 
-- **Coach dashboard**: per day, who checked in (worst readiness first, with flags for illness, pain,
+- **Coach dashboard**: per day, who checked in (worst readiness first, with flags for injury,
   short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
   athlete's trends and notes.
 - **Entries** tab: one row per athlete per day (readiness, status, flags, every answer, HR/HRV, notes),

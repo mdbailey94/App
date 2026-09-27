@@ -2,7 +2,7 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, sessionLoad, SYMPTOMS, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
+import { assessDay, sessionLoad, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { analyzePPG, bandpass, fingerDetected, liveHeartRate, dominantPeriod, findPeaks } from './signal.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform, lineChart } from './charts.js';
@@ -22,14 +22,23 @@ const hoursLabel = (min) => {
 };
 
 function trainingTimeOptions(current) {
-  const steps = Array.from({ length: 13 }, (_, i) => i * 30); // 0 … 6 h
+  // Rest day, then 1 h to 5 h in half-hour steps.
+  const steps = [0, ...Array.from({ length: 9 }, (_, i) => 60 + i * 30)];
   // Keep an older entry's exact time (e.g. 75 min) rather than silently rounding it.
   if (Number.isFinite(current) && !steps.includes(current)) steps.push(current);
   steps.sort((a, b) => a - b);
   return steps.map((m) => `<option value="${m}" ${m === (current ?? 0) ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
 }
 
-const PAIN_LEVELS = ['None', 'Mild – doesn’t affect training', 'Moderate – affects training', 'Severe – can’t train normally'];
+const INJURY_LEVELS = [
+  'No injury',
+  'Minor – discomfort, but manageable',
+  'Moderate – affecting my stroke',
+  'Major – unable to perform certain strokes or movements',
+];
+
+// Quick sleep choices: 4 h to 10 h in half hours; anything else via "Other".
+const SLEEP_STEPS = Array.from({ length: 13 }, (_, i) => 4 + i * 0.5);
 
 // ------------------------------------------------------------------ router
 
@@ -146,6 +155,7 @@ function renderCheckin(dateArg) {
   const w = e.wellness || {};
   const t = e.training || {};
   const pain = e.pain || { level: 0 };
+  const otherSleep = Number.isFinite(w.sleepHours) && !SLEEP_STEPS.includes(w.sleepHours);
 
   view.innerHTML = `
     <form id="checkin" class="stack" novalidate>
@@ -156,8 +166,16 @@ function renderCheckin(dateArg) {
 
       <section class="card">
         <h3>Sleep</h3>
-        <label class="field">Hours slept last night
-          <input type="number" name="sleepHours" inputmode="decimal" min="0" max="16" step="0.25" value="${w.sleepHours ?? ''}" placeholder="e.g. 7.5" required></label>
+        <fieldset class="scale">
+          <legend>Hours slept last night</legend>
+          <div class="chips">
+            ${SLEEP_STEPS.map((h) => `
+              <label><input type="radio" name="sleepHours" value="${h}" ${w.sleepHours === h ? 'checked' : ''}><span>${h}</span></label>`).join('')}
+            <label><input type="radio" name="sleepHours" value="other" ${otherSleep ? 'checked' : ''}><span>Other</span></label>
+          </div>
+        </fieldset>
+        <label class="field" id="sleep-other" ${otherSleep ? '' : 'hidden'}>Hours slept
+          <input type="number" name="sleepOther" inputmode="decimal" min="0" max="16" step="0.25" value="${otherSleep ? w.sleepHours : ''}" placeholder="e.g. 3.5"></label>
         ${scaleField(WELLNESS_ITEMS[0], w.sleepQuality)}
       </section>
 
@@ -168,21 +186,15 @@ function renderCheckin(dateArg) {
       </section>
 
       <section class="card">
-        <h3>Pain or injury</h3>
+        <h3>Injury</h3>
+        <p class="muted small">An injury is pain from a specific problem, such as a strain, sprain, or joint or bone pain.
+          Normal muscle soreness from training goes in the soreness question above.</p>
         <fieldset class="choice">
-          ${PAIN_LEVELS.map((label, i) => `
+          ${INJURY_LEVELS.map((label, i) => `
             <label><input type="radio" name="painLevel" value="${i}" ${pain.level === i ? 'checked' : ''}> ${esc(label)}</label>`).join('')}
         </fieldset>
-        <label class="field" id="pain-location" ${pain.level ? '' : 'hidden'}>Where?
-          <input type="text" name="painLocation" value="${esc(pain.location)}" placeholder="e.g. left hamstring"></label>
-      </section>
-
-      <section class="card">
-        <h3>Illness symptoms</h3>
-        <fieldset class="choice grid2">
-          ${SYMPTOMS.map((s) => `
-            <label><input type="checkbox" name="illness" value="${esc(s)}" ${(e.illness || []).includes(s) ? 'checked' : ''}> ${esc(s)}</label>`).join('')}
-        </fieldset>
+        <label class="field" id="pain-location" ${pain.level ? '' : 'hidden'}>What and where?
+          <input type="text" name="painLocation" value="${esc(pain.location)}" placeholder="e.g. left hamstring strain"></label>
       </section>
 
       <section class="card">
@@ -213,6 +225,7 @@ function renderCheckin(dateArg) {
   };
   form.addEventListener('input', (ev) => {
     if (ev.target.name === 'painLevel') form.querySelector('#pain-location').hidden = ev.target.value === '0';
+    if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
     if (ev.target.name === 'date' && ev.target.value && ev.target.value !== date) location.hash = `#checkin/${ev.target.value}`;
     loadPreview();
   });
@@ -222,7 +235,10 @@ function renderCheckin(dateArg) {
     ev.preventDefault();
     const fd = new FormData(form);
     const missing = WELLNESS_ITEMS.filter((i) => !fd.get(i.key)).map((i) => i.label);
-    if (!fd.get('sleepHours')) missing.unshift('Hours slept');
+    const sleepHours = fd.get('sleepHours') === 'other' ? Number(fd.get('sleepOther')) : Number(fd.get('sleepHours'));
+    if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
+      missing.unshift('Hours slept');
+    }
     const err = form.querySelector('#form-error');
     if (missing.length) {
       err.textContent = `Please answer: ${missing.join(', ')}.`;
@@ -232,12 +248,11 @@ function renderCheckin(dateArg) {
     }
     const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
     const painLevel = num('painLevel') || 0;
-    const wellness = { sleepHours: num('sleepHours') };
+    const wellness = { sleepHours };
     for (const i of WELLNESS_ITEMS) wellness[i.key] = num(i.key);
     upsertEntry(fd.get('date'), {
       wellness,
       pain: { level: painLevel, location: painLevel ? fd.get('painLocation').trim() : '' },
-      illness: fd.getAll('illness'),
       training: { durationMin: num('durationMin') || 0, rpe: num('rpe') || 0 },
       notes: fd.get('notes').trim(),
     });

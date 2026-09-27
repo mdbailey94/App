@@ -11,7 +11,7 @@ const D = '2026-09-27';
 const rows = [
   { athlete: 'Sam', date: D, entry: { date: D, wellness: good } },
   { athlete: 'Ana', date: D, entry: { date: D, wellness: poor } },
-  { athlete: 'Kai', date: D, entry: { date: D, wellness: good, illness: ['Fever / chills'] } },
+  { athlete: 'Kai', date: D, entry: { date: D, wellness: good, pain: { level: 3, location: 'ankle sprain' } } },
   { athlete: 'Lou', date: shiftDate(D, -2), entry: { date: shiftDate(D, -2), wellness: good } },
   { athlete: 'Old', date: shiftDate(D, -60), entry: { date: shiftDate(D, -60), wellness: good } },
   // Same athlete, different capitalisation, earlier day.
@@ -24,7 +24,7 @@ test('groupByAthlete merges names case-insensitively and sorts by date', () => {
   assert.deepEqual(g.get('sam').entries.map((e) => e.date), [shiftDate(D, -1), D]);
 });
 
-test('groupDay: illness first, then lowest readiness; recent no-shows listed', () => {
+test('groupDay: severe injury first, then lowest readiness; recent no-shows listed', () => {
   const day = groupDay(rows, D);
   assert.deepEqual(day.checkedIn.map((c) => c.name), ['Kai', 'Ana', 'Sam']);
   assert.equal(day.checkedIn[0].assessment.status.label, 'Check in');
@@ -36,7 +36,7 @@ test('groupDay: illness first, then lowest readiness; recent no-shows listed', (
 test('groupDay ignores entries after the chosen date', () => {
   const day = groupDay(rows, shiftDate(D, -1));
   assert.deepEqual(day.checkedIn.map((c) => c.name), ['Sam']); // latest spelling shown
-  assert.ok(!day.checkedIn[0].entry.illness);
+  assert.ok(!day.checkedIn[0].entry.pain);
 });
 
 test('pendingEntries: never sent, or edited since last send', () => {

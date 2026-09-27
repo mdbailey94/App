@@ -8,15 +8,10 @@ import { mean, std } from './signal.js';
 export const WELLNESS_ITEMS = [
   { key: 'sleepQuality', label: 'Sleep quality', low: 'Very poor', high: 'Excellent' },
   { key: 'energy', label: 'Energy / fatigue', low: 'Exhausted', high: 'Very fresh' },
-  { key: 'soreness', label: 'Muscle soreness', low: 'Very sore', high: 'None' },
+  { key: 'soreness', label: 'Muscle soreness from training', low: 'Very sore', high: 'None' },
   { key: 'stress', label: 'Stress', low: 'Very stressed', high: 'Very relaxed' },
   { key: 'mood', label: 'Mood', low: 'Very low', high: 'Very positive' },
   { key: 'motivation', label: 'Motivation to train', low: 'None', high: 'Very high' },
-];
-
-export const SYMPTOMS = [
-  'Sore throat', 'Runny / blocked nose', 'Cough', 'Fever / chills',
-  'Headache', 'Upset stomach', 'Unusual tiredness',
 ];
 
 const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
@@ -103,16 +98,14 @@ export function assessDay(entries, date) {
 
   const w = today?.wellness;
   if (w?.sleepHours > 0 && w.sleepHours < 6) flags.push({ level: 'warning', text: `Short sleep (${w.sleepHours} h).` });
+  // `pain` holds the injury answer: 0 none, 1 minor (manageable),
+  // 2 moderate (affecting stroke), 3 major (can't perform some strokes).
   if (today?.pain?.level >= 2) {
     const where = today.pain.location ? ` (${today.pain.location})` : '';
     flags.push({
       level: today.pain.level >= 3 ? 'critical' : 'warning',
-      text: `${today.pain.level >= 3 ? 'Significant' : 'Moderate'} pain reported${where}.`,
+      text: `${today.pain.level >= 3 ? 'Injury stopping certain strokes or movements' : 'Injury affecting stroke'}${where}.`,
     });
-  }
-  const symptoms = today?.illness || [];
-  if (symptoms.length) {
-    flags.push({ level: 'critical', text: `Illness symptoms: ${symptoms.join(', ').toLowerCase()}.` });
   }
   const load = workload(sorted.filter((e) => e.date <= date), date);
   if (load.acwr !== null && load.acwr > 1.5) {
@@ -132,7 +125,7 @@ export function assessDay(entries, date) {
     else if (score >= 50) status = { level: 'warning', label: 'Moderate', advice: 'Train, but consider trimming volume or intensity.' };
     else status = { level: 'serious', label: 'Low', advice: 'Prioritise recovery or a light session today.' };
   }
-  if (symptoms.length || today?.pain?.level >= 3) {
+  if (today?.pain?.level >= 3) {
     status = { level: 'critical', label: 'Check in', advice: 'Talk to your coach or medical staff before training.' };
   }
 
