@@ -31,7 +31,7 @@ export function renderTeam(view, query, rerender) {
       <section class="card">
         <h2>Share with your coach</h2>
         <p>Join your practice group so your coach can follow your recovery. Your check-ins
-          (including pain, illness and notes) and heart readings are sent to the group’s spreadsheet,
+          (including injuries and notes) and heart readings are sent to the group’s spreadsheet,
           which only your coach can open.</p>
         <form id="join" class="stack">
           <label class="field">Your name <input name="athlete" autocomplete="name" required maxlength="60" placeholder="First and last name"></label>
@@ -250,7 +250,7 @@ function renderAthlete(view, rows, key) {
             <td>${sessionLoad(e.training) || '–'}</td>
           </tr>
           ${e.notes || e.pain?.level ? `<tr class="flag-row"><td colspan="7">${[
-    e.pain?.level ? `Pain ${e.pain.level}/3${e.pain.location ? ` (${esc(e.pain.location)})` : ''}` : '',
+    e.pain?.level ? `Injury ${e.pain.level}/3${e.pain.location ? ` (${esc(e.pain.location)})` : ''}` : '',
     e.notes ? `“${esc(e.notes)}”` : '',
   ].filter(Boolean).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
