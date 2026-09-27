@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessDay, baseline, sessionLoad, shiftDate, wellnessScore, workload } from '../src/readiness.js';
+import { assessDay, baseline, rollingMean, sessionLoad, shiftDate, wellnessScore, workload } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
 const awful = { sleepQuality: 1, energy: 1, soreness: 1, stress: 1, mood: 1, motivation: 1, sleepHours: 4 };
@@ -72,4 +72,25 @@ test('assessDay: injury levels 1–2 flag without overriding', () => {
   const moderate = assessDay([{ date: '2026-09-27', wellness: perfect, pain: { level: 2, location: 'knee' } }], '2026-09-27');
   assert.equal(moderate.status.label, 'Ready');
   assert.ok(moderate.flags.some((f) => f.level === 'warning' && f.text === 'Injury affecting stroke (knee).'));
+});
+
+test('assessDay with heart: false ignores HRV and resting HR', () => {
+  const entries = [];
+  for (let i = 1; i <= 10; i++) entries.push({ date: shiftDate('2026-09-27', -i), hrv: { lnRmssd: 4.2 + (i % 2 ? 0.05 : -0.05), hr: 50 + (i % 2) } });
+  entries.push({ date: '2026-09-27', wellness: perfect, hrv: { lnRmssd: 3.8, hr: 58 } });
+  const athlete = assessDay(entries, '2026-09-27', { heart: false });
+  assert.equal(athlete.score, 100);
+  assert.deepEqual(Object.keys(athlete.components), ['wellness']);
+  assert.ok(!athlete.flags.some((f) => /HRV|heart rate/.test(f.text)));
+  const coach = assessDay(entries, '2026-09-27');
+  assert.ok(coach.score < 100);
+});
+
+test('rollingMean smooths over 7 days and needs 3 readings', () => {
+  const entries = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ date: shiftDate('2026-09-01', i), v: i === 4 ? 10 : 4 }));
+  const r = rollingMean(entries, (e) => e.v);
+  assert.ok(Number.isNaN(r[0]) && Number.isNaN(r[1]));
+  assert.equal(r[2], 4);
+  assert.ok(Math.abs(r[4] - 5.2) < 1e-9); // one bad day moves the average only a little
+  assert.ok(Math.abs(r[8] - (4 * 6 + 10) / 7) < 1e-9);
 });

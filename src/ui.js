@@ -1,6 +1,6 @@
 // Small UI helpers shared by the athlete screens and the coach dashboard.
 
-import { assessDay, baseline, sessionLoad, wellnessScore } from './readiness.js';
+import { assessDay, baseline, rollingMean, sessionLoad, wellnessScore } from './readiness.js';
 import { barChart, lineChart } from './charts.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -19,28 +19,36 @@ export function statusBadge(status) {
 }
 
 // Five trend cards (readiness, HRV, resting HR, wellness, load) for one
-// athlete's entries. `who` personalises the HRV caption.
-export function renderTrends(container, entries, { who = 'your' } = {}) {
-  const recent = entries.slice(-42);
+// athlete's entries. The athlete's own view (`athlete: true`) shows readiness
+// from their answers only and 7-day averages for HRV and resting HR, so a
+// single noisy morning doesn't stand out; the coach sees daily values.
+export function renderTrends(container, entries, { who = 'your', athlete = false } = {}) {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const hrvAvg = rollingMean(sorted, (e) => e.hrv?.lnRmssd);
+  const hrAvg = rollingMean(sorted, (e) => e.hrv?.hr);
+  const smooth = new Map(sorted.map((e, i) => [e.date, { hrv: hrvAvg[i], hr: hrAvg[i] }]));
+  const recent = sorted.slice(-42);
   const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
   container.innerHTML = `
     <section class="card"><h3>Readiness</h3><div data-c="ready"></div></section>
-    <section class="card"><h3>HRV (ln RMSSD)</h3><p class="muted small">Shaded band = ${esc(who)} normal range (mean ± 1 SD of recent readings).</p><div data-c="hrv"></div></section>
-    <section class="card"><h3>Resting heart rate</h3><div data-c="hr"></div></section>
+    <section class="card"><h3>HRV (ln RMSSD)${athlete ? ' – 7-day average' : ''}</h3><p class="muted small">${athlete
+    ? 'Averaged over a week, because single readings vary a lot from day to day. Shaded band = your normal range.'
+    : `Shaded band = ${esc(who)} normal range (mean ± 1 SD of recent readings).`}</p><div data-c="hrv"></div></section>
+    <section class="card"><h3>Resting heart rate${athlete ? ' – 7-day average' : ''}</h3><div data-c="hr"></div></section>
     <section class="card"><h3>Wellness</h3><div data-c="well"></div></section>
     <section class="card"><h3>Daily training load</h3><div data-c="load"></div></section>`;
   const $ = (k) => container.querySelector(`[data-c="${k}"]`);
   const series = (fn) => recent.map((e) => ({ x: dayIndex(e.date), y: fn(e), label: shortDate(e.date) }));
 
   requestAnimationFrame(() => {
-    lineChart($('ready'), series((e) => assessDay(entries, e.date).score ?? NaN), { yMin: 0, yMax: 100 });
+    lineChart($('ready'), series((e) => assessDay(sorted, e.date, { heart: !athlete }).score ?? NaN), { yMin: 0, yMax: 100 });
     const hrvBase = baseline(entries.map((e) => e.hrv?.lnRmssd));
-    lineChart($('hrv'), series((e) => e.hrv?.lnRmssd ?? NaN), {
+    lineChart($('hrv'), series((e) => (athlete ? smooth.get(e.date).hrv : e.hrv?.lnRmssd ?? NaN)), {
       yFormat: (v) => v.toFixed(1),
       band: hrvBase ? { lo: hrvBase.mean - hrvBase.sd, hi: hrvBase.mean + hrvBase.sd } : null,
       tip: (d) => `${d.label}: <b>${fmt(d.y, 2)}</b>`,
     });
-    lineChart($('hr'), series((e) => e.hrv?.hr ?? NaN), { yFormat: (v) => `${Math.round(v)}`, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
+    lineChart($('hr'), series((e) => (athlete ? smooth.get(e.date).hr : e.hrv?.hr ?? NaN)), { yFormat: (v) => `${Math.round(v)}`, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
     lineChart($('well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });
     barChart($('load'), series((e) => sessionLoad(e.training)), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
   });
