@@ -1,0 +1,14 @@
+{
+  "name": "Athlete Readiness",
+  "short_name": "Readiness",
+  "description": "Daily athlete wellness check-in with camera-based heart rate and HRV.",
+  "start_url": "./#today",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f4f2",
+  "theme_color": "#2a78d6",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
