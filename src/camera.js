@@ -11,6 +11,35 @@ export async function listCameras() {
   return devices.filter((d) => d.kind === 'videoinput');
 }
 
+const FRONT = /front|user|selfie|facetime/i;
+const BACK = /back|rear|environment/i;
+// Secondary lenses sit away from the flash; iPhone "Dual"/"Triple" cameras
+// are virtual devices that can switch lenses mid-reading.
+const AVOID = /ultra|tele|macro|depth|dual|triple|zoom|periscope/i;
+
+// Order rear cameras by how likely they are to be the main lens beside the
+// flash. Pure, so it can be tested without a browser.
+export function rankCameras(devices) {
+  const score = (d) => {
+    const label = d.label || '';
+    let s = 0;
+    if (BACK.test(label)) s += 10;
+    if (AVOID.test(label)) s -= 5;
+    // Android Chrome labels read "camera2 0, facing back"; 0 is the main sensor.
+    const idx = label.match(/camera2?\s*(\d+)/i);
+    if (idx) s -= Number(idx[1]) * 0.1;
+    return s;
+  };
+  return devices
+    .filter((d) => !FRONT.test(d.label || ''))
+    .map((d) => ({ ...d, score: score(d) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function hasTorch(track) {
+  return Boolean(track?.getCapabilities?.().torch);
+}
+
 export function cameraSupported() {
   return Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
 }
@@ -31,13 +60,53 @@ export class PpgCamera {
     this.lastT = -Infinity;
   }
 
-  async start(deviceId) {
+  async open(deviceId) {
+    this.stream?.getTracks().forEach((t) => t.stop());
     const video = deviceId
       ? { deviceId: { exact: deviceId } }
       : { facingMode: { ideal: 'environment' } };
     Object.assign(video, { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } });
     this.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
     this.track = this.stream.getVideoTracks()[0];
+    return this.track;
+  }
+
+  // Find the rear camera that sits next to the flashlight. Browsers don't
+  // expose lens positions, but the flashlight is controlled through the
+  // camera module beside it, so the camera reporting torch support is the
+  // one to use. `preferredId` (last successful pick) is tried first.
+  async openFlashCamera(preferredId) {
+    if (preferredId) {
+      try {
+        const track = await this.open(preferredId);
+        if (hasTorch(track)) return;
+      } catch { /* camera gone or renamed; fall through */ }
+    }
+    const first = await this.open();
+    if (hasTorch(first) && !AVOID.test(first.label)) return;
+    const firstId = first.getSettings?.().deviceId;
+    // A flashlight camera with an unexpected label still beats one without.
+    const torchFallback = hasTorch(first) ? firstId : null;
+
+    // Labels are only available after permission, i.e. after the first open.
+    const ranked = rankCameras(await listCameras());
+    for (const cam of ranked.slice(0, 5)) {
+      if (cam.deviceId === firstId) continue;
+      try {
+        const track = await this.open(cam.deviceId);
+        if (hasTorch(track)) return;
+      } catch { /* try the next one */ }
+    }
+    // No other camera offers flashlight control (e.g. iPhone browsers): use
+    // the most likely main rear lens.
+    const best = torchFallback || ranked[0]?.deviceId;
+    if (best && best !== this.track?.getSettings?.().deviceId) await this.open(best);
+  }
+
+  // `deviceId` forces a specific camera; otherwise one is chosen automatically.
+  async start(deviceId, preferredId) {
+    if (deviceId) await this.open(deviceId);
+    else await this.openFlashCamera(preferredId);
     this.video.srcObject = this.stream;
     this.video.muted = true;
     this.video.playsInline = true;
@@ -45,7 +114,7 @@ export class PpgCamera {
     this.torch = await this.setTorch(true);
     this.running = true;
     this.scheduleFrame();
-    return { torch: this.torch, label: this.track.label, settings: this.track.getSettings?.() };
+    return { torch: this.torch, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
   }
 
   async setTorch(on) {
