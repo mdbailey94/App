@@ -13,6 +13,22 @@ import { syncPending, syncStatus } from './team.js';
 const view = document.getElementById('view');
 
 const RPE_LABELS = ['Rest', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
+// Training time in half-hour steps, stored as minutes.
+const hoursLabel = (min) => {
+  if (!min) return 'Rest day';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+};
+
+function trainingTimeOptions(current) {
+  const steps = Array.from({ length: 13 }, (_, i) => i * 30); // 0 … 6 h
+  // Keep an older entry's exact time (e.g. 75 min) rather than silently rounding it.
+  if (Number.isFinite(current) && !steps.includes(current)) steps.push(current);
+  steps.sort((a, b) => a - b);
+  return steps.map((m) => `<option value="${m}" ${m === (current ?? 0) ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
+}
+
 const PAIN_LEVELS = ['None', 'Mild – doesn’t affect training', 'Moderate – affects training', 'Severe – can’t train normally'];
 
 // ------------------------------------------------------------------ router
@@ -170,9 +186,9 @@ function renderCheckin(dateArg) {
       </section>
 
       <section class="card">
-        <h3>Training in the last 24 h</h3>
-        <label class="field">Total session minutes
-          <input type="number" name="durationMin" inputmode="numeric" min="0" max="600" step="5" value="${t.durationMin ?? ''}" placeholder="0 for rest day"></label>
+        <h3>Yesterday’s training</h3>
+        <label class="field">How long did you train yesterday? (all sessions)
+          <select name="durationMin">${trainingTimeOptions(t.durationMin)}</select></label>
         <label class="field">How hard was it overall? (session RPE)
           <select name="rpe">
             ${RPE_LABELS.map((l, i) => `<option value="${i}" ${t.rpe === i ? 'selected' : ''}>${i} – ${l}</option>`).join('')}
@@ -310,7 +326,9 @@ function renderMeasure() {
     $('#measure-result').hidden = true;
     $('#live-msg').textContent = 'Checking which lens your finger is covering…';
     try {
-      const info = await cam.start(loadSettings().fingerCameraId);
+      const info = await cam.start(loadSettings().fingerCameraId, (n, total) => {
+        $('#live-msg').textContent = `Checking which lens your finger is covering… (lens ${n}${total ? ` of ${total}` : ''})`;
+      });
       if (info.identified) saveSettings({ fingerCameraId: info.deviceId });
       const name = info.label ? ` (${info.label})` : '';
       const using = info.identified
