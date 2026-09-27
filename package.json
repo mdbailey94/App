@@ -1,0 +1,11 @@
+{
+  "name": "athlete-readiness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily athlete wellness questionnaire plus camera-based heart rate / HRV measurement.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python3 -m http.server 8080"
+  }
+}
