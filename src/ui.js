@@ -28,7 +28,6 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
   const hrAvg = rollingMean(sorted, (e) => e.hrv?.hr);
   const smooth = new Map(sorted.map((e, i) => [e.date, { hrv: hrvAvg[i], hr: hrAvg[i] }]));
   const recent = sorted.slice(-42);
-  const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
   container.innerHTML = `
     <section class="card"><h3>Readiness</h3><div data-c="ready"></div></section>
     <section class="card"><h3>HRV (ln RMSSD)${athlete ? ' – 7-day average' : ''}</h3><p class="muted small">${athlete
@@ -52,4 +51,24 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
     lineChart($('well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });
     barChart($('load'), series((e) => sessionLoad(e.training)), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
   });
+}
+
+// Whole days since the epoch, for chart x-axes.
+export const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
+
+// Send text on: the share sheet on phones (when `share` is set and
+// available), otherwise the clipboard, otherwise select `field` so it can be
+// copied by hand. Resolves to 'shared', 'copied' or 'selected'.
+export async function shareOrCopy(text, { share = false, field } = {}) {
+  if (share && navigator.share) {
+    try { await navigator.share({ text }); } catch { /* cancelled */ }
+    return 'shared';
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  } catch {
+    field?.select();
+    return 'selected';
+  }
 }

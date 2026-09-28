@@ -15,7 +15,7 @@ async function keepAwake() {
   try { return await navigator.wakeLock?.request('screen'); } catch { return null; }
 }
 
-export function cameraMessage(info) {
+function cameraMessage(info) {
   if (info.front) return 'Using the front camera, lit by your screen. Keep your screen brightness all the way up.';
   const name = info.label ? ` (${info.label})` : '';
   const using = info.identified

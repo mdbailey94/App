@@ -4,7 +4,7 @@ import { loadCoach, loadTeam, resetSync, saveCoach, saveTeam, todayISO } from '.
 import { addressDetails, callSheet, inviteLink, isValidSheetUrl, memberAddress, syncPending, syncStatus } from './team.js';
 import { groupByAthlete, groupDay, reminderText, teamTrend, trendSummary, watchList } from './group.js';
 import { assessDay, sessionLoad, shiftDate, wellnessScore } from './readiness.js';
-import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import { dayIndex, esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
 import { barChart, lineChart } from './charts.js';
 import qrcode from './vendor/qrcode.js';
 
@@ -136,6 +136,12 @@ export function syncLine(status) {
 
 let cache = null; // { at, rows } – kept while the app is open
 
+function signOut() {
+  saveCoach(null);
+  cache = null;
+  location.hash = '#coach';
+}
+
 async function loadRows(coach, force) {
   if (!force && cache && Date.now() - cache.at < 5 * 60000) return cache.rows;
   const res = await callSheet(coach.url, { action: 'dashboard', coachPassword: coach.password, days: 120 });
@@ -155,7 +161,7 @@ export function renderCoach(view, query) {
       view.innerHTML = `<section class="card"><h3>Couldn’t load the group sheet</h3><p>${esc(e.message)}</p>
         <div class="actions"><a class="btn" href="#coach?refresh=${Date.now()}">Try again</a>
         <button class="btn secondary" id="signout">Sign out</button></div></section>`;
-      view.querySelector('#signout').onclick = () => { saveCoach(null); cache = null; location.hash = '#coach'; };
+      view.querySelector('#signout').onclick = signOut;
     });
 }
 
@@ -266,7 +272,6 @@ function renderGroup(view, coach, rows, date, span) {
       <button class="btn secondary block" id="signout">Sign out of coach dashboard</button>
     </section>`;
 
-  const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
   const series = (k, none = NaN) => trend.map((d) => ({ x: dayIndex(d.date), y: d[k] ?? none, label: shortDate(d.date) }));
   const $t = (k) => view.querySelector(`[data-t="${k}"]`);
   requestAnimationFrame(() => {
@@ -278,25 +283,19 @@ function renderGroup(view, coach, rows, date, span) {
   const send = view.querySelector('#send-reminder');
   if (send) {
     send.onclick = async () => {
-      const text = view.querySelector('#reminder').value;
-      if (navigator.share) {
-        try { await navigator.share({ text }); } catch { /* cancelled */ }
-        return;
-      }
-      try { await navigator.clipboard.writeText(text); } catch { view.querySelector('#reminder').select(); document.execCommand?.('copy'); }
-      send.textContent = 'Copied – paste it in your group chat';
+      const field = view.querySelector('#reminder');
+      if (await shareOrCopy(field.value, { share: true, field }) === 'copied') send.textContent = 'Copied – paste it in your group chat';
     };
   }
 
   const copy = view.querySelector('#copy');
   if (copy) {
     copy.onclick = async () => {
-      const input = view.querySelector('#invite');
-      try { await navigator.clipboard.writeText(input.value); } catch { input.select(); document.execCommand?.('copy'); }
-      copy.textContent = 'Copied';
+      const field = view.querySelector('#invite');
+      if (await shareOrCopy(field.value, { field }) === 'copied') copy.textContent = 'Copied';
     };
   }
-  view.querySelector('#signout').onclick = () => { saveCoach(null); cache = null; location.hash = '#coach'; };
+  view.querySelector('#signout').onclick = signOut;
 }
 
 function renderAthlete(view, rows, key) {

@@ -78,7 +78,7 @@ export function looksCovered(s) {
 }
 
 // Lit fingertip: unmistakable, so the search can stop at this lens.
-export function clearlyCovered(s) {
+function clearlyCovered(s) {
   return looksCovered(s) && isRedGlow(s);
 }
 
@@ -157,6 +157,13 @@ export class PpgCamera {
     return this.track;
   }
 
+  async showStream() {
+    this.video.srcObject = this.stream;
+    this.video.muted = true;
+    this.video.playsInline = true;
+    await this.video.play();
+  }
+
   // Abandon whatever camera request is in flight.
   cancelOpen() {
     this.openToken++;
@@ -167,10 +174,7 @@ export class PpgCamera {
   // summarise what it sees once the picture has settled.
   async probe(deviceId) {
     await this.open(deviceId);
-    this.video.srcObject = this.stream;
-    this.video.muted = true;
-    this.video.playsInline = true;
-    await this.video.play();
+    await this.showStream();
     await this.setTorch(true);
     const read = () => {
       const { videoWidth: w, videoHeight: h } = this.video;
@@ -268,10 +272,7 @@ export class PpgCamera {
   async start(rememberedId, onProgress) {
     if (this.front) {
       await withTimeout(this.open(undefined, 'user'), PROBE_TIMEOUT_MS * 2, () => this.cancelOpen());
-      this.video.srcObject = this.stream;
-      this.video.muted = true;
-      this.video.playsInline = true;
-      await this.video.play();
+      await this.showStream();
       this.running = true;
       this.scheduleFrame();
       return { torch: false, front: true, identified: true, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
@@ -290,10 +291,7 @@ export class PpgCamera {
     } else {
       await this.openFlashCamera();
     }
-    this.video.srcObject = this.stream;
-    this.video.muted = true;
-    this.video.playsInline = true;
-    await this.video.play();
+    await this.showStream();
     this.torch = await this.setTorch(true);
     this.running = true;
     this.scheduleFrame();
