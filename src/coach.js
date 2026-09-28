@@ -75,10 +75,10 @@ export function renderTeam(view, query, rerender) {
       try {
         await callSheet(url, { action: 'ping', group });
         saveTeam({ url, group, athlete, joinedAt: new Date().toISOString() });
-        resetSync(); // send the athlete's whole history to the group
-        await syncPending();
-        history.replaceState(null, '', '#team');
-        rerender();
+        resetSync(); // send the athlete's whole history to the group…
+        syncPending(); // …in the background, so they can start straight away
+        // Straight into today's check-in; replace() keeps the join form out of Back.
+        location.replace('#morning?joined=1');
       } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
