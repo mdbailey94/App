@@ -2,7 +2,7 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, sessionLoad, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
+import { assessDay, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
@@ -214,6 +214,30 @@ function wireCheckin(form) {
   loadPreview();
 }
 
+// "Same as yesterday": the most recent earlier check-in with answers.
+function previousAnswers(date) {
+  return loadEntries().filter((x) => x.date < date && x.wellness).at(-1) || null;
+}
+
+function sameAsLabel(prev, date) {
+  if (prev.date === shiftDate(date, -1)) return 'yesterday';
+  return new Date(`${prev.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
+}
+
+// A new day starts from the last check-in's answers (not its notes), so most
+// mornings are just a quick review. Returns [entryForForm, noteHtml].
+function withDefaults(date, e) {
+  const prev = e.wellness ? null : previousAnswers(date);
+  if (!prev) return [e, ''];
+  const { wellness, pain, training } = prev;
+  const note = `
+      <section class="card prefill-note">
+        <p><b>Pre-filled with your answers from ${esc(sameAsLabel(prev, date))}.</b>
+          Change anything that’s different, then save.</p>
+      </section>`;
+  return [{ ...e, wellness, pain, training }, note];
+}
+
 // Read the answers: { missing: [labels] } or { patch } ready to save.
 function readCheckin(form) {
   const fd = new FormData(form);
@@ -246,13 +270,14 @@ function showFormError(form, text) {
 
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
-  const e = getEntry(date) || {};
+  const [e, prefillNote] = withDefaults(date, getEntry(date) || {});
   view.innerHTML = `
     <form id="checkin" class="stack" novalidate>
       <section class="card">
         <h2>Daily check-in</h2>
         <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
       </section>
+      ${prefillNote}
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit">Save check-in</button>
@@ -279,6 +304,7 @@ function renderCheckin(dateArg) {
 function renderMorning() {
   const date = todayISO();
   const e = getEntry(date) || {};
+  const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
   const supported = cameraSupported();
 
@@ -288,7 +314,7 @@ function renderMorning() {
         <video id="camera" class="preview small" playsinline muted></video>
         <div class="reading-text">
           <b id="reading-title">Heart reading</b>
-          <span id="reading-msg" class="muted small">${supported ? 'Cover the lens closest to the flash, then tap Start.' : 'Camera not available in this browser.'}</span>
+          <span id="reading-msg" class="muted small">${supported ? 'Cover the flashlight and the camera closest to it, then tap Start.' : 'Camera not available in this browser.'}</span>
         </div>
         ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
       </div>
@@ -298,7 +324,7 @@ function renderMorning() {
     <section class="card">
       <h2>Morning check-in</h2>
       <ol class="steps">
-        <li>Hold your phone in one hand and rest a fingertip of that hand gently on the back, over the lens <b>closest to the flash</b> and touching the flash too.</li>
+        <li>Hold your phone in one hand. With a fingertip of that hand, gently cover <b>both the flashlight and the camera closest to it</b> on the back.</li>
         <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
         <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
         <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
@@ -307,7 +333,8 @@ function renderMorning() {
     </section>
 
     <form id="checkin" class="stack" novalidate>
-      ${checkinSections(e)}
+      ${prefillNote}
+      ${checkinSections(formEntry)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit" id="save">Save check-in</button>
       <button class="btn secondary block" type="button" id="save-without" hidden>Save answers without a heart reading</button>
@@ -346,7 +373,7 @@ function renderMorning() {
       posture: settings.posture,
       onMessage: (m) => setReading('Heart reading', m),
       onFinger: (f) => {
-        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the lens closest to the flash.', 'warn');
+        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the flashlight and the camera closest to it.', 'warn');
         else if (f === 'settling') setReading('Hold still…', 'Finding your pulse.');
         else if (f === 'lost') setReading('Finger moved', 'Put it back on the lens.', 'warn');
       },
@@ -418,7 +445,7 @@ function renderMeasure() {
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
-        <li><b>Before tapping Start</b>, gently cover the lens <b>closest to the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
+        <li><b>Before tapping Start</b>, gently cover <b>both the flashlight and the camera closest to it</b> with a fingertip. The app checks which camera is covered and uses that one. Pressing hard blocks the pulse.</li>
         <li>Hold the phone steady – resting your arm on your lap or a table helps. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>

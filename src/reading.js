@@ -17,7 +17,7 @@ export function cameraMessage(info) {
   const name = info.label ? ` (${info.label})` : '';
   const using = info.identified
     ? `Using the lens under your finger${name}. `
-    : `Couldn’t tell which lens your finger is on, so using ${info.label || 'the camera next to the flash'}. If the preview shows the room, stop, cover the lens closest to the flash and try again in a lit room. `;
+    : `Couldn’t tell which lens your finger is on, so using ${info.label || 'the camera next to the flash'}. If the preview shows the room, stop, cover both the flashlight and the camera closest to it, and try again in a lit room. `;
   return info.torch
     ? using
     : `${using}The flashlight can’t be switched on for this lens in this browser (iPhone browsers never allow it), so measure next to a bright lamp or window.`;

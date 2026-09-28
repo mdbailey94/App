@@ -5,6 +5,15 @@ import { callSheet, inviteLink, isValidSheetUrl, syncPending, syncStatus } from 
 import { groupByAthlete, groupDay } from './group.js';
 import { assessDay, sessionLoad, shiftDate, wellnessScore } from './readiness.js';
 import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import qrcode from './vendor/qrcode.js';
+
+// Invite link as a QR code (SVG, dark on white so it scans in dark mode too).
+function qrSvg(text) {
+  const qr = qrcode(0, 'M'); // smallest size that fits, medium error correction
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 4, margin: 16, scalable: true, alt: 'QR code: invite link to join the group' });
+}
 
 // Flags are worded for the athlete ("your baseline"); reword for the coach.
 const theirs = (text) => text.replace(/\byour\b/g, 'their');
@@ -192,7 +201,9 @@ function renderGroup(view, coach, rows, date) {
 
     <section class="card">
       <h3>Invite athletes</h3>
-      ${link ? `<p class="muted small">Send this link to your athletes. It fills in the group details; they just add their name.</p>
+      ${link ? `<p class="muted small">Athletes scan this with their phone camera, or you send them the link.
+        It fills in the group details; they just add their name.</p>
+        <div class="qr">${qrSvg(link)}</div>
         <input class="copy-field" id="invite" readonly value="${esc(link)}">
         <div class="actions"><button class="btn secondary" id="copy">Copy link</button></div>`
     : '<p class="muted small">Sign out and back in with your group code to get an invite link.</p>'}
