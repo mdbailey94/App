@@ -317,6 +317,9 @@ function combinedToggle(on, onChange) {
   return [html, wire];
 }
 
+// Running as a Home Screen app rather than in a browser tab?
+const isStandalone = () => navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+
 // ------------------------------------------------------ morning check-in
 // Questions and the heart reading at the same time: the reading runs in a
 // bar pinned at the top while the athlete answers with their other hand.
@@ -350,6 +353,8 @@ function renderMorning(query = new URLSearchParams()) {
     ${team ? `<section class="card welcome" role="status">
       <p><b>✓ You’re in, ${esc(team.athlete.split(' ')[0])}!</b> You’ve joined ${esc(team.group)}, and your check-ins will go to your coach.
         Now do today’s check-in below.</p>
+      ${isStandalone() ? '' : `<p class="small home-tip">📲 <b>Add this app to your Home Screen now</b>
+        (iPhone: Share → Add to Home Screen) – it will remember your group.</p>`}
     </section>` : ''}
 
     ${combined ? `<section class="card">
@@ -712,6 +717,13 @@ window.addEventListener('hashchange', sync);
 window.addEventListener('online', sync);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
 setInterval(() => { if (syncStatus().pending) sync(); }, 60000);
+
+// A Home Screen app on iPhone starts with empty storage but keeps the address
+// it was added from. If that address carries group details and this copy
+// hasn't joined yet, open the (pre-filled) join screen: one tap to finish.
+if (!loadTeam() && new URLSearchParams(location.search).get('u') && !/^#(team|coach)/.test(location.hash)) {
+  history.replaceState(null, '', `${location.pathname}${location.search}#team`);
+}
 
 route();
 sync();

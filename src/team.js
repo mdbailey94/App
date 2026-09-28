@@ -91,8 +91,25 @@ export function syncStatus() {
   return { joined: true, ...team, pending: pendingEntries(loadEntries()).length };
 }
 
+// Group details live in the page address as well as this browser's storage.
+// On iPhone a Home Screen app gets fresh storage but keeps the address it was
+// added from, so carrying u (sheet link), g (group code) and n (name) there
+// lets the installed app finish joining with one tap.
+const appBase = (url) => url.split(/[?#]/)[0];
+
 // Invite link the coach shares; opening it pre-fills the athlete's Team tab.
 export function inviteLink(appUrl, sheetUrl, group) {
-  const base = appUrl.split('#')[0];
-  return `${base}#team?u=${encodeURIComponent(sheetUrl)}&g=${encodeURIComponent(group)}`;
+  return `${appBase(appUrl)}?${new URLSearchParams({ u: sheetUrl, g: group })}#team`;
+}
+
+// The address to keep once an athlete has joined.
+export function memberAddress(appUrl, team, hash = '') {
+  return `${appBase(appUrl)}?${new URLSearchParams({ u: team.url, g: team.group, n: team.athlete })}${hash}`;
+}
+
+// Group details from the address (query string, or the older #team?… form).
+export function addressDetails(search, hashQuery) {
+  const a = new URLSearchParams(search);
+  const pick = (k) => hashQuery?.get(k) || a.get(k) || '';
+  return { url: pick('u'), group: pick('g'), athlete: pick('n') };
 }

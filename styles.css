@@ -287,3 +287,4 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 #measure-result .offer { margin: 16px 0 0; }
 .toggle-line { margin: 8px 0 0; }
 .welcome a { white-space: nowrap; margin-left: 4px; }
+.home-tip { margin-top: 10px !important; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }

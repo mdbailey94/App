@@ -1,7 +1,7 @@
 // Team tab (athletes join the group) and the coach dashboard.
 
 import { loadCoach, loadTeam, resetSync, saveCoach, saveTeam, todayISO } from './storage.js';
-import { callSheet, inviteLink, isValidSheetUrl, syncPending, syncStatus } from './team.js';
+import { addressDetails, callSheet, inviteLink, isValidSheetUrl, memberAddress, syncPending, syncStatus } from './team.js';
 import { groupByAthlete, groupDay } from './group.js';
 import { assessDay, sessionLoad, shiftDate, wellnessScore } from './readiness.js';
 import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
@@ -32,18 +32,22 @@ const since = (iso) => {
 export function renderTeam(view, query, rerender) {
   const $ = (sel) => view.querySelector(sel);
   const status = syncStatus();
-  const invitedUrl = query.get('u') || '';
-  const invitedGroup = query.get('g') || '';
+  const invited = addressDetails(location.search, query);
+  const invitedUrl = invited.url;
+  const invitedGroup = invited.group;
+  const returning = Boolean(invited.athlete && invitedUrl && invitedGroup);
 
   if (!status.joined) {
     view.innerHTML = `
       <section class="card">
-        <h2>Share with your coach</h2>
-        <p>Join your practice group so your coach can follow your recovery. Your check-ins
+        <h2>${returning ? `Finish setting up, ${esc(invited.athlete.split(' ')[0])}` : 'Share with your coach'}</h2>
+        ${returning ? `<p>This copy of the app needs to reconnect to <b>${esc(invitedGroup)}</b>. Check your name and tap
+          <b>Join group</b>.</p>` : ''}
+        <p${returning ? ' class="muted small"' : ''}>Join your practice group so your coach can follow your recovery. Your check-ins
           (including injuries and notes) and heart readings are sent to the group’s spreadsheet,
           which only your coach can open.</p>
         <form id="join" class="stack">
-          <label class="field">Your name <input name="athlete" autocomplete="name" required maxlength="60" placeholder="First and last name"></label>
+          <label class="field">Your name <input name="athlete" autocomplete="name" required maxlength="60" placeholder="First and last name" value="${esc(invited.athlete)}"></label>
           <label class="field">Group code <input name="group" required value="${esc(invitedGroup)}" autocapitalize="characters"></label>
           <label class="field" ${invitedUrl ? 'hidden' : ''}>Group sheet link
             <input name="url" type="url" required value="${esc(invitedUrl)}" placeholder="https://script.google.com/macros/s/…/exec">
@@ -77,8 +81,10 @@ export function renderTeam(view, query, rerender) {
         saveTeam({ url, group, athlete, joinedAt: new Date().toISOString() });
         resetSync(); // send the athlete's whole history to the group…
         syncPending(); // …in the background, so they can start straight away
-        // Straight into today's check-in; replace() keeps the join form out of Back.
-        location.replace('#morning?joined=1');
+        // Keep the group details in the address (for Add to Home Screen) and go
+        // straight into today's check-in; replaceState keeps the form out of Back.
+        history.replaceState(null, '', memberAddress(location.href, loadTeam(), '#morning?joined=1'));
+        rerender();
       } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
@@ -110,6 +116,7 @@ export function renderTeam(view, query, rerender) {
   $('#leave').onclick = () => {
     if (confirm('Stop sharing with your coach? Data already sent stays in the group sheet; your coach can remove it.')) {
       saveTeam(null);
+      history.replaceState(null, '', `${location.pathname}#team`);
       rerender();
     }
   };
