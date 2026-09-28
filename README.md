@@ -108,7 +108,14 @@ Camera access requires HTTPS (or `localhost`).
 ```sh
 npm start          # serves on http://localhost:8080
 npm test           # unit tests (Node 20+, no dependencies)
+npm run test:e2e   # browser tests (after `npm ci` and `npx playwright install chromium`)
 ```
+
+The browser tests (`tests/e2e/`) drive the real app in Chromium. The camera is Chrome's fake camera
+playing a generated fingertip video, and group sheets are the Apps Script running on a simulated
+Sheet, so readings, check-ins, joining a group and the coach dashboard are all covered without a
+phone or Google account. They take about 2–3 minutes (each heart reading is a real minute), and CI
+runs them before every deploy.
 
 To use it on a phone, deploy the folder to any static HTTPS host. The included workflow publishes
 to **GitHub Pages** on every push to `main` — enable it once under
@@ -147,7 +154,10 @@ src/team.js       sending entries to the group sheet (retries, invite links)
 src/group.js      coach-side group summary (pure, tested)
 src/coach.js      Team tab and coach dashboard
 src/ui.js         shared UI helpers and trend charts
-src/app.js        UI and routing
+src/checkin-form.js  the daily questionnaire form
+src/reading.js    one heart reading: lens search, recording, analysis, diagnostics
+src/app.js        screens and routing
 apps-script/      Google Apps Script for the group sheet (tested against a simulated Sheet)
 tests/            node:test suites
+tests/e2e/        browser tests (Playwright), fake camera video and test server
 ```
