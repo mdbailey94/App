@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { groupByAthlete, groupDay } from '../src/group.js';
-import { buildItems, inviteLink, isValidSheetUrl, pendingEntries } from '../src/team.js';
+import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries } from '../src/team.js';
 import { shiftDate } from '../src/readiness.js';
 
 const good = { sleepHours: 8, sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5 };
@@ -57,7 +57,13 @@ test('buildItems sends the entry without sync bookkeeping, plus a summary', () =
 
 test('invite links and sheet URL validation', () => {
   const link = inviteLink('https://x.github.io/App/#coach', 'https://script.google.com/macros/s/AB/exec', 'Eagles 1');
-  assert.equal(link, 'https://x.github.io/App/#team?u=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAB%2Fexec&g=Eagles%201');
+  assert.equal(link, 'https://x.github.io/App/?u=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAB%2Fexec&g=Eagles+1#team');
+  // The group travels in the query, so an iPhone Home Screen app (fresh storage) still has it.
+  const home = memberAddress('https://x.github.io/App/?old=1#today', { url: 'https://script.google.com/macros/s/AB/exec', group: 'Eagles 1', athlete: 'Sam Lee' }, '#morning');
+  assert.equal(home, 'https://x.github.io/App/?u=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAB%2Fexec&g=Eagles+1&n=Sam+Lee#morning');
+  assert.deepEqual(addressDetails(new URL(home).search), { url: 'https://script.google.com/macros/s/AB/exec', group: 'Eagles 1', athlete: 'Sam Lee' });
+  // Older invite links carried the details in the hash; those still work.
+  assert.deepEqual(addressDetails('', new URLSearchParams('u=U&g=G')), { url: 'U', group: 'G', athlete: '' });
   assert.ok(isValidSheetUrl('https://script.google.com/macros/s/AB/exec'));
   assert.ok(!isValidSheetUrl('https://evil.example.com/collect'));
 });
