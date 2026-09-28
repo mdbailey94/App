@@ -3,7 +3,9 @@
 const ENTRIES_KEY = 'athlete-readiness/entries/v1';
 const SETTINGS_KEY = 'athlete-readiness/settings/v1';
 
-const DEFAULT_SETTINGS = { durationSec: 60, posture: 'lying' };
+// hrvDuringCheckin: take the heart reading while answering the questions.
+// Off until the athlete opts in (offered after their first normal reading).
+const DEFAULT_SETTINGS = { durationSec: 60, posture: 'lying', hrvDuringCheckin: false };
 
 function read(key, fallback) {
   try {

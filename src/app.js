@@ -46,7 +46,7 @@ const routes = {
   today: renderToday,
   checkin: renderCheckin,
   morning: (arg, query) => renderMorning(query),
-  measure: renderMeasure,
+  measure: (arg, query) => renderMeasure(query),
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
   coach: (arg, query) => renderCoach(view, query),
@@ -297,6 +297,26 @@ function renderCheckin(dateArg) {
   });
 }
 
+// Has this athlete done a camera reading the normal way yet? Doing the reading
+// during the check-in is only offered after that.
+const hasCameraReading = () => loadEntries().some((x) => x.hrv?.source === 'camera');
+
+// Offer to switch the combined mode on or off. `onChange` re-renders.
+function combinedToggle(on, onChange) {
+  const html = on
+    ? `<p class="muted small toggle-line">Heart reading during check-in: <b>on</b> ·
+         <button class="link" type="button" id="combined-toggle">Turn off</button></p>`
+    : `<section class="card offer">
+         <p><b>Save time:</b> take your heart reading while you answer the questions.</p>
+         <button class="btn secondary" type="button" id="combined-toggle">Turn on</button>
+       </section>`;
+  const wire = (root) => root.querySelector('#combined-toggle')?.addEventListener('click', () => {
+    saveSettings({ hrvDuringCheckin: !on });
+    onChange();
+  });
+  return [html, wire];
+}
+
 // ------------------------------------------------------ morning check-in
 // Questions and the heart reading at the same time: the reading runs in a
 // bar pinned at the top while the athlete answers with their other hand.
@@ -308,9 +328,14 @@ function renderMorning(query = new URLSearchParams()) {
   const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
   const supported = cameraSupported();
+  const experienced = supported && hasCameraReading();
+  // Questions and reading together only once the athlete has opted in; until
+  // then the check-in is questions only, followed by the normal HRV screen.
+  const combined = experienced && settings.hrvDuringCheckin;
+  const [toggleHtml, wireToggle] = experienced ? combinedToggle(combined, () => route()) : ['', () => {}];
 
   view.innerHTML = `
-    <section class="card reading-bar" id="reading">
+    ${combined ? `<section class="card reading-bar" id="reading">
       <div class="reading-head">
         <video id="camera" class="preview small" playsinline muted></video>
         <div class="reading-text">
@@ -320,14 +345,14 @@ function renderMorning(query = new URLSearchParams()) {
         ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
       </div>
       <div class="progress" id="reading-progress" hidden><div id="progress-bar"></div></div>
-    </section>
+    </section>` : ''}
 
     ${team ? `<section class="card welcome" role="status">
       <p><b>✓ You’re in, ${esc(team.athlete.split(' ')[0])}!</b> You’ve joined ${esc(team.group)}, and your check-ins will go to your coach.
         Now do today’s check-in below.</p>
     </section>` : ''}
 
-    <section class="card">
+    ${combined ? `<section class="card">
       <h2>Morning check-in</h2>
       <ol class="steps">
         <li>Hold your phone in one hand. With a fingertip of that hand, gently cover <b>both the flashlight and the camera closest to it</b> on the back.</li>
@@ -336,7 +361,12 @@ function renderMorning(query = new URLSearchParams()) {
         <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
       </ol>
       ${e.hrv ? '<p class="muted small">You already have a heart reading today. Start only if you want to redo it.</p>' : ''}
+      ${toggleHtml}
+    </section>` : `<section class="card">
+      <h2>Morning check-in</h2>
+      <p class="muted">Answer the questions, then tap <b>Save</b>.${supported && !e.hrv ? ' Your 1-minute heart reading comes next.' : ''}</p>
     </section>
+    ${e.hrv ? '' : toggleHtml}`}
 
     <form id="checkin" class="stack" novalidate>
       ${prefillNote}
@@ -349,12 +379,13 @@ function renderMorning(query = new URLSearchParams()) {
   const $ = (sel) => view.querySelector(sel);
   const form = $('#checkin');
   wireCheckin(form);
+  wireToggle(view);
 
   let state = 'idle'; // idle | running | done | failed
   let hrv = null;
   let pending = null; // answers waiting for the reading to finish
   let reading = null;
-  const cam = supported ? new PpgCamera($('#camera')) : null;
+  const cam = combined ? new PpgCamera($('#camera')) : null;
   cleanup = async () => { reading?.stop(); await cam?.stop(); };
 
   const setReading = (title, msg, level) => {
@@ -364,7 +395,9 @@ function renderMorning(query = new URLSearchParams()) {
   };
   const save = (patch) => {
     upsertEntry(date, hrv ? { ...patch, hrv } : patch);
-    location.hash = '#today';
+    // Not doing the reading here: go on to the normal HRV screen if today
+    // still needs one.
+    location.hash = !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
   };
   const resetSave = () => { $('#save').disabled = false; $('#save').textContent = 'Save check-in'; };
 
@@ -425,7 +458,7 @@ function renderMorning(query = new URLSearchParams()) {
       $('#save').textContent = 'Saving when the heart reading finishes…';
       return;
     }
-    if (state === 'done' || e.hrv || !supported) { save(patch); return; }
+    if (!combined || state === 'done' || e.hrv) { save(patch); return; }
     $('#save-without').hidden = false;
     showFormError(form, state === 'failed'
       ? 'The heart reading didn’t work. Try it again, or save your answers without it.'
@@ -442,10 +475,15 @@ function renderMorning(query = new URLSearchParams()) {
 
 // ------------------------------------------------------------ HRV measure
 
-function renderMeasure() {
+function renderMeasure(query = new URLSearchParams()) {
   const settings = loadSettings();
   const supported = cameraSupported();
+  const afterCheckin = query.get('after') === 'checkin';
   view.innerHTML = `
+    ${afterCheckin ? `<section class="card welcome" id="next-step" role="status">
+      <p><b>✓ Answers saved.</b> Last step: your 1-minute heart reading.
+        <a href="#today" id="skip">Skip for today</a></p>
+    </section>` : ''}
     <section class="card" id="measure-intro">
       <h2>Heart reading</h2>
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
@@ -526,6 +564,7 @@ function renderMeasure() {
 
   $('#start').addEventListener('click', () => {
     $('#measure-intro').hidden = true;
+    $('#next-step')?.remove();
     $('#measure-live').hidden = false;
     reading = startReading(cam, {
       durationSec: +$('#duration').value,
@@ -546,9 +585,17 @@ function renderMeasure() {
         // No numbers here on purpose: single readings vary a lot, so the
         // athlete sees the weekly trend and the coach sees the details.
         upsertEntry(todayISO(), { hrv: out.hrv });
+        // After a first reading the normal way, offer to do it during the check-in.
+        const [offer, wireOffer] = loadSettings().hrvDuringCheckin ? ['', () => {}]
+          : combinedToggle(false, () => {
+            const card = view.querySelector('#measure-result .offer');
+            if (card) card.innerHTML = '<p><b>✓ Turned on.</b> Next time, your heart reading runs while you answer the questions.</p>';
+          });
         showResult(`<h3>✓ Reading saved</h3>
           ${heartStats(out.hrv)}
-          <a class="btn block" href="#today">Done</a>`);
+          <a class="btn block" href="#today">Done</a>
+          ${offer}`);
+        wireOffer(view);
         return;
       }
       showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>

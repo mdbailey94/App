@@ -282,3 +282,8 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .qr svg { display: block; width: 100%; height: auto; }
 .welcome { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
 .welcome p { margin: 0; }
+.offer { border-color: var(--accent); }
+.offer p { margin: 0 0 10px; }
+#measure-result .offer { margin: 16px 0 0; }
+.toggle-line { margin: 8px 0 0; }
+.welcome a { white-space: nowrap; margin-left: 4px; }

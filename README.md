@@ -18,9 +18,10 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 
 - **Today** — one button: **Start my morning check-in**. Afterwards: a readiness score from the athlete's
   own answers, and ✓ for questions answered / heart reading saved.
-- **Check-in (morning)** — the heart reading runs in a bar pinned at the top while the athlete answers
-  the questions with their other hand (about a minute in total). Saving early waits for the reading to
-  finish; if the reading fails they can retry or save the answers without it.
+- **Check-in (morning)** — the questions (about a minute), then straight on to the 1-minute heart
+  reading on the HRV screen (or *Skip for today*). After their first reading, athletes can turn on
+  **heart reading during check-in**: the reading then runs in a bar pinned at the top while they answer
+  with their other hand; saving early waits for it to finish.
   A new day opens **pre-filled with the last check-in's answers** (not notes), so most mornings are a
   quick review before saving.
 - **HRV** — a heart reading on its own (1–3 min), ending in "Reading saved ✓". Manual entry for chest
