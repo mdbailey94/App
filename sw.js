@@ -1,11 +1,14 @@
 // Offline support. Every request goes to the network first (revalidated with
 // the server, so files from different releases are never mixed); the cached
 // copy is used only when offline.
-const CACHE = 'athlete-readiness-v10';
+const CACHE = 'athlete-readiness-v11';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'src/app.js', 'src/camera.js', 'src/charts.js', 'src/readiness.js', 'src/signal.js', 'src/storage.js',
   'src/ui.js', 'src/team.js', 'src/group.js', 'src/coach.js', 'src/reading.js', 'src/vendor/qrcode.js', 'apps-script/Code.gs',
+  'pool/', 'pool/index.html', 'pool/pool.css', 'pool/manifest.webmanifest', 'pool/icon.svg',
+  'pool/src/app.js', 'pool/src/capture.js', 'pool/src/grid.js', 'pool/src/homography.js', 'pool/src/laps.js',
+  'pool/src/session.js', 'pool/src/store.js', 'pool/src/strokes.js', 'pool/src/tracker.js',
 ];
 
 self.addEventListener('install', (e) => {
