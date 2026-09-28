@@ -114,6 +114,8 @@ export class PpgCamera {
     this.lastMediaTime = -1;
     this.lastT = -Infinity;
     this.openToken = 0;
+    // Experimental: fingertip on the front (selfie) camera, lit by the screen.
+    this.front = false;
     // Which frame clock is in use (reported in reading diagnostics).
     this.clock = null;
     this.trustCapture = true;
@@ -127,7 +129,7 @@ export class PpgCamera {
     this.track = null;
   }
 
-  async open(deviceId) {
+  async open(deviceId, facing = 'environment') {
     const hadStream = Boolean(this.stream);
     this.releaseStream();
     // Phones often refuse a camera requested the instant another closed.
@@ -135,7 +137,7 @@ export class PpgCamera {
     const token = ++this.openToken;
     const video = deviceId
       ? { deviceId: { exact: deviceId } }
-      : { facingMode: { ideal: 'environment' } };
+      : { facingMode: { ideal: facing } };
     Object.assign(video, { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } });
     let stream;
     try {
@@ -264,6 +266,16 @@ export class PpgCamera {
   // Uses the lens the fingertip is covering; `rememberedId` is the lens
   // found last time, used as the fallback if no covered lens is detected.
   async start(rememberedId, onProgress) {
+    if (this.front) {
+      await withTimeout(this.open(undefined, 'user'), PROBE_TIMEOUT_MS * 2, () => this.cancelOpen());
+      this.video.srcObject = this.stream;
+      this.video.muted = true;
+      this.video.playsInline = true;
+      await this.video.play();
+      this.running = true;
+      this.scheduleFrame();
+      return { torch: false, front: true, identified: true, label: this.track.label, deviceId: this.track.getSettings?.().deviceId };
+    }
     const found = await this.findCoveredCamera(rememberedId, onProgress);
     const fallback = found ? null : rememberedId;
     const target = found || fallback;
@@ -355,7 +367,7 @@ export class PpgCamera {
     const st = this.track?.getSettings?.() || {};
     return {
       label: this.track?.label || '', width: st.width, height: st.height, frameRate: st.frameRate,
-      torch: this.torch, clock: this.clock,
+      torch: this.torch, front: this.front, clock: this.clock,
     };
   }
 

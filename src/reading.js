@@ -16,6 +16,7 @@ async function keepAwake() {
 }
 
 export function cameraMessage(info) {
+  if (info.front) return 'Using the front camera, lit by your screen. Keep your screen brightness all the way up.';
   const name = info.label ? ` (${info.label})` : '';
   const using = info.identified
     ? `Using the lens under your finger${name}. `
@@ -56,6 +57,7 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
     wake = await keepAwake();
     let info;
     try {
+      if (cam.front) onMessage?.('Starting the front camera…');
       info = await cam.start(loadSettings().fingerCameraId, (n, total) => {
         onMessage?.(`Checking which lens your finger is covering… (lens ${n}${total ? ` of ${total}` : ''})`);
       });
@@ -69,7 +71,7 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
       return;
     }
     if (stopped) { cam.stop(); return; }
-    if (info.identified) saveSettings({ fingerCameraId: info.deviceId });
+    if (info.identified && !info.front) saveSettings({ fingerCameraId: info.deviceId });
     onMessage?.(cameraMessage(info));
     const cameras = await listCameras().catch(() => []);
     diag = { ...diag, lensFound: info.identified, cameras: cameras.map((c) => c.label || '?'), camera: cam.describe?.() };
