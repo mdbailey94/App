@@ -2,7 +2,10 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, SCALE_MAX, scaleMaxOf, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
+import {
+  assessDay, checkInStreak, isReadingDay, nextReadingDay, SCALE_MAX, scaleMaxOf, sessionLoad, shiftDate, WEEKDAYS,
+  WELLNESS_ITEMS, wellnessScore,
+} from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
@@ -86,6 +89,11 @@ function renderToday() {
   const a = assessDay(entries, date, { heart: false });
   const answered = Boolean(entry?.wellness);
   const heartDone = Boolean(entry?.hrv);
+  const { hrvDays } = loadSettings();
+  const readingDay = isReadingDay(hrvDays, date);
+  const streak = checkInStreak(entries, date);
+  const streakLine = streak.days >= 2
+    ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.doneToday ? '' : ' – check in today to keep it going'}</p>` : '';
 
   view.innerHTML = `
     <section class="card hero">
@@ -97,14 +105,17 @@ function renderToday() {
         </div>
         <ul class="done-list">
           <li>✓ Questions answered</li>
-          <li>${heartDone ? '✓ Heart reading saved' : '<span class="muted">– No heart reading today</span>'}</li>
+          <li>${heartDone ? '✓ Heart reading saved' : readingDay ? '<span class="muted">– No heart reading today</span>'
+    : `<span class="muted">– No heart reading needed today (next: ${esc(nextReadingDay(hrvDays, date))})</span>`}</li>
         </ul>
+        ${streakLine}
         <div class="actions">
           <a class="btn secondary" href="#checkin">Edit answers</a>
           <a class="btn secondary" href="#measure">${heartDone ? 'Redo reading' : 'Add reading'}</a>
         </div>` : `
         <h2>Good morning</h2>
-        <p class="muted">About a minute: answer a few questions while your phone reads your pulse.</p>
+        <p class="muted">${readingDay ? 'About two minutes: a few questions and a 1-minute heart reading.' : 'About a minute: a few quick questions. No heart reading needed today.'}</p>
+        ${streakLine}
         <a class="btn block" href="#morning">Start my morning check-in</a>`}
       ${a.baselineReadingsNeeded && heartDone ? `<p class="muted small">Keep taking morning readings – after ${a.baselineReadingsNeeded} more, the app knows your normal range.</p>` : ''}
     </section>
@@ -139,7 +150,7 @@ function scaleField(item, value) {
         ${Array.from({ length: SCALE_MAX }, (_, i) => i + 1).map((n) => `
           <label><input type="radio" name="${item.key}" value="${n}" ${value === n ? 'checked' : ''} required><span>${n}</span></label>`).join('')}
       </div>
-      <div class="scale-ends"><span>${esc(item.low)}</span><span>${esc(item.high)}</span></div>
+      <div class="scale-ends"><span><span aria-hidden="true">😣</span> ${esc(item.low)}</span><span>${esc(item.high)} <span aria-hidden="true">😄</span></span></div>
     </fieldset>`;
 }
 
@@ -336,11 +347,13 @@ function renderMorning(query = new URLSearchParams()) {
   const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
   const supported = cameraSupported();
+  // Heart readings are only asked for on the athlete's reading days.
+  const readingDay = isReadingDay(settings.hrvDays, date);
   const experienced = supported && hasCameraReading();
   // Questions and reading together only once the athlete has opted in; until
   // then the check-in is questions only, followed by the normal HRV screen.
-  const combined = experienced && settings.hrvDuringCheckin;
-  const [toggleHtml, wireToggle] = experienced ? combinedToggle(combined, () => route()) : ['', () => {}];
+  const combined = readingDay && experienced && settings.hrvDuringCheckin;
+  const [toggleHtml, wireToggle] = readingDay && experienced ? combinedToggle(combined, () => route()) : ['', () => {}];
 
   view.innerHTML = `
     ${combined ? `<section class="card reading-bar" id="reading">
@@ -374,7 +387,8 @@ function renderMorning(query = new URLSearchParams()) {
       ${toggleHtml}
     </section>` : `<section class="card">
       <h2>Morning check-in</h2>
-      <p class="muted">Answer the questions, then tap <b>Save</b>.${supported && !e.hrv ? ' Your 1-minute heart reading comes next.' : ''}</p>
+      <p class="muted">Answer the questions, then tap <b>Save</b>.${!readingDay ? ' No heart reading needed today.'
+    : supported && !e.hrv ? ' Your 1-minute heart reading comes next.' : ''}</p>
     </section>
     ${e.hrv ? '' : toggleHtml}`}
 
@@ -385,6 +399,10 @@ function renderMorning(query = new URLSearchParams()) {
       <button class="btn block" type="submit" id="save">Save check-in</button>
       <button class="btn secondary block" type="button" id="save-without" hidden>Save answers without a heart reading</button>
     </form>`;
+
+  // Show the welcome once: an app added to the Home Screen from this page
+  // would otherwise reopen it every time.
+  if (team) history.replaceState(null, '', location.href.replace(/\?joined=1$/, ''));
 
   const $ = (sel) => view.querySelector(sel);
   const form = $('#checkin');
@@ -407,7 +425,7 @@ function renderMorning(query = new URLSearchParams()) {
     upsertEntry(date, hrv ? { ...patch, hrv } : patch);
     // Not doing the reading here: go on to the normal HRV screen if today
     // still needs one.
-    location.hash = !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
+    location.hash = readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
   };
   const resetSave = () => { $('#save').disabled = false; $('#save').textContent = 'Save check-in'; };
 
@@ -513,6 +531,13 @@ function renderMeasure(query = new URLSearchParams()) {
             ${[60, 120, 180].map((s) => `<option value="${s}" ${settings.durationSec === s ? 'selected' : ''}>${s / 60} min</option>`).join('')}
           </select></label>
       </div>
+      <fieldset class="scale">
+        <legend>My reading days</legend>
+        <div class="chips days">
+          ${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" name="hrvDay" value="${d}" ${settings.hrvDays.includes(d) ? 'checked' : ''}><span>${WEEKDAYS[d]}</span></label>`).join('')}
+        </div>
+        <p class="muted small">The check-in only asks for a reading on these days. Three a week is plenty for your trends.</p>
+      </fieldset>
       ${supported ? '<button class="btn block" id="start">Start reading</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
       <details class="small"><summary>Have a chest strap or other HRV app?</summary>
@@ -545,6 +570,10 @@ function renderMeasure(query = new URLSearchParams()) {
   const $ = (sel) => view.querySelector(sel);
   $('#posture').addEventListener('change', (e) => saveSettings({ posture: e.target.value }));
   $('#duration').addEventListener('change', (e) => saveSettings({ durationSec: +e.target.value }));
+  view.querySelectorAll('input[name=hrvDay]').forEach((box) => box.addEventListener('change', () => {
+    const days = [...view.querySelectorAll('input[name=hrvDay]:checked')].map((x) => +x.value);
+    saveSettings({ hrvDays: days }); // none ticked = every day
+  }));
 
   $('#manual').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -610,11 +639,35 @@ function renderMeasure(query = new URLSearchParams()) {
       }
       showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>
         <p class="muted small">Tip: rest your arm on your lap or a table, press lightly, and stay still and quiet.</p>
-        <button class="btn block" id="retry">Try again</button>`);
+        <button class="btn block" id="retry">Try again</button>
+        ${diagnostics(out.diag)}`);
       $('#retry').onclick = () => route();
+      wireDiagnostics(view);
     });
   });
   $('#cancel').addEventListener('click', () => { reading?.stop(); route(); });
+}
+
+// A reading that fails can be sent to the coach (or whoever maintains the
+// app) so problems on particular phones can be fixed.
+function diagnostics(diag) {
+  if (!diag) return '';
+  const text = `Heart reading details\n${JSON.stringify(diag, null, 1)}`;
+  return `<details class="diag small"><summary>Keeps failing? Send the details</summary>
+    <p class="muted">This shows what the camera saw (no pictures, just numbers). Send it to your coach to help get your phone working.</p>
+    <textarea id="diag-text" rows="6" readonly>${esc(text)}</textarea>
+    <div class="actions"><button class="btn secondary" type="button" id="diag-send">${navigator.share ? 'Share details' : 'Copy details'}</button></div>
+  </details>`;
+}
+
+function wireDiagnostics(root) {
+  const btn = root.querySelector('#diag-send');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const text = root.querySelector('#diag-text').value;
+    if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelled */ } return; }
+    try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { root.querySelector('#diag-text').select(); }
+  };
 }
 
 // ----------------------------------------------------------------- history
@@ -728,6 +781,12 @@ setInterval(() => { if (syncStatus().pending) sync(); }, 60000);
 // hasn't joined yet, open the (pre-filled) join screen: one tap to finish.
 if (!loadTeam() && new URLSearchParams(location.search).get('u') && !/^#(team|coach)/.test(location.hash)) {
   history.replaceState(null, '', `${location.pathname}${location.search}#team`);
+}
+
+// A Home Screen app saved on the check-in page: once today's check-in is
+// done, open on Today instead.
+if (/^#morning$/.test(location.hash) && getEntry(todayISO())?.wellness) {
+  history.replaceState(null, '', `${location.pathname}${location.search}#today`);
 }
 
 route();

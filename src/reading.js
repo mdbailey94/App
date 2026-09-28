@@ -4,9 +4,11 @@
 
 import { analyzePPG, bandpass, dominantPeriod, findPeaks, fingerDetected } from './signal.js';
 import { loadSettings, saveSettings } from './storage.js';
+import { listCameras } from './camera.js';
 
 const SETTLE_MS = 3000; // let auto-exposure settle once the finger is on
 const LOST_MS = 2500; // finger off the lens this long ends the reading
+const NO_FINGER_MS = 30000; // give up if no fingertip is seen for this long
 
 // Keep the screen on while measuring (not available everywhere).
 async function keepAwake() {
@@ -38,9 +40,12 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
   let resolveDone;
   const done = new Promise((r) => { resolveDone = r; });
 
+  let diag = { started: new Date().toISOString(), ua: navigator.userAgent, durationSec };
   const finish = async (outcome) => {
     if (stopped) return;
     stopped = true;
+    outcome.diag = { ...diag, ...(outcome.analysis || {}), reason: outcome.reason || null };
+    delete outcome.analysis;
     await cam.stop();
     wake?.release?.().catch?.(() => {});
     resolveDone(outcome);
@@ -66,23 +71,50 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
     if (stopped) { cam.stop(); return; }
     if (info.identified) saveSettings({ fingerCameraId: info.deviceId });
     onMessage?.(cameraMessage(info));
+    const cameras = await listCameras().catch(() => []);
+    diag = { ...diag, lensFound: info.identified, cameras: cameras.map((c) => c.label || '?'), camera: cam.describe?.() };
+    const summary = () => {
+      const n = seen.frames || 1;
+      const secs = seen.lastT !== null && seen.lastT > seen.firstT ? (seen.lastT - seen.firstT) / 1000 : 0;
+      return {
+        camera: cam.describe?.(), frames: seen.frames, fps: secs ? +(seen.frames / secs).toFixed(1) : null,
+        fingerOnPct: Math.round((seen.covered / n) * 100), redClippedPct: Math.round((seen.saturated / n) * 100),
+        meanRGB: [seen.r, seen.g, seen.b].map((v) => Math.round(v / n)), meanTexture: +(seen.texture / n).toFixed(1),
+      };
+    };
 
     const times = [], red = [], green = [];
     let fingerSince = null;
     let lastFinger = null;
     let startT = null;
     let lastUi = 0;
+    let prevT = -Infinity;
+    // Running totals for the diagnostics report.
+    const seen = { frames: 0, covered: 0, saturated: 0, r: 0, g: 0, b: 0, texture: 0, firstT: null, lastT: null };
 
     cam.onSample = (s) => {
       if (stopped) return;
+      if (s.t <= prevT) { // the camera changed clock: start the wait again
+        fingerSince = null; lastFinger = null; startT = null;
+        times.length = 0; red.length = 0; green.length = 0;
+      }
+      prevT = s.t;
       const covered = fingerDetected(s);
+      seen.frames++; seen.firstT ??= s.t; seen.lastT = s.t;
+      seen.r += s.r; seen.g += s.g; seen.b += s.b; seen.texture += s.texture || 0;
+      if (covered) seen.covered++;
+      if (s.r >= 250) seen.saturated++;
       if (covered) { lastFinger = s.t; fingerSince ??= s.t; } else if (startT === null) fingerSince = null;
 
       if (startT === null) {
         if (covered && s.t - fingerSince >= SETTLE_MS) startT = s.t;
+        else if (!covered && s.t - seen.firstT > NO_FINGER_MS) {
+          finish({ ok: false, noFinger: true, analysis: summary(), reason: 'The app couldn’t see a fingertip on the camera. Cover both the flashlight and the camera closest to it, pressing lightly, and try again.' });
+          return;
+        }
       } else {
         if (s.t - lastFinger > LOST_MS) {
-          finish({ ok: false, reason: 'Your finger moved off the lens. Rest your arm on your lap or a table to keep the phone steady, and try again.' });
+          finish({ ok: false, analysis: summary(), reason: 'Your finger moved off the lens. Rest your arm on your lap or a table to keep the phone steady, and try again.' });
           return;
         }
         times.push(s.t); red.push(s.r); green.push(s.g);
@@ -93,9 +125,10 @@ export function startReading(cam, { durationSec = 60, posture = 'lying', onMessa
             beats: r.beats, validFraction: r.validFraction, quality: r.quality, channel: r.channel,
             durationSec, posture, source: 'camera', measuredAt: new Date().toISOString(),
           } : null;
-          if (!r.ok) finish({ ok: false, reason: r.reason });
-          else if (r.quality === 'poor') finish({ ok: false, poor: true, hrv, reason: 'The signal was weak, so this reading may not be reliable.' });
-          else finish({ ok: true, hrv });
+          const analysis = { ...summary(), quality: r.quality, channel: r.channel, validFraction: r.validFraction, hr: r.hr, beats: r.beats };
+          if (!r.ok) finish({ ok: false, analysis, reason: r.reason });
+          else if (r.quality === 'poor') finish({ ok: false, poor: true, hrv, analysis, reason: 'The signal was weak, so this reading may not be reliable.' });
+          else finish({ ok: true, hrv, analysis });
           return;
         }
       }

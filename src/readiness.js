@@ -153,3 +153,32 @@ export function rollingMean(entries, pick, { days = 7, min = 3 } = {}) {
     return vals.length >= min ? mean(vals) : NaN;
   });
 }
+
+// ---- heart-reading days and check-in streaks
+
+const weekday = (date) => new Date(`${date}T12:00:00Z`).getUTCDay();
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function isReadingDay(days, date) {
+  return !Array.isArray(days) || !days.length || days.includes(weekday(date));
+}
+
+// The next reading day after `date`, as a weekday name (null if none set).
+export function nextReadingDay(days, date) {
+  if (!Array.isArray(days) || !days.length) return null;
+  for (let i = 1; i <= 7; i++) {
+    const d = shiftDate(date, i);
+    if (days.includes(weekday(d))) return WEEKDAYS[weekday(d)];
+  }
+  return null;
+}
+
+// Check-ins in a row up to today. A streak is still alive until today is
+// over, so it counts back from yesterday if today isn't done yet.
+export function checkInStreak(entries, today) {
+  const done = new Set(entries.filter((e) => e.wellness).map((e) => e.date));
+  let d = done.has(today) ? today : shiftDate(today, -1);
+  let n = 0;
+  while (done.has(d)) { n++; d = shiftDate(d, -1); }
+  return { days: n, doneToday: done.has(today) };
+}

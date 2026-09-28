@@ -10,7 +10,7 @@ export const fmt = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : '–');
 export const prettyDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 export const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
-const STATUS_ICON = { good: '✓', warning: '!', serious: '▼', critical: '✕' };
+const STATUS_ICON = { good: '✓', warning: '!', serious: '▼', critical: '✕', note: 'i' };
 
 // Status is always shown as icon + label, never colour alone.
 export function statusBadge(status) {
