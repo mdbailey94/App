@@ -38,20 +38,46 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # Publishes the same files to Firebase Hosting. Turns on once the repository
-  # variable FIREBASE_PROJECT_ID and the secret FIREBASE_SERVICE_ACCOUNT are set
-  # (Settings → Secrets and variables → Actions).
+  # Publishes the same files to Firebase Hosting once the secret
+  # FIREBASE_SERVICE_ACCOUNT (the service account's JSON key) is set under
+  # Settings → Secrets and variables → Actions. The project ID is read from the
+  # key; a FIREBASE_PROJECT_ID repository variable overrides it if present.
   deploy-firebase:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.FIREBASE_PROJECT_ID != ''
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - run: mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icons src apps-script _site/
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+      - id: cfg
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "No FIREBASE_SERVICE_ACCOUNT secret yet, so skipping the Firebase deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$SA" | jq -e . > /dev/null 2>&1; then
+            echo "::error::The FIREBASE_SERVICE_ACCOUNT secret isn't valid JSON. Paste the whole downloaded key file, including the { and }."
+            exit 1
+          fi
+          if [ -z "$PROJECT" ]; then PROJECT=$(printf '%s' "$SA" | jq -r '.project_id // empty'); fi
+          if [ -z "$PROJECT" ]; then
+            echo "::error::Couldn't find the Firebase project ID in the key. Add a FIREBASE_PROJECT_ID repository variable."
+            exit 1
+          fi
+          echo "Deploying to Firebase project $PROJECT"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+      - if: steps.cfg.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+      - if: steps.cfg.outputs.enabled == 'true'
+        run: mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icons src apps-script _site/
+      - if: steps.cfg.outputs.enabled == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          projectId: ${{ steps.cfg.outputs.project }}
           channelId: live
