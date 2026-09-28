@@ -317,7 +317,9 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .trend-block h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 
 .streak { margin: 10px 0 0; font-size: 15px; }
-.chips.days span { font-size: 13px; }
+.chips.days { gap: 4px; }
+.chips.days label:last-child { grid-column: auto; } /* all seven days on one row */
+.chips.days span { font-size: 13px; height: 40px; }
 .diag { margin-top: 12px; }
 .diag textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
 
@@ -333,3 +335,4 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .front-light .live-main { display: none; }
 .front-light::before { content: '☝️ Lightly cover the front camera at the top'; position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; font-weight: 600; }
 body.lit .tabs, body.lit header { visibility: hidden; }
+.days-note { margin-top: 6px; }

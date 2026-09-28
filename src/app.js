@@ -543,9 +543,9 @@ function renderMeasure(query = new URLSearchParams()) {
       <fieldset class="scale">
         <legend>My reading days</legend>
         <div class="chips days">
-          ${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" name="hrvDay" value="${d}" ${settings.hrvDays.includes(d) ? 'checked' : ''}><span>${WEEKDAYS[d]}</span></label>`).join('')}
+          ${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" name="hrvDay" value="${d}" aria-label="${WEEKDAYS[d]}" ${settings.hrvDays.includes(d) ? 'checked' : ''}><span aria-hidden="true">${WEEKDAYS[d].slice(0, 2)}</span></label>`).join('')}
         </div>
-        <p class="muted small">The check-in only asks for a reading on these days. Three a week is plenty for your trends.</p>
+        <p class="muted small days-note">The check-in asks for a reading on these days. Three a week is plenty.</p>
       </fieldset>
       ${supported ? '<button class="btn block" id="start">Start reading</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
