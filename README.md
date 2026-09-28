@@ -117,7 +117,7 @@ to **GitHub Pages** on every push to `main` — enable it once under
 ### Hosting on Firebase instead (optional)
 
 The same files can be published to Firebase Hosting (free Spark plan is plenty). The workflow's
-`deploy-firebase` job turns on once two settings exist in the GitHub repo:
+`deploy-firebase` job turns on once the deploy key is saved in the GitHub repo:
 
 1. **Firebase project**: console.firebase.google.com → *Add project* (Analytics not needed) → open
    *Build → Hosting → Get started* and click through (skip the CLI steps). Note the **project ID**.
@@ -125,8 +125,8 @@ The same files can be published to Firebase Hosting (free Spark plan is plenty).
    service account* `github-deploy` with roles **Firebase Hosting Admin**, **API Keys Viewer** and
    **Cloud Run Viewer** → *Keys → Add key → JSON*. Keep this file private.
 3. **GitHub** → *Settings → Secrets and variables → Actions*:
-   - *Secrets* → `FIREBASE_SERVICE_ACCOUNT` = the whole JSON file's contents
-   - *Variables* → `FIREBASE_PROJECT_ID` = the project ID
+   - *Secrets* → `FIREBASE_SERVICE_ACCOUNT` = the whole JSON file's contents (the project ID is read
+     from it; a `FIREBASE_PROJECT_ID` variable overrides it if you ever need to)
 4. *Actions → CI → Run workflow* (or merge any change). The app is then at
    `https://<project-id>.web.app`.
 
