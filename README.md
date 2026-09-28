@@ -114,6 +114,25 @@ to **GitHub Pages** on every push to `main` — enable it once under
 *Settings → Pages → Source: GitHub Actions*. Then open the URL on the phone and
 "Add to Home Screen".
 
+### Hosting on Firebase instead (optional)
+
+The same files can be published to Firebase Hosting (free Spark plan is plenty). The workflow's
+`deploy-firebase` job turns on once two settings exist in the GitHub repo:
+
+1. **Firebase project**: console.firebase.google.com → *Add project* (Analytics not needed) → open
+   *Build → Hosting → Get started* and click through (skip the CLI steps). Note the **project ID**.
+2. **Deploy key**: Google Cloud console → *IAM & Admin → Service accounts* (same project) → *Create
+   service account* `github-deploy` with roles **Firebase Hosting Admin**, **API Keys Viewer** and
+   **Cloud Run Viewer** → *Keys → Add key → JSON*. Keep this file private.
+3. **GitHub** → *Settings → Secrets and variables → Actions*:
+   - *Secrets* → `FIREBASE_SERVICE_ACCOUNT` = the whole JSON file's contents
+   - *Variables* → `FIREBASE_PROJECT_ID` = the project ID
+4. *Actions → CI → Run workflow* (or merge any change). The app is then at
+   `https://<project-id>.web.app`.
+
+Data stored on phones is tied to the web address, so move hosts before athletes build up history
+(anything already sent to the group sheet is unaffected).
+
 ## Layout
 
 ```

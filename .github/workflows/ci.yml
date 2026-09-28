@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch: # "Run workflow" button: republish without a code change
 
 permissions:
   contents: read
@@ -20,7 +21,7 @@ jobs:
   # Publishes the app to GitHub Pages from main so it can be opened on a phone.
   # Enable it once under Settings → Pages → Source: "GitHub Actions".
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -36,3 +37,21 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Publishes the same files to Firebase Hosting. Turns on once the repository
+  # variable FIREBASE_PROJECT_ID and the secret FIREBASE_SERVICE_ACCOUNT are set
+  # (Settings → Secrets and variables → Actions).
+  deploy-firebase:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.FIREBASE_PROJECT_ID != ''
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icons src apps-script _site/
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          channelId: live
