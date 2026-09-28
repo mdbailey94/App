@@ -276,4 +276,7 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .hero .actions + p { margin-top: 12px; }
 .stats.two { grid-template-columns: repeat(2, 1fr); }
 .actions > .btn { white-space: nowrap; padding: 0 12px; }
-#same-card .btn { margin: 0 0 8px; }
+.prefill-note { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.prefill-note p { margin: 0; }
+.qr { max-width: 280px; margin: 12px auto; border-radius: 12px; overflow: hidden; }
+.qr svg { display: block; width: 100%; height: auto; }

@@ -21,7 +21,8 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 - **Check-in (morning)** — the heart reading runs in a bar pinned at the top while the athlete answers
   the questions with their other hand (about a minute in total). Saving early waits for the reading to
   finish; if the reading fails they can retry or save the answers without it.
-  **Same as yesterday** fills in the previous check-in's answers (not notes) to review and save.
+  A new day opens **pre-filled with the last check-in's answers** (not notes), so most mornings are a
+  quick review before saving.
 - **HRV** — a heart reading on its own (1–3 min), ending in "Reading saved ✓". Manual entry for chest
   straps.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
@@ -56,7 +57,7 @@ including each day's HRV and the score that combines everything.
 - **iPhone (Safari and all iOS browsers)**: works, but Apple doesn't let web pages turn on the torch,
   so measure with a bright lamp or window shining through the fingertip. A native iOS wrapper
   would be needed for torch control.
-- Camera choice is automatic (no selector): cover the lens **closest to the flash** before tapping
+- Camera choice is automatic (no selector): cover **both the flashlight and the camera closest to it** before tapping
   Start. Browsers don't reveal where lenses sit, so the app briefly looks through each rear camera and
   uses the one that sees a fingertip (smooth red glow or darkness) instead of the room. The lens is
   remembered and re-checked each time. If it can't tell (e.g. in a dark room), it uses the lens found
@@ -84,7 +85,7 @@ The group's data lives in a Google Sheet the coach owns, via a small Apps Script
 2. Set `GROUP_CODE` (athletes type it) and `COACH_PASSWORD` (dashboard access) at the top. Save.
 3. **Deploy → New deployment → Web app**, *Execute as: Me*, *Who has access: Anyone*. Authorize.
 4. In the app, open Team → coach dashboard, paste the web app URL, password and group code.
-5. Copy the invite link from the dashboard and send it to athletes.
+5. Athletes scan the **QR code** on the dashboard (or you send them the invite link).
 
 What the coach gets:
 

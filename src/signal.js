@@ -261,7 +261,7 @@ export function analyzeChannel(times, values, opts = {}) {
   const ok = validCount >= 10 && Number.isFinite(metrics.rmssd);
   return {
     ok,
-    reason: ok ? undefined : 'Could not find a clear, regular pulse. Keep still and cover the lens fully.',
+    reason: ok ? undefined : 'Could not find a clear, regular pulse. Keep still and cover both the flashlight and the camera closest to it.',
     ...metrics,
     beats,
     validFraction,

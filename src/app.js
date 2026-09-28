@@ -224,51 +224,18 @@ function sameAsLabel(prev, date) {
   return new Date(`${prev.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
 }
 
-// Offered only when this day has no answers yet.
-function sameAsCard(date, e) {
+// A new day starts from the last check-in's answers (not its notes), so most
+// mornings are just a quick review. Returns [entryForForm, noteHtml].
+function withDefaults(date, e) {
   const prev = e.wellness ? null : previousAnswers(date);
-  if (!prev) return '';
-  return `
-      <section class="card" id="same-card">
-        <button class="btn secondary block" type="button" id="same-as">↺ Same as ${esc(sameAsLabel(prev, date))}</button>
-        <p class="muted small">Fills in your answers from ${esc(prettyDate(prev.date))}. Change anything that’s different, then save.</p>
+  if (!prev) return [e, ''];
+  const { wellness, pain, training } = prev;
+  const note = `
+      <section class="card prefill-note">
+        <p><b>Pre-filled with your answers from ${esc(sameAsLabel(prev, date))}.</b>
+          Change anything that’s different, then save.</p>
       </section>`;
-}
-
-// Copy a previous day's answers into the form (not its notes).
-function fillCheckin(form, prev) {
-  const w = prev.wellness || {};
-  const check = (name, value) => {
-    const input = form.querySelector(`input[name="${name}"][value="${value}"]`);
-    if (input) input.checked = true;
-  };
-  if (Number.isFinite(w.sleepHours)) {
-    if (SLEEP_STEPS.includes(w.sleepHours)) check('sleepHours', w.sleepHours);
-    else { check('sleepHours', 'other'); form.sleepOther.value = w.sleepHours; }
-  }
-  for (const i of WELLNESS_ITEMS) if (w[i.key]) check(i.key, w[i.key]);
-  check('painLevel', prev.pain?.level || 0);
-  form.painLocation.value = prev.pain?.level ? prev.pain.location || '' : '';
-  const minutes = prev.training?.durationMin ?? 0;
-  if (![...form.durationMin.options].some((o) => +o.value === minutes)) {
-    form.durationMin.add(new Option(hoursLabel(minutes), minutes));
-  }
-  form.durationMin.value = String(minutes);
-  form.rpe.value = String(prev.training?.rpe ?? 0);
-  // Update the dependent bits (location/other fields, load preview).
-  form.querySelector('#pain-location').hidden = !prev.pain?.level;
-  form.querySelector('#sleep-other').hidden = SLEEP_STEPS.includes(w.sleepHours) || !Number.isFinite(w.sleepHours);
-  form.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function wireSameAs(form, date) {
-  const btn = form.querySelector('#same-as');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    fillCheckin(form, previousAnswers(date));
-    btn.textContent = '✓ Filled in – check and save';
-    btn.disabled = true;
-  });
+  return [{ ...e, wellness, pain, training }, note];
 }
 
 // Read the answers: { missing: [labels] } or { patch } ready to save.
@@ -303,14 +270,14 @@ function showFormError(form, text) {
 
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
-  const e = getEntry(date) || {};
+  const [e, prefillNote] = withDefaults(date, getEntry(date) || {});
   view.innerHTML = `
     <form id="checkin" class="stack" novalidate>
       <section class="card">
         <h2>Daily check-in</h2>
         <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
       </section>
-      ${sameAsCard(date, e)}
+      ${prefillNote}
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit">Save check-in</button>
@@ -318,7 +285,6 @@ function renderCheckin(dateArg) {
 
   const form = view.querySelector('#checkin');
   wireCheckin(form);
-  wireSameAs(form, date);
   form.date.addEventListener('change', () => {
     if (form.date.value && form.date.value !== date) location.hash = `#checkin/${form.date.value}`;
   });
@@ -338,6 +304,7 @@ function renderCheckin(dateArg) {
 function renderMorning() {
   const date = todayISO();
   const e = getEntry(date) || {};
+  const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
   const supported = cameraSupported();
 
@@ -347,7 +314,7 @@ function renderMorning() {
         <video id="camera" class="preview small" playsinline muted></video>
         <div class="reading-text">
           <b id="reading-title">Heart reading</b>
-          <span id="reading-msg" class="muted small">${supported ? 'Cover the lens closest to the flash, then tap Start.' : 'Camera not available in this browser.'}</span>
+          <span id="reading-msg" class="muted small">${supported ? 'Cover the flashlight and the camera closest to it, then tap Start.' : 'Camera not available in this browser.'}</span>
         </div>
         ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
       </div>
@@ -357,7 +324,7 @@ function renderMorning() {
     <section class="card">
       <h2>Morning check-in</h2>
       <ol class="steps">
-        <li>Hold your phone in one hand and rest a fingertip of that hand gently on the back, over the lens <b>closest to the flash</b> and touching the flash too.</li>
+        <li>Hold your phone in one hand. With a fingertip of that hand, gently cover <b>both the flashlight and the camera closest to it</b> on the back.</li>
         <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
         <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
         <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
@@ -366,8 +333,8 @@ function renderMorning() {
     </section>
 
     <form id="checkin" class="stack" novalidate>
-      ${sameAsCard(date, e)}
-      ${checkinSections(e)}
+      ${prefillNote}
+      ${checkinSections(formEntry)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit" id="save">Save check-in</button>
       <button class="btn secondary block" type="button" id="save-without" hidden>Save answers without a heart reading</button>
@@ -376,7 +343,6 @@ function renderMorning() {
   const $ = (sel) => view.querySelector(sel);
   const form = $('#checkin');
   wireCheckin(form);
-  wireSameAs(form, date);
 
   let state = 'idle'; // idle | running | done | failed
   let hrv = null;
@@ -407,7 +373,7 @@ function renderMorning() {
       posture: settings.posture,
       onMessage: (m) => setReading('Heart reading', m),
       onFinger: (f) => {
-        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the lens closest to the flash.', 'warn');
+        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the flashlight and the camera closest to it.', 'warn');
         else if (f === 'settling') setReading('Hold still…', 'Finding your pulse.');
         else if (f === 'lost') setReading('Finger moved', 'Put it back on the lens.', 'warn');
       },
@@ -479,7 +445,7 @@ function renderMeasure() {
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
       <ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
-        <li><b>Before tapping Start</b>, gently cover the lens <b>closest to the flash</b> with a fingertip, touching the flash too. The app checks which lens is covered and uses that one. Pressing hard blocks the pulse.</li>
+        <li><b>Before tapping Start</b>, gently cover <b>both the flashlight and the camera closest to it</b> with a fingertip. The app checks which camera is covered and uses that one. Pressing hard blocks the pulse.</li>
         <li>Hold the phone steady – resting your arm on your lap or a table helps. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
       </ol>
