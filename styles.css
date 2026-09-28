@@ -333,6 +333,6 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 }
 .front-light .muted { color: #555; }
 .front-light .live-main { display: none; }
-.front-light::before { content: '☝️ Lightly cover the front camera at the top'; position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; font-weight: 600; }
+.front-light::before { content: 'Lightly cover the front camera at the top'; position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; font-weight: 600; }
 body.lit .tabs, body.lit header { visibility: hidden; }
 .days-note { margin-top: 6px; }

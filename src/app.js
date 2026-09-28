@@ -93,7 +93,7 @@ function renderToday() {
   const readingDay = isReadingDay(hrvDays, date);
   const streak = checkInStreak(entries, date);
   const streakLine = streak.days >= 2
-    ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.doneToday ? '' : ' – check in today to keep it going'}</p>` : '';
+    ? `<p class="streak"><b>${streak.days}-day streak</b>${streak.doneToday ? '' : ' – check in today to keep it going'}</p>` : '';
 
   view.innerHTML = `
     <section class="card hero">
@@ -150,7 +150,7 @@ function scaleField(item, value) {
         ${Array.from({ length: SCALE_MAX }, (_, i) => i + 1).map((n) => `
           <label><input type="radio" name="${item.key}" value="${n}" ${value === n ? 'checked' : ''} required><span>${n}</span></label>`).join('')}
       </div>
-      <div class="scale-ends"><span><span aria-hidden="true">😣</span> ${esc(item.low)}</span><span>${esc(item.high)} <span aria-hidden="true">😄</span></span></div>
+      <div class="scale-ends"><span>${esc(item.low)}</span><span>${esc(item.high)}</span></div>
     </fieldset>`;
 }
 
@@ -374,7 +374,7 @@ function renderMorning(query = new URLSearchParams()) {
     ${team ? `<section class="card welcome" role="status">
       <p><b>✓ You’re in, ${esc(team.athlete.split(' ')[0])}!</b> You’ve joined ${esc(team.group)}, and your check-ins will go to your coach.
         Now do today’s check-in below.</p>
-      ${isStandalone() ? '' : `<p class="small home-tip">📲 <b>Add this app to your Home Screen now</b>
+      ${isStandalone() ? '' : `<p class="small home-tip"><b>Add this app to your Home Screen now</b>
         (iPhone: Share → Add to Home Screen) – it will remember your group.</p>`}
     </section>` : ''}
 
