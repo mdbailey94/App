@@ -94,3 +94,13 @@ test('rollingMean smooths over 7 days and needs 3 readings', () => {
   assert.ok(Math.abs(r[4] - 5.2) < 1e-9); // one bad day moves the average only a little
   assert.ok(Math.abs(r[8] - (4 * 6 + 10) / 7) < 1e-9);
 });
+
+test('1–7 scales score on their own range; older 1–5 check-ins still score the same', () => {
+  const top7 = { scaleMax: 7, sleepQuality: 7, energy: 7, soreness: 7, stress: 7, mood: 7, motivation: 7 };
+  const mid7 = { scaleMax: 7, sleepQuality: 4, energy: 4, soreness: 4, stress: 4, mood: 4, motivation: 4 };
+  const top5 = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5 };
+  assert.equal(wellnessScore(top7), 100);
+  assert.equal(wellnessScore(mid7), 50);
+  assert.equal(wellnessScore(top5), 100);
+  assert.equal(wellnessScore({ ...top5, energy: 3 }), wellnessScore({ ...top7, energy: 4 })); // both midpoints
+});

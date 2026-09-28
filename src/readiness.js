@@ -3,19 +3,22 @@
 
 import { mean, std } from './signal.js';
 
-// Questionnaire definition. Every 1–5 scale is phrased so that 5 is best,
+// Questionnaire definition. Every 1–7 scale is phrased so that 7 is best,
 // which keeps scoring simple and the form consistent for the athlete.
+export const SCALE_MAX = 7;
 export const WELLNESS_ITEMS = [
   { key: 'sleepQuality', label: 'Sleep quality', low: 'Very poor', high: 'Excellent' },
-  { key: 'energy', label: 'Energy / fatigue', low: 'Exhausted', high: 'Very fresh' },
+  { key: 'energy', label: 'Energy', low: 'Low', high: 'High' },
   { key: 'soreness', label: 'Muscle soreness from training', low: 'Very sore', high: 'None' },
-  { key: 'stress', label: 'Stress', low: 'Very stressed', high: 'Very relaxed' },
-  { key: 'mood', label: 'Mood', low: 'Very low', high: 'Very positive' },
-  { key: 'motivation', label: 'Motivation to train', low: 'None', high: 'Very high' },
+  { key: 'stress', label: 'How stressed are you? (tense – relaxed)', low: 'Very stressed', high: 'Very relaxed' },
+  { key: 'mood', label: 'Mood', low: 'Negative', high: 'Positive' },
+  { key: 'motivation', label: 'Motivation to train', low: 'Low', high: 'High' },
 ];
 
+// Check-ins saved before the switch to 1–7 have no scaleMax and used 1–5.
+export const scaleMaxOf = (w) => w?.scaleMax || 5;
+
 const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
-const scale1to5 = (v) => ((v - 1) / 4) * 100;
 
 export function sessionLoad(training) {
   if (!training) return 0;
@@ -26,7 +29,8 @@ export function sessionLoad(training) {
 // 0–100 from the six subjective scales plus sleep duration.
 export function wellnessScore(w) {
   if (!w) return null;
-  const parts = WELLNESS_ITEMS.map((i) => w[i.key]).filter((v) => v >= 1 && v <= 5).map(scale1to5);
+  const max = scaleMaxOf(w);
+  const parts = WELLNESS_ITEMS.map((i) => w[i.key]).filter((v) => v >= 1 && v <= max).map((v) => ((v - 1) / (max - 1)) * 100);
   if (w.sleepHours > 0) {
     // 8 h+ scores full marks, 4 h or less scores zero.
     parts.push(clamp(((w.sleepHours - 4) / 4) * 100));

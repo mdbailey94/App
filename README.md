@@ -35,7 +35,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 
 | Component | Weight | How |
 |---|---|---|
-| Wellness | 60 % | Six 1–5 scales + sleep hours, scaled 0–100 |
+| Wellness | 60 % | Six 1–7 scales + sleep hours, scaled 0–100 |
 | HRV | 25 % | Today's ln RMSSD vs your personal baseline (mean ± SD of up to 30 prior readings; needs 5) |
 | Resting HR | 15 % | Today's HR vs your baseline (higher = worse) |
 

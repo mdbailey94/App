@@ -2,7 +2,7 @@ import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
-import { assessDay, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
+import { assessDay, SCALE_MAX, scaleMaxOf, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
@@ -38,7 +38,7 @@ const INJURY_LEVELS = [
 ];
 
 // Quick sleep choices: 4 h to 10 h in half hours; anything else via "Other".
-const SLEEP_STEPS = Array.from({ length: 13 }, (_, i) => 4 + i * 0.5);
+const SLEEP_STEPS = Array.from({ length: 11 }, (_, i) => 4 + i * 0.5); // 4–9 h; more goes in Other
 
 // ------------------------------------------------------------------ router
 
@@ -136,7 +136,7 @@ function scaleField(item, value) {
     <fieldset class="scale">
       <legend>${esc(item.label)}</legend>
       <div class="scale-options">
-        ${[1, 2, 3, 4, 5].map((n) => `
+        ${Array.from({ length: SCALE_MAX }, (_, i) => i + 1).map((n) => `
           <label><input type="radio" name="${item.key}" value="${n}" ${value === n ? 'checked' : ''} required><span>${n}</span></label>`).join('')}
       </div>
       <div class="scale-ends"><span>${esc(item.low)}</span><span>${esc(item.high)}</span></div>
@@ -167,7 +167,7 @@ function checkinSections(e) {
 
       <section class="card">
         <h3>How do you feel?</h3>
-        <p class="muted small">1 = worst, 5 = best.</p>
+        <p class="muted small">1 = worst, 7 = best.</p>
         ${WELLNESS_ITEMS.slice(1).map((i) => scaleField(i, w[i.key])).join('')}
       </section>
 
@@ -229,11 +229,16 @@ function sameAsLabel(prev, date) {
 function withDefaults(date, e) {
   const prev = e.wellness ? null : previousAnswers(date);
   if (!prev) return [e, ''];
-  const { wellness, pain, training } = prev;
+  const { pain, training } = prev;
+  // Answers from the old 1–5 scales don't carry over; only sleep hours do.
+  const wellness = scaleMaxOf(prev.wellness) === SCALE_MAX ? prev.wellness : { sleepHours: prev.wellness.sleepHours };
   const note = `
       <section class="card prefill-note">
-        <p><b>Pre-filled with your answers from ${esc(sameAsLabel(prev, date))}.</b>
-          Change anything that’s different, then save.</p>
+        ${wellness === prev.wellness
+          ? `<p><b>Pre-filled with your answers from ${esc(sameAsLabel(prev, date))}.</b>
+          Change anything that’s different, then save.</p>`
+          : `<p><b>The feeling questions now go from 1 to 7</b>, so please answer them fresh today.
+          The rest is pre-filled from ${esc(sameAsLabel(prev, date))}.</p>`}
       </section>`;
   return [{ ...e, wellness, pain, training }, note];
 }
@@ -249,7 +254,7 @@ function readCheckin(form) {
   if (missing.length) return { missing };
   const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
   const painLevel = num('painLevel') || 0;
-  const wellness = { sleepHours };
+  const wellness = { sleepHours, scaleMax: SCALE_MAX };
   for (const i of WELLNESS_ITEMS) wellness[i.key] = num(i.key);
   return {
     patch: {
