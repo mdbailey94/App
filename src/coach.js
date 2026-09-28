@@ -2,9 +2,10 @@
 
 import { loadCoach, loadTeam, resetSync, saveCoach, saveTeam, todayISO } from './storage.js';
 import { addressDetails, callSheet, inviteLink, isValidSheetUrl, memberAddress, syncPending, syncStatus } from './team.js';
-import { groupByAthlete, groupDay } from './group.js';
+import { groupByAthlete, groupDay, reminderText, teamTrend, trendSummary, watchList } from './group.js';
 import { assessDay, sessionLoad, shiftDate, wellnessScore } from './readiness.js';
 import { esc, fmt, prettyDate, renderTrends, shortDate, statusBadge } from './ui.js';
+import { barChart, lineChart } from './charts.js';
 import qrcode from './vendor/qrcode.js';
 
 // Invite link as a QR code (SVG, dark on white so it scans in dark mode too).
@@ -148,7 +149,8 @@ export function renderCoach(view, query) {
   const athleteKey = query.get('a');
   view.innerHTML = '<section class="card"><p class="muted">Loading the group sheet…</p></section>';
   loadRows(coach, query.has('refresh'))
-    .then((rows) => (athleteKey ? renderAthlete(view, rows, athleteKey) : renderGroup(view, coach, rows, query.get('d') || todayISO())))
+    .then((rows) => (athleteKey ? renderAthlete(view, rows, athleteKey)
+      : renderGroup(view, coach, rows, query.get('d') || todayISO(), query.get('t') === '28' ? 28 : 7)))
     .catch((e) => {
       view.innerHTML = `<section class="card"><h3>Couldn’t load the group sheet</h3><p>${esc(e.message)}</p>
         <div class="actions"><a class="btn" href="#coach?refresh=${Date.now()}">Try again</a>
@@ -157,8 +159,19 @@ export function renderCoach(view, query) {
     });
 }
 
-function renderGroup(view, coach, rows, date) {
+const WATCH_LABEL = { critical: 'Talk today', serious: 'Talk soon', warning: 'Keep an eye', note: 'FYI' };
+
+function renderGroup(view, coach, rows, date, span) {
   const day = groupDay(rows, date);
+  const watch = watchList(rows, date);
+  const trend = teamTrend(rows, date, span);
+  const prev = trendSummary(teamTrend(rows, shiftDate(date, -span), span));
+  const now = trendSummary(trend);
+  const isToday = date === todayISO();
+  const appUrl = `${location.origin}${location.pathname}`;
+  const here = (extra) => `#coach?d=${date}${extra}`;
+  const change = (a, b, unit = '') => (a === null || b === null || a === b ? ''
+    : ` <span class="muted small">${a > b ? '▲' : '▼'} ${Math.abs(a - b)}${unit}</span>`);
   const link = coach.group ? inviteLink(location.href, coach.url, coach.group) : '';
   const hrvCell = (c) => {
     const e = c.entry.hrv;
@@ -184,6 +197,17 @@ function renderGroup(view, coach, rows, date) {
     </section>
 
     <section class="card">
+      <h3>Watch list</h3>
+      ${watch.length ? `<p class="muted small">Swimmers worth a word, based on their last 7 days.</p>
+        <ul class="watch">${watch.map((w) => `
+          <li><div class="watch-head"><a href="#coach?a=${encodeURIComponent(w.key)}">${esc(w.name)}</a>
+            ${statusBadge({ level: w.reasons[0].level, label: WATCH_LABEL[w.reasons[0].level] })}</div>
+            <ul>${w.reasons.map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul></li>`).join('')}
+        </ul>`
+    : '<p class="muted">Nobody stands out over the last 7 days.</p>'}
+    </section>
+
+    <section class="card">
       <h3>Check-ins</h3>
       ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table">
         <thead><tr><th>Athlete</th><th>Ready</th><th>Well</th><th>HRV</th><th>HR</th><th>Load</th></tr></thead>
@@ -203,8 +227,27 @@ function renderGroup(view, coach, rows, date) {
     </section>
 
     ${day.missing.length ? `<section class="card"><h3>Not checked in</h3><ul class="plain">
-      ${day.missing.map((m) => `<li><a href="#coach?a=${encodeURIComponent(m.key)}">${esc(m.name)}</a> <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span></li>`).join('')}
-    </ul></section>` : ''}
+      ${day.missing.map((m) => `<li><a href="#coach?a=${encodeURIComponent(m.key)}">${esc(m.name)}</a>
+        <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
+    </ul>
+    ${isToday ? `<label class="field">Reminder for your group chat
+        <textarea id="reminder" rows="3">${esc(reminderText(day.missing, appUrl))}</textarea></label>
+      <div class="actions"><button class="btn" id="send-reminder">${navigator.share ? 'Share reminder' : 'Copy reminder'}</button></div>` : ''}
+    </section>` : ''}
+
+    <section class="card">
+      <div class="card-head"><h3>Team trends</h3>
+        <span class="seg"><a href="${here('&t=7')}" ${span === 7 ? 'aria-current="true"' : ''}>7 days</a><a href="${here('&t=28')}" ${span === 28 ? 'aria-current="true"' : ''}>28 days</a></span></div>
+      <div class="stats small-stats">
+        <div><span class="stat-num">${now.avgReadiness ?? '–'}${change(now.avgReadiness, prev.avgReadiness)}</span><span class="stat-label">avg readiness</span></div>
+        <div><span class="stat-num">${now.rate ?? '–'}%${change(now.rate, prev.rate, '%')}</span><span class="stat-label">check-in rate</span></div>
+        <div><span class="stat-num">${now.avgLoad ?? '–'}${change(now.avgLoad, prev.avgLoad)}</span><span class="stat-label">avg daily load</span></div>
+      </div>
+      <p class="muted small">Last ${span} days to ${esc(shortDate(date))}; arrows compare with the ${span} days before.</p>
+      <div class="trend-block"><h4>Average readiness</h4><div data-t="ready"></div></div>
+      <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
+      <div class="trend-block"><h4>Average training load</h4><div data-t="load"></div></div>
+    </section>
 
     <section class="card">
       <h3>Invite athletes</h3>
@@ -222,6 +265,28 @@ function renderGroup(view, coach, rows, date) {
         <b>Today</b> tab lists today’s check-ins, lowest readiness first.</p>
       <button class="btn secondary block" id="signout">Sign out of coach dashboard</button>
     </section>`;
+
+  const dayIndex = (iso) => Math.round(new Date(`${iso}T12:00:00Z`) / 86400000);
+  const series = (k, none = NaN) => trend.map((d) => ({ x: dayIndex(d.date), y: d[k] ?? none, label: shortDate(d.date) }));
+  const $t = (k) => view.querySelector(`[data-t="${k}"]`);
+  requestAnimationFrame(() => {
+    lineChart($t('ready'), series('avgReadiness'), { yMin: 0, yMax: 100 });
+    barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
+    barChart($t('load'), series('avgLoad'), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
+  });
+
+  const send = view.querySelector('#send-reminder');
+  if (send) {
+    send.onclick = async () => {
+      const text = view.querySelector('#reminder').value;
+      if (navigator.share) {
+        try { await navigator.share({ text }); } catch { /* cancelled */ }
+        return;
+      }
+      try { await navigator.clipboard.writeText(text); } catch { view.querySelector('#reminder').select(); document.execCommand?.('copy'); }
+      send.textContent = 'Copied – paste it in your group chat';
+    };
+  }
 
   const copy = view.querySelector('#copy');
   if (copy) {

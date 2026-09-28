@@ -162,6 +162,7 @@ fieldset { border: 0; padding: 0; margin: 0; }
 .status-warning .status-icon { color: #111; }
 .status-serious { --status: var(--serious); }
 .status-critical { --status: var(--critical); }
+.status-note { --status: var(--muted); }
 
 /* ---------- today */
 .score-row { display: flex; gap: 20px; align-items: center; margin: 8px 0; }
@@ -288,3 +289,19 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .toggle-line { margin: 8px 0 0; }
 .welcome a { white-space: nowrap; margin-left: 4px; }
 .home-tip { margin-top: 10px !important; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
+
+/* ---------- coach: watch list, reminders, team trends */
+.watch { list-style: none; padding: 0; margin: 0; }
+.watch > li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.watch > li:last-child { border-bottom: 0; }
+.watch-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.watch-head a { font-weight: 600; }
+.watch ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); font-size: 14px; }
+.missed { font-size: 12px; font-weight: 600; color: var(--serious); margin-left: 4px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.seg a { padding: 4px 12px; font-size: 13px; text-decoration: none; color: var(--text); }
+.seg a[aria-current] { background: var(--accent); color: var(--accent-ink); }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card-head h3 { margin: 0; }
+.trend-block { margin-top: 14px; }
+.trend-block h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }

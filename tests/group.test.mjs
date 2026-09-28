@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { groupByAthlete, groupDay } from '../src/group.js';
+import { groupByAthlete, groupDay, reminderText, teamTrend, trendSummary, watchList } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries } from '../src/team.js';
 import { shiftDate } from '../src/readiness.js';
 
@@ -66,4 +66,57 @@ test('invite links and sheet URL validation', () => {
   assert.deepEqual(addressDetails('', new URLSearchParams('u=U&g=G')), { url: 'U', group: 'G', athlete: '' });
   assert.ok(isValidSheetUrl('https://script.google.com/macros/s/AB/exec'));
   assert.ok(!isValidSheetUrl('https://evil.example.com/collect'));
+});
+
+const mid = { sleepHours: 6.5, sleepQuality: 3, energy: 3, soreness: 3, stress: 3, mood: 3, motivation: 3 };
+const day = (name, n, entry) => ({ athlete: name, date: shiftDate(D, -n), entry: { ...entry, date: shiftDate(D, -n) } });
+
+test('groupDay counts days missed in a row', () => {
+  assert.equal(groupDay(rows, D).missing.find((m) => m.name === 'Lou').missedDays, 2);
+});
+
+test('watchList: injuries first, then runs of low days and short sleep; quiet swimmers left off', () => {
+  const r = [
+    ...[3, 2, 1, 0].map((n) => day('Mia', n, { wellness: mid })), // 4 moderate days, short sleep
+    day('Kai', 0, { wellness: good, pain: { level: 3, location: 'ankle' } }),
+    day('Zoe', 1, { wellness: good, pain: { level: 2, location: 'shoulder' } }),
+    ...[3, 2, 1, 0].map((n) => day('Sam', n, { wellness: good })),
+  ];
+  const list = watchList(r, D);
+  assert.deepEqual(list.map((w) => w.name), ['Kai', 'Zoe', 'Mia']);
+  assert.match(list[0].reasons[0].text, /stopping certain strokes.*ankle.*today/);
+  assert.equal(list[0].reasons[0].level, 'critical');
+  assert.match(list[1].reasons[0].text, /affecting stroke.*shoulder.*yesterday/);
+  assert.deepEqual(list[2].reasons.map((x) => x.level), ['warning', 'note']);
+  assert.match(list[2].reasons[0].text, /below 70 on their last 4/);
+  assert.match(list[2].reasons[1].text, /Under 7 h sleep on 4 of their last 4 nights \(average 6\.5 h\)/);
+});
+
+test('watchList: readiness well down on their usual, and old injuries drop off', () => {
+  const r = [
+    ...Array.from({ length: 14 }, (_, i) => day('Eli', 8 + i, { wellness: good })),
+    ...[2, 1, 0].map((n) => day('Eli', n, { wellness: { ...good, energy: 3, mood: 3, motivation: 3 } })),
+    day('Ivy', 5, { wellness: good, pain: { level: 3 } }),
+  ];
+  const list = watchList(r, D);
+  assert.deepEqual(list.map((w) => w.name), ['Eli']);
+  assert.match(list[0].reasons[0].text, /Readiness down \d+ points/);
+});
+
+test('teamTrend: daily average readiness, check-in rate and load', () => {
+  const r = [
+    day('A', 1, { wellness: good, training: { durationMin: 60, rpe: 5 } }),
+    day('B', 1, { wellness: poor, training: { durationMin: 60, rpe: 3 } }),
+    day('A', 0, { wellness: good }),
+  ];
+  const t = teamTrend(r, D, 2);
+  assert.deepEqual(t.map((d) => d.date), [shiftDate(D, -1), D]);
+  assert.deepEqual(t.map((d) => d.rate), [100, 50]);
+  assert.equal(t[0].avgLoad, 240);
+  assert.deepEqual(trendSummary(t), { avgReadiness: Math.round((t[0].avgReadiness + 100) / 2), rate: 75, avgLoad: 240 });
+});
+
+test('reminderText lists who is missing', () => {
+  assert.equal(reminderText([{ name: 'Lou' }, { name: 'Mia' }, { name: 'Kai' }], 'https://x/'),
+    'Morning check-in reminder 🏊 Still waiting on Lou, Mia and Kai. It takes about a minute: https://x/');
 });
