@@ -56,7 +56,6 @@ export function renderTeam(view, query, rerender) {
         <h3>Are you the coach?</h3>
         <p class="muted small">Set up the group spreadsheet and see everyone’s readiness.</p>
         <a class="btn secondary block" href="#coach">Open coach dashboard</a>
-        <a class="btn secondary block" href="pool/">Pool tracker: lap &amp; stroke timing from a camera</a>
       </section>`;
     $('#join').addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -102,7 +101,6 @@ export function renderTeam(view, query, rerender) {
     <section class="card">
       <h3>Are you the coach?</h3>
       <a class="btn secondary block" href="#coach">Open coach dashboard</a>
-      <a class="btn secondary block" href="pool/">Pool tracker: lap &amp; stroke timing from a camera</a>
     </section>`;
   $('#send').onclick = async () => {
     $('#send').disabled = true;

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PoolSim, planSwimmer } from './support/pool-sim.mjs';
-import { PoolSession, sessionCSV, sessionRecord } from '../pool/src/session.js';
+import { PoolSession, sessionCSV, sessionRecord } from '../src/session.js';
 
 function simulate({ L = 25, lanes = 4, swimmers, laneSetup = {}, fps = 25, clockAt = null, width = 240 }) {
   const sim = new PoolSim({ lanes, length: L, width, height: Math.round(width * 0.625) });

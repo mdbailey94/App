@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyH, cornersValid, homography, invertH, poolToImage } from '../pool/src/homography.js';
-import { makeGeometry, Rectifier } from '../pool/src/grid.js';
+import { applyH, cornersValid, homography, invertH, poolToImage } from '../src/homography.js';
+import { makeGeometry, Rectifier } from '../src/grid.js';
 
 const close = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) < tol, `${a} ≈ ${b}`);
 

@@ -1,15 +1,14 @@
-// Offline support. Every request goes to the network first (revalidated with
-// the server, so files from different releases are never mixed); the cached
-// copy is used only when offline.
-const CACHE = 'athlete-readiness-v10';
+// Offline support (pool decks often have poor Wi-Fi). Every request goes to
+// the network first so files from different releases are never mixed; the
+// cached copy is used only when offline.
+const CACHE = 'pool-tracker-v1';
 const ASSETS = [
-  './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg',
-  'src/app.js', 'src/camera.js', 'src/charts.js', 'src/readiness.js', 'src/signal.js', 'src/storage.js',
-  'src/ui.js', 'src/team.js', 'src/group.js', 'src/coach.js', 'src/reading.js', 'src/vendor/qrcode.js', 'apps-script/Code.gs',
+  './', 'index.html', 'pool.css', 'manifest.webmanifest', 'icon.svg',
+  'src/app.js', 'src/capture.js', 'src/grid.js', 'src/homography.js', 'src/laps.js',
+  'src/session.js', 'src/store.js', 'src/strokes.js', 'src/tracker.js',
 ];
 
 self.addEventListener('install', (e) => {
-  // cache: 'reload' skips the browser's HTTP cache so the copy is current.
   e.waitUntil(caches.open(CACHE)
     .then((c) => c.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' }))))
     .then(() => self.skipWaiting()));
@@ -28,7 +27,6 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith((async () => {
     try {
-      // A URL (not the request) so this also works for page navigations.
       const res = await fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' });
       if (res.ok) {
         const copy = res.clone();

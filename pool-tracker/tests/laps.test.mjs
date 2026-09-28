@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Swimmer, WallDetector } from '../pool/src/laps.js';
+import { Swimmer, WallDetector } from '../src/laps.js';
 import { rng } from './support/pool-sim.mjs';
 
 // Feed a position trajectory x(t) (with gaps where fn returns null).

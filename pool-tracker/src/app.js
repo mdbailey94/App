@@ -587,8 +587,7 @@ function finishTracking() {
 // -------------------------------------------------------------------- boot
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  // Same offline cache as the readiness app (one service worker for the site).
-  navigator.serviceWorker.register('../sw.js', { scope: '../' }).catch(() => {});
+  navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
 showHome();

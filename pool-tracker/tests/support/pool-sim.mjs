@@ -4,7 +4,7 @@
 // ground truth (wall times, stroke rate) is known exactly, so the tracking
 // pipeline can be tested end to end without real footage.
 
-import { applyH, invertH, poolToImage } from '../../pool/src/homography.js';
+import { applyH, invertH, poolToImage } from '../../src/homography.js';
 
 export function rng(seed) {
   let s = seed >>> 0;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeStrokes, runs, strokeCount } from '../pool/src/strokes.js';
+import { analyzeStrokes, runs, strokeCount } from '../src/strokes.js';
 import { rng } from './support/pool-sim.mjs';
 
 // Splash samples at ~fps: a burst of energy at every hand entry; for
