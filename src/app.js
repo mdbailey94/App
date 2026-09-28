@@ -150,7 +150,7 @@ function scaleField(item, value) {
         ${Array.from({ length: SCALE_MAX }, (_, i) => i + 1).map((n) => `
           <label><input type="radio" name="${item.key}" value="${n}" ${value === n ? 'checked' : ''} required><span>${n}</span></label>`).join('')}
       </div>
-      <div class="scale-ends"><span><span aria-hidden="true">😣</span> ${esc(item.low)}</span><span>${esc(item.high)} <span aria-hidden="true">😄</span></span></div>
+      <div class="scale-ends"><span>${esc(item.low)}</span><span>${esc(item.high)}</span></div>
     </fieldset>`;
 }
 
