@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": "_site",
+    "cleanUrls": false,
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" }
+        ]
+      },
+      {
+        "source": "**/*.gs",
+        "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }]
+      }
+    ]
+  }
+}
