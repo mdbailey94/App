@@ -18,11 +18,33 @@ jobs:
           node-version: 22
       - run: npm test
 
+  # Browser tests: the real app in Chromium with a fake fingertip camera and
+  # fake group sheets (see playwright.config.mjs).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   # Publishes the app to GitHub Pages from main so it can be opened on a phone.
   # Enable it once under Settings → Pages → Source: "GitHub Actions".
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: test
+    needs: [test, e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,7 +66,7 @@ jobs:
   # key; a FIREBASE_PROJECT_ID repository variable overrides it if present.
   deploy-firebase:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: test
+    needs: [test, e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
