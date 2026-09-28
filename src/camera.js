@@ -114,6 +114,11 @@ export class PpgCamera {
     this.lastMediaTime = -1;
     this.lastT = -Infinity;
     this.openToken = 0;
+    // Which frame clock is in use (reported in reading diagnostics).
+    this.clock = null;
+    this.trustCapture = true;
+    this.lastCapture = null;
+    this.lastNow = null;
   }
 
   releaseStream() {
@@ -299,9 +304,23 @@ export class PpgCamera {
     if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
       this.video.requestVideoFrameCallback((now, meta) => {
         // Prefer the sensor capture time, then the presentation timestamp:
-        // both are more accurate than when JS happens to run.
-        let t = Number.isFinite(meta.captureTime) ? meta.captureTime : meta.mediaTime * 1000;
-        if (!Number.isFinite(t)) t = now;
+        // both are more accurate than when JS happens to run. Some browsers
+        // report a capture time on a different clock or scale; if its steps
+        // disagree with real time, stop trusting it.
+        const cap = meta.captureTime;
+        if (this.trustCapture && Number.isFinite(cap) && this.lastCapture !== null) {
+          const dc = cap - this.lastCapture;
+          const dn = now - this.lastNow;
+          if (dn > 0 && (dc <= 0 || dc > 1000 || Math.abs(dc - dn) > 250)) {
+            this.trustCapture = false;
+            this.lastT = -Infinity; // new clock: listeners see time jump and start over
+          }
+        }
+        this.lastCapture = cap; this.lastNow = now;
+        let t;
+        if (this.trustCapture && Number.isFinite(cap)) { t = cap; this.clock = 'capture'; }
+        else if (Number.isFinite(meta.mediaTime)) { t = meta.mediaTime * 1000; this.clock = 'media'; }
+        else { t = now; this.clock = 'callback'; }
         if (t > this.lastT) { // skip duplicate frames
           this.lastT = t;
           this.handleFrame(t);
@@ -313,6 +332,7 @@ export class PpgCamera {
         const t = this.video.currentTime;
         if (t !== this.lastMediaTime) {
           this.lastMediaTime = t;
+          this.clock = 'animation';
           this.handleFrame(performance.now());
         }
         this.scheduleFrame();
@@ -326,10 +346,17 @@ export class PpgCamera {
     const side = Math.min(w, h) * 0.6;
     this.ctx.drawImage(this.video, (w - side) / 2, (h - side) / 2, side, side, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
     const px = this.ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data;
-    let r = 0, g = 0, b = 0;
-    for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i + 1]; b += px[i + 2]; }
-    const n = px.length / 4;
-    this.onSample?.({ t, r: r / n, g: g / n, b: b / n });
+    const s = frameStats(px);
+    this.onSample?.({ t, r: s.r, g: s.g, b: s.b, texture: s.texture });
+  }
+
+  // What the camera is actually delivering, for reading diagnostics.
+  describe() {
+    const st = this.track?.getSettings?.() || {};
+    return {
+      label: this.track?.label || '', width: st.width, height: st.height, frameRate: st.frameRate,
+      torch: this.torch, clock: this.clock,
+    };
   }
 
   async stop() {

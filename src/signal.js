@@ -304,6 +304,9 @@ export function liveHeartRate(times, values, opts = {}) {
 
 // Heuristic: is a fingertip covering the lens? With the torch on the frame is
 // bright, saturated red; uncovered frames look like a normal scene.
-export function fingerDetected({ r, g, b }) {
-  return r > 60 && r > 1.5 * g && r > 1.5 * b;
+export function fingerDetected({ r, g, b, texture }) {
+  if (r > 60 && r > 1.5 * g && r > 1.5 * b) return true;
+  // A bright flashlight can wash a fingertip out towards orange/white, so the
+  // red lead shrinks; it still looks smooth and bright rather than like a room.
+  return Number.isFinite(texture) && texture < 12 && r > 170 && r >= 1.1 * g && r >= 1.2 * b;
 }

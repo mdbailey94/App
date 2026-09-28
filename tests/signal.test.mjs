@@ -137,4 +137,9 @@ test('fingerDetected recognises a red, lit fingertip', () => {
   assert.equal(fingerDetected({ r: 230, g: 40, b: 30 }), true);
   assert.equal(fingerDetected({ r: 120, g: 115, b: 110 }), false);
   assert.equal(fingerDetected({ r: 20, g: 5, b: 5 }), false);
+  // Washed out by a bright flashlight: smooth and bright, only slightly red.
+  assert.equal(fingerDetected({ r: 250, g: 200, b: 150, texture: 4 }), true);
+  // A bright, detailed room is not a fingertip.
+  assert.equal(fingerDetected({ r: 250, g: 200, b: 150, texture: 40 }), false);
+  assert.equal(fingerDetected({ r: 230, g: 225, b: 220, texture: 3 }), false); // white wall
 });

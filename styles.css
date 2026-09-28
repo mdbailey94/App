@@ -123,7 +123,17 @@ fieldset { border: 0; padding: 0; margin: 0; }
   border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
   font-weight: 600; cursor: pointer;
 }
-.scale-options input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+/* Red → green across the scale (7 is always best); the numbers carry the
+   meaning, the colour just makes the scale quicker to read. */
+.scale-options label:nth-child(1) { --tone: hsl(4 72% 50%); }
+.scale-options label:nth-child(2) { --tone: hsl(18 80% 50%); }
+.scale-options label:nth-child(3) { --tone: hsl(34 88% 48%); }
+.scale-options label:nth-child(4) { --tone: hsl(48 85% 45%); }
+.scale-options label:nth-child(5) { --tone: hsl(75 60% 42%); }
+.scale-options label:nth-child(6) { --tone: hsl(105 50% 40%); }
+.scale-options label:nth-child(7) { --tone: hsl(135 55% 36%); }
+.scale-options span { background: color-mix(in srgb, var(--tone) 14%, var(--bg)); border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); }
+.scale-options input:checked + span { background: var(--tone); border-color: var(--tone); color: #fff; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tone); }
 .scale-options input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .chips label { position: relative; }
@@ -305,3 +315,8 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .card-head h3 { margin: 0; }
 .trend-block { margin-top: 14px; }
 .trend-block h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+
+.streak { margin: 10px 0 0; font-size: 15px; }
+.chips.days span { font-size: 13px; }
+.diag { margin-top: 12px; }
+.diag textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }

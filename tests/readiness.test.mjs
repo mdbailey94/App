@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessDay, baseline, rollingMean, sessionLoad, shiftDate, wellnessScore, workload } from '../src/readiness.js';
+import {
+  assessDay, baseline, checkInStreak, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+} from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
 const awful = { sleepQuality: 1, energy: 1, soreness: 1, stress: 1, mood: 1, motivation: 1, sleepHours: 4 };
@@ -103,4 +105,23 @@ test('1–7 scales score on their own range; older 1–5 check-ins still score t
   assert.equal(wellnessScore(mid7), 50);
   assert.equal(wellnessScore(top5), 100);
   assert.equal(wellnessScore({ ...top5, energy: 3 }), wellnessScore({ ...top7, energy: 4 })); // both midpoints
+});
+
+test('reading days: Mon/Wed/Fri by weekday; none set means every day', () => {
+  const mwf = [1, 3, 5];
+  assert.equal(isReadingDay(mwf, '2026-09-28'), true); // Monday
+  assert.equal(isReadingDay(mwf, '2026-09-29'), false); // Tuesday
+  assert.equal(nextReadingDay(mwf, '2026-09-29'), 'Wed');
+  assert.equal(nextReadingDay(mwf, '2026-10-02'), 'Mon'); // Friday → Monday
+  assert.equal(isReadingDay([], '2026-09-29'), true);
+  assert.equal(nextReadingDay([], '2026-09-29'), null);
+});
+
+test('checkInStreak counts days in a row, still alive before today is done', () => {
+  const w = { energy: 5 };
+  const days = (...ds) => ds.map((date) => ({ date, wellness: w }));
+  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27', '2026-09-28'), '2026-09-28'), { days: 3, doneToday: true });
+  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27'), '2026-09-28'), { days: 2, doneToday: false });
+  assert.deepEqual(checkInStreak(days('2026-09-25', '2026-09-27'), '2026-09-28'), { days: 1, doneToday: false });
+  assert.deepEqual(checkInStreak([{ date: '2026-09-28', hrv: {} }], '2026-09-28'), { days: 0, doneToday: false });
 });
