@@ -1,6 +1,6 @@
 import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
-  saveSettings, todayISO, upsertEntry, clearAll,
+  loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
 import { assessDay, sessionLoad, shiftDate, WELLNESS_ITEMS, wellnessScore } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
@@ -45,7 +45,7 @@ const SLEEP_STEPS = Array.from({ length: 13 }, (_, i) => 4 + i * 0.5);
 const routes = {
   today: renderToday,
   checkin: renderCheckin,
-  morning: renderMorning,
+  morning: (arg, query) => renderMorning(query),
   measure: renderMeasure,
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
@@ -301,8 +301,9 @@ function renderCheckin(dateArg) {
 // Questions and the heart reading at the same time: the reading runs in a
 // bar pinned at the top while the athlete answers with their other hand.
 
-function renderMorning() {
+function renderMorning(query = new URLSearchParams()) {
   const date = todayISO();
+  const team = query.has('joined') ? loadTeam() : null;
   const e = getEntry(date) || {};
   const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
@@ -320,6 +321,11 @@ function renderMorning() {
       </div>
       <div class="progress" id="reading-progress" hidden><div id="progress-bar"></div></div>
     </section>
+
+    ${team ? `<section class="card welcome" role="status">
+      <p><b>✓ You’re in, ${esc(team.athlete.split(' ')[0])}!</b> You’ve joined ${esc(team.group)}, and your check-ins will go to your coach.
+        Now do today’s check-in below.</p>
+    </section>` : ''}
 
     <section class="card">
       <h2>Morning check-in</h2>

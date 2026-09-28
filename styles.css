@@ -280,3 +280,5 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .prefill-note p { margin: 0; }
 .qr { max-width: 280px; margin: 12px auto; border-radius: 12px; overflow: hidden; }
 .qr svg { display: block; width: 100%; height: auto; }
+.welcome { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
+.welcome p { margin: 0; }
