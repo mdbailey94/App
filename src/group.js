@@ -179,5 +179,5 @@ function countRun(entries, test) {
 export function reminderText(missing, appUrl) {
   const names = missing.map((m) => m.name);
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
-  return `Morning check-in reminder: still waiting on ${list}. It takes about a minute: ${appUrl}`;
+  return `Morning check-in reminder 🏊 Still waiting on ${list}. It takes about a minute: ${appUrl}`;
 }

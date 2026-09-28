@@ -118,5 +118,5 @@ test('teamTrend: daily average readiness, check-in rate and load', () => {
 
 test('reminderText lists who is missing', () => {
   assert.equal(reminderText([{ name: 'Lou' }, { name: 'Mia' }, { name: 'Kai' }], 'https://x/'),
-    'Morning check-in reminder: still waiting on Lou, Mia and Kai. It takes about a minute: https://x/');
+    'Morning check-in reminder 🏊 Still waiting on Lou, Mia and Kai. It takes about a minute: https://x/');
 });
