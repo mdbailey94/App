@@ -7,7 +7,7 @@ const SETTINGS_KEY = 'athlete-readiness/settings/v1';
 // Off until the athlete opts in (offered after their first normal reading).
 // hrvDays: weekdays for the heart reading (0 = Sunday). Three a week is
 // plenty for trends and keeps mornings quick.
-const DEFAULT_SETTINGS = { durationSec: 60, posture: 'lying', hrvDuringCheckin: false, hrvDays: [1, 3, 5] };
+const DEFAULT_SETTINGS = { durationSec: 60, posture: 'lying', hrvDuringCheckin: false, hrvDays: [1, 3, 5], frontCamera: false };
 
 function read(key, fallback) {
   try {

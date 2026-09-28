@@ -352,8 +352,11 @@ function renderMorning(query = new URLSearchParams()) {
   const experienced = supported && hasCameraReading();
   // Questions and reading together only once the athlete has opted in; until
   // then the check-in is questions only, followed by the normal HRV screen.
-  const combined = readingDay && experienced && settings.hrvDuringCheckin;
-  const [toggleHtml, wireToggle] = readingDay && experienced ? combinedToggle(combined, () => route()) : ['', () => {}];
+  // The front-camera reading needs the screen as its light, so it can't run
+  // alongside the questions.
+  const canCombine = readingDay && experienced && !settings.frontCamera;
+  const combined = canCombine && settings.hrvDuringCheckin;
+  const [toggleHtml, wireToggle] = canCombine ? combinedToggle(combined, () => route()) : ['', () => {}];
 
   view.innerHTML = `
     ${combined ? `<section class="card reading-bar" id="reading">
@@ -507,6 +510,7 @@ function renderMeasure(query = new URLSearchParams()) {
   const settings = loadSettings();
   const supported = cameraSupported();
   const afterCheckin = query.get('after') === 'checkin';
+  const front = settings.frontCamera;
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" id="next-step" role="status">
       <p><b>✓ Answers saved.</b> Last step: your 1-minute heart reading.
@@ -515,12 +519,17 @@ function renderMeasure(query = new URLSearchParams()) {
     <section class="card" id="measure-intro">
       <h2>Heart reading</h2>
       <p>Uses your phone’s camera and flashlight to see the pulse in your fingertip.</p>
-      <ol class="steps">
+      ${front ? `<ol class="steps">
+        <li>Best done each morning right after waking, before coffee, in the same position.</li>
+        <li>Turn your <b>screen brightness all the way up</b>. During the reading the screen turns white to light your finger.</li>
+        <li>After tapping Start, lightly cover the <b>front camera</b> (top of the screen) with a fingertip. Pressing hard blocks the pulse.</li>
+        <li>Hold the phone steady – resting your arm on your lap or a table helps – and stay still and quiet until it finishes.</li>
+      </ol>` : `<ol class="steps">
         <li>Best done each morning right after waking, before coffee, in the same position.</li>
         <li><b>Before tapping Start</b>, gently cover <b>both the flashlight and the camera closest to it</b> with a fingertip. The app checks which camera is covered and uses that one. Pressing hard blocks the pulse.</li>
         <li>Hold the phone steady – resting your arm on your lap or a table helps. The small round preview should glow red or look dark. If you can see the room in it, your finger is on the wrong lens.</li>
         <li>Breathe normally and stay still and quiet until it finishes.</li>
-      </ol>
+      </ol>`}
       <div class="row">
         <label class="field">Position
           <select id="posture">
@@ -540,6 +549,8 @@ function renderMeasure(query = new URLSearchParams()) {
       </fieldset>
       ${supported ? '<button class="btn block" id="start">Start reading</button>'
     : '<p class="form-error">Camera access needs a secure (https) page in a modern browser.</p>'}
+      ${supported ? `<label class="toggle-line small"><input type="checkbox" id="front-mode" ${front ? 'checked' : ''}>
+        Use the front camera, lit by the screen <span class="muted">(experimental – try this if readings keep failing)</span></label>` : ''}
       <details class="small"><summary>Have a chest strap or other HRV app?</summary>
         <form id="manual" class="stack">
           <div class="row">
@@ -551,7 +562,7 @@ function renderMeasure(query = new URLSearchParams()) {
       </details>
     </section>
 
-    <section class="card" id="measure-live" hidden>
+    <section class="card ${front ? 'front-light' : ''}" id="measure-live" hidden>
       <div class="live-head">
         <span id="finger" class="status status-warning"><span class="status-icon" aria-hidden="true">!</span>Place finger on lens</span>
         <span id="countdown" class="countdown"></span>
@@ -570,6 +581,7 @@ function renderMeasure(query = new URLSearchParams()) {
   const $ = (sel) => view.querySelector(sel);
   $('#posture').addEventListener('change', (e) => saveSettings({ posture: e.target.value }));
   $('#duration').addEventListener('change', (e) => saveSettings({ durationSec: +e.target.value }));
+  $('#front-mode')?.addEventListener('change', (e) => { saveSettings({ frontCamera: e.target.checked }); route(); });
   view.querySelectorAll('input[name=hrvDay]').forEach((box) => box.addEventListener('change', () => {
     const days = [...view.querySelectorAll('input[name=hrvDay]:checked')].map((x) => +x.value);
     saveSettings({ hrvDays: days }); // none ticked = every day
@@ -587,8 +599,9 @@ function renderMeasure(query = new URLSearchParams()) {
 
   if (!supported) return;
   const cam = new PpgCamera($('#camera'));
+  cam.front = front;
   let reading = null;
-  cleanup = async () => { reading?.stop(); await cam.stop(); };
+  cleanup = async () => { reading?.stop(); await cam.stop(); document.body.classList.remove('lit'); };
 
   const setFinger = (ok, text) => {
     $('#finger').className = `status status-${ok ? 'good' : 'warning'}`;
@@ -605,6 +618,7 @@ function renderMeasure(query = new URLSearchParams()) {
     $('#measure-intro').hidden = true;
     $('#next-step')?.remove();
     $('#measure-live').hidden = false;
+    if (front) document.body.classList.add('lit');
     reading = startReading(cam, {
       durationSec: +$('#duration').value,
       posture: $('#posture').value,
@@ -619,13 +633,14 @@ function renderMeasure(query = new URLSearchParams()) {
     });
     reading.done.then((out) => {
       reading = null;
+      document.body.classList.remove('lit');
       if (out.cancelled) return;
       if (out.ok) {
         // No numbers here on purpose: single readings vary a lot, so the
         // athlete sees the weekly trend and the coach sees the details.
         upsertEntry(todayISO(), { hrv: out.hrv });
         // After a first reading the normal way, offer to do it during the check-in.
-        const [offer, wireOffer] = loadSettings().hrvDuringCheckin ? ['', () => {}]
+        const [offer, wireOffer] = loadSettings().hrvDuringCheckin || front ? ['', () => {}]
           : combinedToggle(false, () => {
             const card = view.querySelector('#measure-result .offer');
             if (card) card.innerHTML = '<p><b>✓ Turned on.</b> Next time, your heart reading runs while you answer the questions.</p>';
@@ -640,8 +655,10 @@ function renderMeasure(query = new URLSearchParams()) {
       showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>
         <p class="muted small">Tip: rest your arm on your lap or a table, press lightly, and stay still and quiet.</p>
         <button class="btn block" id="retry">Try again</button>
+        ${front ? '' : '<button class="btn secondary block" id="try-front">Try the front camera instead (experimental)</button>'}
         ${diagnostics(out.diag)}`);
       $('#retry').onclick = () => route();
+      $('#try-front')?.addEventListener('click', () => { saveSettings({ frontCamera: true }); route(); });
       wireDiagnostics(view);
     });
   });
