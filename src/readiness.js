@@ -10,9 +10,9 @@ export const WELLNESS_ITEMS = [
   { key: 'sleepQuality', label: 'Sleep quality', low: 'Very poor', high: 'Excellent' },
   { key: 'energy', label: 'Energy', low: 'Low', high: 'High' },
   { key: 'soreness', label: 'Muscle soreness from training', low: 'Very sore', high: 'None' },
-  { key: 'stress', label: 'How stressed are you? (tense – relaxed)', low: 'Very stressed', high: 'Very relaxed' },
+  { key: 'stress', label: 'How relaxed do you feel?', low: 'Very stressed', high: 'Very relaxed' },
   { key: 'mood', label: 'Mood', low: 'Negative', high: 'Positive' },
-  { key: 'motivation', label: 'Motivation to train', low: 'Low', high: 'High' },
+  { key: 'motivation', label: 'Motivation', low: 'Low', high: 'High' },
 ];
 
 // Check-ins saved before the switch to 1–7 have no scaleMax and used 1–5.
