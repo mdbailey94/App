@@ -8,7 +8,7 @@ import {
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
-import { checkinSections, readCheckin, showFormError, wireCheckin, withDefaults } from './checkin-form.js';
+import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin, withDefaults } from './checkin-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
 import { renderCoach, renderTeam, syncLine } from './coach.js';
 import { syncPending, syncStatus } from './team.js';
@@ -61,8 +61,9 @@ function renderToday() {
   const a = assessDay(entries, date, { heart: false });
   const answered = Boolean(entry?.wellness);
   const heartDone = Boolean(entry?.hrv);
-  const { hrvDays } = loadSettings();
+  const { hrvDays, solo } = loadSettings();
   const readingDay = isReadingDay(hrvDays, date);
+  const status = syncStatus();
   const streak = checkInStreak(entries, date);
   const streakLine = streak.days >= 2
     ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.doneToday ? '' : ' – check in today to keep it going'}</p>` : '';
@@ -84,13 +85,21 @@ function renderToday() {
         <div class="actions">
           <a class="btn secondary" href="#checkin">Edit answers</a>
           <a class="btn secondary" href="#measure">${heartDone ? 'Redo reading' : 'Add reading'}</a>
-        </div>` : `
+        </div>
+        ${status.joined ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}` : `
         <h2>Good morning</h2>
         <p class="muted">${readingDay ? 'About two minutes: a few questions and a 1-minute heart reading.' : 'About a minute: a few quick questions. No heart reading needed today.'}</p>
         ${streakLine}
         <a class="btn block" href="#morning">Start my morning check-in</a>`}
       ${a.baselineReadingsNeeded && heartDone ? `<p class="muted small">Keep taking morning readings – after ${a.baselineReadingsNeeded} more, the app knows your normal range.</p>` : ''}
     </section>
+
+    ${!status.joined && !solo ? `<section class="card offer" id="join-nudge">
+      <p><b>Not connected to your coach.</b> Your check-ins stay on this phone until you join your group –
+        scan your coach’s QR code or open their invite link.</p>
+      <div class="actions"><a class="btn secondary" href="#team">Join a group</a>
+        <button class="link" type="button" id="solo">I’m using the app on my own</button></div>
+    </section>` : ''}
 
     ${heartDone ? `<section class="card"><h3>This morning’s heart</h3>${heartStats(entry.hrv)}</section>` : ''}
 
@@ -107,9 +116,10 @@ function renderToday() {
       <p class="muted small">Load = training minutes × session RPE.${a.load.acwr === null ? ' Acute:chronic ratio appears after 3 weeks of check-ins.' : ''}</p>
     </section>
 
-    ${syncStatus().joined ? `<p class="sync-line" id="sync-line">${syncLine(syncStatus())}</p>` : ''}
+    ${status.joined && !answered ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}
 
     <p class="disclaimer">For training guidance only — not a medical device. If you feel unwell, speak to a doctor.</p>`;
+  view.querySelector('#solo')?.addEventListener('click', () => { saveSettings({ solo: true }); route(); });
 }
 
 
@@ -135,8 +145,9 @@ function renderCheckin(dateArg) {
   });
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const { missing, patch } = readCheckin(form);
-    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
+    const answers = readCheckin(form);
+    if (answers.missing) { showMissing(form, answers); return; }
+    const { patch } = answers;
     upsertEntry(form.date.value, patch);
     location.hash = form.date.value === todayISO() ? '#today' : '#history';
   });
@@ -213,7 +224,7 @@ function renderMorning(query = new URLSearchParams()) {
         <li>Hold your phone in one hand. With a fingertip of that hand, gently cover <b>both the flashlight and the camera closest to it</b> on the back.</li>
         <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
         <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
-        <li>Tap <b>Save</b> when you’re done. If the reading is still going, it saves as soon as it finishes.</li>
+        <li>Tap <b>Save</b> when you’re done. Your answers are saved straight away; if the reading is still going, it’s added when it finishes.</li>
       </ol>
       ${e.hrv ? '<p class="muted small">You already have a heart reading today. Start only if you want to redo it.</p>' : ''}
       ${toggleHtml}
@@ -229,7 +240,6 @@ function renderMorning(query = new URLSearchParams()) {
       ${checkinSections(formEntry)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit" id="save">Save check-in</button>
-      <button class="btn secondary block" type="button" id="save-without" hidden>Save answers without a heart reading</button>
     </form>`;
 
   // Show the welcome once: an app added to the Home Screen from this page
@@ -243,7 +253,7 @@ function renderMorning(query = new URLSearchParams()) {
 
   let state = 'idle'; // idle | running | done | failed
   let hrv = null;
-  let pending = null; // answers waiting for the reading to finish
+  let savedEarly = false; // answers saved while the reading was still going
   let reading = null;
   const cam = combined ? new PpgCamera($('#camera')) : null;
   cleanup = async () => { reading?.stop(); await cam?.stop(); };
@@ -255,18 +265,17 @@ function renderMorning(query = new URLSearchParams()) {
   };
   const save = (patch) => {
     upsertEntry(date, hrv ? { ...patch, hrv } : patch);
+    sync(); // send now, not on the next screen change
     // Not doing the reading here: go on to the normal HRV screen if today
     // still needs one.
     location.hash = readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
   };
-  const resetSave = () => { $('#save').disabled = false; $('#save').textContent = 'Save check-in'; };
 
   const start = () => {
     state = 'running';
     hrv = null;
     $('#reading-start').hidden = true;
     $('#reading-progress').hidden = false;
-    $('#save-without').hidden = true;
     reading = startReading(cam, {
       durationSec: settings.durationSec,
       posture: settings.posture,
@@ -291,17 +300,20 @@ function renderMorning(query = new URLSearchParams()) {
         hrv = out.hrv;
         $('#reading-start').textContent = 'Redo';
         setReading('✓ Heart reading done', `${fmt(hrv.hr)} bpm · HRV ${fmt(hrv.rmssd)} ms – you can take your finger off the lens.`, 'ok');
-        if (pending) save(pending);
+        if (savedEarly) {
+          upsertEntry(date, { hrv });
+          sync();
+          location.hash = '#today';
+        }
         return;
       }
       state = 'failed';
       $('#reading-start').textContent = 'Try again';
       setReading('Heart reading didn’t work', out.reason, 'warn');
-      if (pending) {
-        pending = null;
-        resetSave();
-        $('#save-without').hidden = false;
-        showFormError(form, 'The heart reading didn’t work. Try it again, or save your answers without it.');
+      if (savedEarly) {
+        // The answers are already saved; the reading can be retried or skipped.
+        $('#save').disabled = false;
+        $('#save').textContent = 'Done – skip the heart reading';
       }
     });
   };
@@ -309,25 +321,20 @@ function renderMorning(query = new URLSearchParams()) {
 
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const { missing, patch } = readCheckin(form);
-    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
+    const answers = readCheckin(form);
+    if (answers.missing) { showMissing(form, answers); return; }
+    const { patch } = answers;
     showFormError(form, '');
     if (state === 'running') {
-      pending = patch;
+      // Save the answers now, so nothing is lost if the app is closed before
+      // the reading finishes; the reading is added when it does.
+      upsertEntry(date, patch);
+      sync();
+      savedEarly = true;
       $('#save').disabled = true;
-      $('#save').textContent = 'Saving when the heart reading finishes…';
+      $('#save').textContent = '✓ Answers saved – finishing your heart reading…';
       return;
     }
-    if (!combined || state === 'done' || e.hrv) { save(patch); return; }
-    $('#save-without').hidden = false;
-    showFormError(form, state === 'failed'
-      ? 'The heart reading didn’t work. Try it again, or save your answers without it.'
-      : 'You haven’t taken today’s heart reading. Tap Start at the top, or save your answers without it.');
-  });
-  $('#save-without').addEventListener('click', () => {
-    const { missing, patch } = readCheckin(form);
-    if (missing) { showFormError(form, `Please answer: ${missing.join(', ')}.`); return; }
-    hrv = null;
     reading?.stop();
     save(patch);
   });
@@ -609,16 +616,32 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
     })
     .catch(() => {});
 }
+// Whether today's answers have reached the coach, with a way to push them
+// through by hand when they haven't.
+function sendStatus(status) {
+  if (!status.joined) return '';
+  return syncLine(status) + (status.pending ? ' <button class="btn small-btn" type="button" id="send-now">Send now</button>' : '');
+}
+
 // Send new or edited days to the group sheet whenever there's a chance.
 function sync() {
-  syncPending().then(() => {
+  return syncPending().then(() => {
     const line = document.getElementById('sync-line');
-    if (line) line.innerHTML = syncLine(syncStatus());
+    if (line) line.innerHTML = sendStatus(syncStatus());
   });
 }
 window.addEventListener('hashchange', sync);
 window.addEventListener('online', sync);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+// Also when the athlete leaves the app: the request is sent with keepalive,
+// so it still gets through if the app is closed straight after saving.
+document.addEventListener('visibilitychange', sync);
+window.addEventListener('pagehide', sync);
+view.addEventListener('click', (ev) => {
+  if (ev.target.id !== 'send-now') return;
+  ev.target.disabled = true;
+  ev.target.textContent = 'Sending…';
+  sync();
+});
 setInterval(() => { if (syncStatus().pending) sync(); }, 60000);
 
 // A Home Screen app on iPhone starts with empty storage but keeps the address

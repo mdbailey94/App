@@ -35,12 +35,29 @@ test('reading during the check-in, once turned on', async ({ page }) => {
   await page.click('#reading-start');
   await answerAll(page, { value: 6 });
   await page.click('#save');
-  await expect(page.locator('#save')).toHaveText('Saving when the heart reading finishes…');
+  await expect(page.locator('#save')).toHaveText('✓ Answers saved – finishing your heart reading…');
+  // Saved straight away, so closing the app mid-reading loses nothing.
+  expect((await todayEntry(page)).wellness.energy).toBe(6);
   await page.waitForURL(/#today/, { timeout: 120_000 });
 
   const e = await todayEntry(page);
   expect(e.wellness.energy).toBe(6);
   expect(e.hrv.source).toBe('camera');
+});
+
+test('reading during the check-in: saving without starting it keeps the answers', async ({ page }) => {
+  await seed(page, {
+    entries: [past(1, { hrv: HEART })],
+    settings: { hrvDays: EVERY_DAY, hrvDuringCheckin: true },
+    hash: '#morning',
+  });
+  await answerAll(page, { value: 6 });
+  await page.click('#save');
+  await page.waitForURL(/#today/);
+  const e = await todayEntry(page);
+  expect(e.wellness.energy).toBe(6);
+  expect(e.hrv).toBeUndefined();
+  await expect(page.locator('.done-list')).toContainText('No heart reading today');
 });
 
 test('reading during the check-in can be turned off again', async ({ page }) => {
@@ -82,7 +99,11 @@ test('1–7 scales; answers from the old 1–5 scales are not carried over', asy
 
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
+  // Each unanswered question is outlined, and answering one clears it.
+  await expect(page.locator('fieldset.missing')).toHaveCount(6);
+  await expect(page.locator('fieldset.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
+  await expect(page.locator('fieldset.missing')).toHaveCount(5);
   await answerAll(page, { value: 3 });
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
