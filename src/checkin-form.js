@@ -110,6 +110,7 @@ export function wireCheckin(form) {
     form.querySelector('#load-preview').textContent = load ? `Session load: ${load} AU` : '';
   };
   form.addEventListener('input', (ev) => {
+    ev.target.closest('.missing')?.classList.remove('missing');
     if (ev.target.name === 'painLevel') form.querySelector('#pain-location').hidden = ev.target.value === '0';
     if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
     loadPreview();
@@ -149,12 +150,12 @@ export function withDefaults(date, e) {
 // Read the answers: { missing: [labels] } or { patch } ready to save.
 export function readCheckin(form) {
   const fd = new FormData(form);
-  const missing = WELLNESS_ITEMS.filter((i) => !fd.get(i.key)).map((i) => i.label);
+  const unanswered = WELLNESS_ITEMS.filter((i) => !fd.get(i.key));
   const sleepHours = fd.get('sleepHours') === 'other' ? Number(fd.get('sleepOther')) : Number(fd.get('sleepHours'));
   if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
-    missing.unshift('Hours slept');
+    unanswered.unshift({ key: 'sleepHours', label: 'Hours slept' });
   }
-  if (missing.length) return { missing };
+  if (unanswered.length) return { missing: unanswered.map((i) => i.label), missingKeys: unanswered.map((i) => i.key) };
   const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
   const painLevel = num('painLevel') || 0;
   const wellness = { sleepHours, scaleMax: SCALE_MAX };
@@ -169,9 +170,19 @@ export function readCheckin(form) {
   };
 }
 
-export function showFormError(form, text) {
+export function showFormError(form, text, { scroll = true } = {}) {
   const err = form.querySelector('#form-error');
   err.textContent = text;
   err.hidden = !text;
-  if (text) err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (text && scroll) err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Unanswered questions: outline each one and take the athlete to the first,
+// rather than leaving them to hunt for what's missing.
+export function showMissing(form, { missing, missingKeys }) {
+  form.querySelectorAll('.missing').forEach((el) => el.classList.remove('missing'));
+  const boxes = missingKeys.map((k) => form.querySelector(`[name="${k}"]`)?.closest('fieldset')).filter(Boolean);
+  boxes.forEach((el) => el.classList.add('missing'));
+  showFormError(form, `Please answer: ${missing.join(', ')}.`, { scroll: !boxes.length });
+  boxes[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }

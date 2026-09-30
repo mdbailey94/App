@@ -6,13 +6,17 @@ import { loadEntries, loadTeam, markSynced, saveTeam } from './storage.js';
 // Apps Script web apps accept a plain-text POST without a CORS preflight and
 // answer with JSON after a redirect.
 export async function callSheet(url, body) {
+  const text = JSON.stringify(body);
   let res;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
+      body: text,
       redirect: 'follow',
+      // Lets the request finish even if the athlete closes the app right
+      // after saving. Browsers only allow this for small requests (64 KB).
+      keepalive: text.length < 60000,
     });
   } catch {
     throw new Error('Couldn’t reach the group sheet. Check your internet connection.');

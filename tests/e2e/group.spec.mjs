@@ -72,11 +72,33 @@ test('check-ins wait while the sheet is down, then send', async ({ page, request
   await answerAll(page);
   await page.click('#save');
   await page.waitForURL(/#today/);
-  await expect(page.locator('#sync-line')).toContainText('Not sent yet', { timeout: 15_000 });
+  const status = page.locator('.hero #sync-line');
+  await expect(status).toContainText('Not sent yet', { timeout: 15_000 });
 
   await sheetState(request, sheet, { down: false });
-  await page.click('.tabs a[data-tab=history]'); // any navigation retries
-  await page.click('.tabs a[data-tab=today]');
-  await expect(page.locator('#sync-line')).toContainText('Shared with coach', { timeout: 15_000 });
+  await status.locator('#send-now').click();
+  await expect(status).toContainText('Shared with coach', { timeout: 15_000 });
+  await expect(status.locator('#send-now')).toHaveCount(0);
   expect((await sheetState(request, sheet)).rows).toBe(1);
+});
+
+test('a check-in is sent the moment it is saved, before the app can be closed', async ({ page, request, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { settings });
+  await join(page, sheet, baseURL);
+  await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('athlete-readiness/team/v1')).lastError))).toBeFalsy();
+
+  await answerAll(page);
+  await page.click('#save');
+  await page.close(); // straight away, like swiping the app closed: the send has already started
+  await expect.poll(async () => (await sheetState(request, sheet)).rows, { timeout: 10_000 }).toBe(1);
+});
+
+test('not in a group: Today says check-ins are not reaching a coach', async ({ page }) => {
+  await seed(page, { entries: history, hash: '#today' });
+  const nudge = page.locator('#join-nudge');
+  await expect(nudge).toContainText('Not connected to your coach');
+  await expect(nudge.locator('a[href="#team"]')).toBeVisible();
+  await nudge.locator('#solo').click();
+  await expect(page.locator('#join-nudge')).toHaveCount(0);
 });
