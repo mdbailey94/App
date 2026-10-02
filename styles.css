@@ -329,3 +329,7 @@ body.lit .tabs, body.lit header { visibility: hidden; }
 .days-note { margin-top: 6px; }
 .hero .sync-line { text-align: left; margin-top: 14px; font-size: 14px; }
 fieldset.missing { outline: 2px solid var(--critical); outline-offset: 6px; border-radius: 10px; }
+
+/* Today, after checking in: neutral, never red or green. */
+.usual { display: inline-block; margin: 6px 0 2px; padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.injury-note { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); border-radius: 6px; }

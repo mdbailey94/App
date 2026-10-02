@@ -128,3 +128,26 @@ test('an app saved on the check-in page opens on Today once today is done', asyn
   await expect(page).toHaveURL(/#today$/);
   await expect(page.locator('.hero')).toContainText('Questions answered');
 });
+
+test('after checking in: thanks, no score or advice, then a comparison with their own usual', async ({ page }) => {
+  // Two earlier check-ins: too few to compare yet.
+  await seed(page, { entries: [past(2), past(1)], settings: { hrvDays: [weekday(-1)] }, hash: '#morning' });
+  await answerAll(page, { value: 2 });
+  await page.click('#save');
+  await page.waitForURL(/#today/);
+  const hero = page.locator('.hero');
+  await expect(hero.locator('h2')).toHaveText('Thanks for checking in!');
+  await expect(hero).toContainText('After 3 more check-ins, you’ll see how each day compares with your usual.');
+  await expect(page.locator('.score-num, .advice, .flags')).toHaveCount(0);
+  await expect(page.locator('#view')).not.toContainText(/light session|recovery|trimming|\/100/);
+
+  // A low day after a handful of usual ones: neutral wording, keep to the program.
+  await seed(page, { entries: [6, 5, 4, 3, 2, 1].map((n) => past(n)), settings: { hrvDays: [weekday(-1)] }, hash: '#morning' });
+  await answerAll(page, { value: 2 });
+  await pick(page, 'input[name=painLevel][value="3"]');
+  await page.click('#save');
+  await page.waitForURL(/#today/);
+  await expect(hero.locator('.usual')).toHaveText('Feeling a bit below usual');
+  await expect(hero).toContainText('Keep following your program');
+  await expect(hero.locator('.injury-note')).toContainText('talk to your coach before practice');
+});

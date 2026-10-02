@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -124,4 +124,18 @@ test('checkInStreak counts days in a row, still alive before today is done', () 
   assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27'), '2026-09-28'), { days: 2, doneToday: false });
   assert.deepEqual(checkInStreak(days('2026-09-25', '2026-09-27'), '2026-09-28'), { days: 1, doneToday: false });
   assert.deepEqual(checkInStreak([{ date: '2026-09-28', hrv: {} }], '2026-09-28'), { days: 0, doneToday: false });
+});
+
+test('compareToUsual: thanks only until 5 earlier check-ins, then today against their own usual', () => {
+  const day = (n, v) => ({ date: shiftDate('2026-10-02', -n), wellness: { sleepHours: 8, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v } });
+  const usual = [6, 5, 4, 3, 2, 1].map((n) => day(n, 5));
+  assert.deepEqual(compareToUsual([...usual.slice(0, 2), day(0, 5)], '2026-10-02'), { ready: false, remaining: 3 });
+  assert.equal(compareToUsual([...usual, day(0, 5)], '2026-10-02').level, 'same');
+  assert.equal(compareToUsual([...usual, day(0, 7)], '2026-10-02').level, 'higher');
+  assert.equal(compareToUsual([...usual, day(0, 2)], '2026-10-02').level, 'lower');
+  // One point off isn't "below usual".
+  assert.equal(compareToUsual([...usual, day(0, 4.8)], '2026-10-02').level, 'same');
+  // A swimmer whose answers swing a lot needs a bigger gap before it counts.
+  const swingy = [6, 5, 4, 3, 2, 1].map((n) => day(n, n % 2 ? 7 : 3));
+  assert.equal(compareToUsual([...swingy, day(0, 3)], '2026-10-02').level, 'same');
 });

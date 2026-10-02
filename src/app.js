@@ -3,13 +3,13 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, isReadingDay, nextReadingDay, sessionLoad, WEEKDAYS, wellnessScore,
+  assessDay, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, sessionLoad, WEEKDAYS, wellnessScore,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
 import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin, withDefaults } from './checkin-form.js';
-import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
+import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderCoach, renderTeam, syncLine } from './coach.js';
 import { syncPending, syncStatus } from './team.js';
 
@@ -52,6 +52,31 @@ function heartStats(hrv) {
 
 // ------------------------------------------------------------------- today
 
+// What the athlete sees after checking in: thanks, and once there's enough
+// history, how today compares with their own usual. Never a verdict or advice
+// to change training: the program stands, and the coach looks at the trend.
+const USUAL = {
+  same: ['About your usual', 'Keep following your program.'],
+  higher: ['Feeling better than usual', 'Nice. Keep following your program.'],
+  lower: ['Feeling a bit below usual', 'Off days happen, and one day doesn’t change much. Keep following your program – your coach looks at how you’re doing over several days.'],
+};
+
+function compareLine(c) {
+  if (!c.ready) {
+    return `<p class="muted">After ${c.remaining} more check-in${c.remaining > 1 ? 's' : ''}, you’ll see how each day compares with your usual.</p>`;
+  }
+  const [label, line] = USUAL[c.level];
+  return `<p class="usual usual-${c.level}"><b>${label}</b></p><p class="muted small">${line}</p>`;
+}
+
+// An injury that changes how they swim is the one thing worth raising today.
+function injuryNote(pain) {
+  if (!(pain?.level >= 2)) return '';
+  return `<p class="injury-note">${pain.level >= 3
+    ? 'You said an injury is stopping some strokes or movements – talk to your coach before practice.'
+    : 'You said an injury is affecting your stroke – make sure your coach knows.'}</p>`;
+}
+
 function renderToday() {
   const date = todayISO();
   const entries = loadEntries();
@@ -60,6 +85,7 @@ function renderToday() {
   // and into weekly trends, so one noisy morning reading can't colour the day.
   const a = assessDay(entries, date, { heart: false });
   const answered = Boolean(entry?.wellness);
+  const first = loadTeam()?.athlete?.split(' ')[0];
   const heartDone = Boolean(entry?.hrv);
   const { hrvDays, solo } = loadSettings();
   const readingDay = isReadingDay(hrvDays, date);
@@ -71,11 +97,10 @@ function renderToday() {
   view.innerHTML = `
     <section class="card hero">
       <p class="eyebrow">${esc(prettyDate(date))}</p>
-      ${answered && a.score !== null ? `
-        <div class="score-row">
-          <div class="score"><span class="score-num">${a.score}</span><span class="score-max">/100</span></div>
-          <div>${statusBadge(a.status)}<p class="advice">${esc(a.status.advice)}</p></div>
-        </div>
+      ${answered ? `
+        <h2>Thanks for checking in${first ? `, ${esc(first)}` : ''}!</h2>
+        ${compareLine(compareToUsual(entries, date))}
+        ${injuryNote(entry.pain)}
         <ul class="done-list">
           <li>✓ Questions answered</li>
           <li>${heartDone ? '✓ Heart reading saved' : readingDay ? '<span class="muted">– No heart reading today</span>'
@@ -102,10 +127,6 @@ function renderToday() {
     </section>` : ''}
 
     ${heartDone ? `<section class="card"><h3>This morning’s heart</h3>${heartStats(entry.hrv)}</section>` : ''}
-
-    ${answered && a.flags.length ? `<section class="card"><h3>Things to note</h3><ul class="flags">
-      ${a.flags.map((f) => `<li>${statusBadge({ level: f.level, label: f.level === 'critical' ? 'Important' : 'Note' })} ${esc(f.text)}</li>`).join('')}
-    </ul></section>` : ''}
 
     <section class="card"><h3>Training load</h3>
       <div class="stats">
@@ -481,7 +502,7 @@ function renderMeasure(query = new URLSearchParams()) {
             const card = view.querySelector('#measure-result .offer');
             if (card) card.innerHTML = '<p><b>✓ Turned on.</b> Next time, your heart reading runs while you answer the questions.</p>';
           });
-        showResult(`<h3>✓ Reading saved</h3>
+        showResult(`<h3>✓ Thanks – reading saved</h3>
           ${heartStats(out.hrv)}
           <a class="btn block" href="#today">Done</a>
           ${offer}`);

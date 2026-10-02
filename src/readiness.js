@@ -182,3 +182,27 @@ export function checkInStreak(entries, today) {
   while (done.has(d)) { n++; d = shiftDate(d, -1); }
   return { days: n, doneToday: done.has(today) };
 }
+
+// ---- today compared with the athlete's own usual
+
+// How today's answers-only score sits against the athlete's own recent
+// check-ins (up to 30 before today). Until there are `minDays` of those,
+// `ready` is false and `remaining` says how many more are needed.
+// level: 'same' | 'higher' | 'lower'. A gap counts only if it is bigger than
+// both 6 points and the athlete's usual day-to-day spread.
+export function compareToUsual(entries, date, { minDays = 5 } = {}) {
+  const sorted = [...entries].sort((x, y) => x.date.localeCompare(y.date));
+  const today = assessDay(sorted, date, { heart: false }).score;
+  const before = sorted
+    .filter((e) => e.date < date && e.wellness)
+    .slice(-30)
+    .map((e) => assessDay(sorted, e.date, { heart: false }).score)
+    .filter(Number.isFinite);
+  if (today === null || before.length < minDays) {
+    return { ready: false, remaining: Math.max(1, minDays - before.length) };
+  }
+  const usual = mean(before);
+  const band = Math.max(6, std(before));
+  const diff = today - usual;
+  return { ready: true, level: diff > band ? 'higher' : diff < -band ? 'lower' : 'same', diff: Math.round(diff) };
+}
