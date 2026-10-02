@@ -6,7 +6,7 @@ test('back-camera reading saves heart rate and HRV', async ({ page }) => {
   await page.click('#start');
   await expect(page.locator('#finger')).toContainText(/Hold still|Reading/, { timeout: 20_000 });
   await readingResult(page);
-  await expect(page.locator('#measure-result h3')).toHaveText('✓ Reading saved');
+  await expect(page.locator('#measure-result h3')).toHaveText('✓ Thanks – reading saved');
 
   const { hrv } = await todayEntry(page);
   expect(hrv.source).toBe('camera');
@@ -31,7 +31,7 @@ test('front camera: the whole screen lights the fingertip', async ({ page }) => 
   await expect(page.locator('.tabs')).toHaveCSS('visibility', 'hidden');
 
   await readingResult(page);
-  await expect(page.locator('#measure-result h3')).toHaveText('✓ Reading saved');
+  await expect(page.locator('#measure-result h3')).toHaveText('✓ Thanks – reading saved');
   await expect(page.locator('.tabs')).toHaveCSS('visibility', 'visible');
   // The screen is the light, so reading during the check-in isn't offered.
   await expect(page.locator('#measure-result .offer')).toHaveCount(0);
