@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { groupByAthlete, groupDay, reminderText, teamTrend, trendSummary, watchList } from '../src/group.js';
-import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries } from '../src/team.js';
+import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
 import { shiftDate } from '../src/readiness.js';
 
 const good = { sleepHours: 8, sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5 };
@@ -119,4 +119,12 @@ test('teamTrend: daily average readiness, check-in rate and load', () => {
 test('reminderText lists who is missing', () => {
   assert.equal(reminderText([{ name: 'Lou' }, { name: 'Mia' }, { name: 'Kai' }], 'https://x/'),
     'Morning check-in reminder 🏊 Still waiting on Lou, Mia and Kai. It takes about a minute: https://x/');
+});
+
+test('stuck: only when something is waiting and sending has failed for over a day', () => {
+  const now = Date.parse('2026-10-05T08:00:00Z');
+  assert.equal(stuck({ pending: 1, failingSince: '2026-10-04T07:00:00Z' }, now), true);
+  assert.equal(stuck({ pending: 1, failingSince: '2026-10-05T07:00:00Z' }, now), false);
+  assert.equal(stuck({ pending: 0, failingSince: '2026-10-01T07:00:00Z' }, now), false);
+  assert.equal(stuck({ pending: 2, failingSince: null }, now), false);
 });

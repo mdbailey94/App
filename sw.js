@@ -1,7 +1,7 @@
 // Offline support. Every request goes to the network first (revalidated with
 // the server, so files from different releases are never mixed); the cached
 // copy is used only when offline.
-const CACHE = 'athlete-readiness-v23';
+const CACHE = 'athlete-readiness-v24';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'src/app.js', 'src/camera.js', 'src/charts.js', 'src/readiness.js', 'src/signal.js', 'src/storage.js',

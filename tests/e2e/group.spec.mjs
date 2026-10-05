@@ -76,10 +76,52 @@ test('check-ins wait while the sheet is down, then send', async ({ page, request
   await expect(status).toContainText('Not sent yet', { timeout: 15_000 });
 
   await sheetState(request, sheet, { down: false });
-  await status.locator('#send-now').click();
+  await status.locator('[data-send-now]').click();
   await expect(status).toContainText('Shared with coach', { timeout: 15_000 });
-  await expect(status.locator('#send-now')).toHaveCount(0);
+  await expect(status.locator('[data-send-now]')).toHaveCount(0);
   expect((await sheetState(request, sheet)).rows).toBe(1);
+});
+
+test('while a check-in is unsent, every screen says so; after a day, how to fix it', async ({ page, request, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { settings });
+  await join(page, sheet, baseURL);
+  await sheetState(request, sheet, { down: true });
+  await answerAll(page);
+  await page.click('#save');
+  await page.waitForURL(/#today/);
+  await expect(page.locator('.hero #sync-line')).toContainText('Not sent yet', { timeout: 15_000 });
+
+  await page.click('.tabs a[data-tab=history]');
+  const banner = page.locator('#send-banner');
+  await expect(banner).toContainText('1 check-in hasn’t reached your coach yet.');
+  await expect(banner).not.toContainText('ask them for a new QR code');
+
+  // Failing since yesterday: probably a changed sheet link.
+  await page.evaluate(() => {
+    const k = 'athlete-readiness/team/v1';
+    const t = JSON.parse(localStorage.getItem(k));
+    localStorage.setItem(k, JSON.stringify({ ...t, failingSince: new Date(Date.now() - 30 * 3600e3).toISOString() }));
+  });
+  await page.click('.tabs a[data-tab=measure]');
+  await expect(banner).toContainText('ask them for a new QR code');
+
+  await sheetState(request, sheet, { down: false });
+  await banner.locator('[data-send-now]').click();
+  await expect(banner).toBeHidden({ timeout: 15_000 });
+  expect((await sheetState(request, sheet)).rows).toBe(1);
+});
+
+test('a check-in saved while an earlier send is still going is sent straight after it', async ({ page, request, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { entries: history, settings });
+  await sheetState(request, sheet, { delay: 3000 }); // joining sends the history slowly
+  await join(page, sheet, baseURL);
+  await answerAll(page);
+  await page.click('#save'); // while the history is still on its way
+  await page.waitForURL(/#today/);
+  // No further taps or screen changes: today's check-in follows on its own.
+  await expect.poll(async () => (await sheetState(request, sheet, { delay: 3000 })).rows, { timeout: 20_000 }).toBe(4);
 });
 
 test('a check-in is sent the moment it is saved, before the app can be closed', async ({ page, request, baseURL }, testInfo) => {

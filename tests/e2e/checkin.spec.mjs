@@ -80,33 +80,38 @@ test('not a reading day: questions only, Today names the next reading day, strea
 
   await page.click('text=Start my morning check-in');
   await expect(page.locator('#reading')).toHaveCount(0);
-  await expect(page.locator('.prefill-note')).toContainText('Pre-filled with your answers from yesterday');
-  await page.click('#save'); // yesterday's answers are pre-filled
+  await answerAll(page);
+  await page.click('#save');
   await page.waitForURL(/#today/);
   await expect(page.locator('.done-list')).toContainText(`No heart reading needed today (next: ${DAY_NAMES[tomorrow]})`);
   await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
 });
 
-test('1–7 scales; answers from the old 1–5 scales are not carried over', async ({ page }) => {
-  const legacy = { sleepHours: 8, sleepQuality: 4, energy: 4, soreness: 4, stress: 4, mood: 4, motivation: 4 };
-  await seed(page, { entries: [past(1, { wellness: legacy })], hash: '#checkin' });
-  await expect(page.locator('.prefill-note')).toContainText('now go from 1 to 7');
+test('a new day starts blank: nothing is carried over, and every answer is asked for', async ({ page }) => {
+  await seed(page, { entries: [past(1)], hash: '#checkin' });
+  await expect(page.locator('.prefill-note')).toHaveCount(0);
   await expect(page.locator('input[name=energy]')).toHaveCount(7);
-  await expect(page.locator('input[name=energy]:checked')).toHaveCount(0);
-  await expect(page.locator('input[name=sleepHours]:checked')).toHaveValue('8');
+  await expect(page.locator('#checkin input[type=radio][name]:not([name=painLevel]):checked')).toHaveCount(0);
+  await expect(page.locator('select[name=durationMin]')).toHaveValue('');
+  await expect(page.locator('select[name=rpe]')).toHaveValue('');
   await expect(page.locator('fieldset.scale', { hasText: 'Stressed or relaxed' }).locator('.scale-ends'))
     .toHaveText(/Very stressed\s*Very relaxed/);
 
+  // Unanswered questions, training included, are outlined; answering clears them.
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
-  // Each unanswered question is outlined, and answering one clears it.
-  await expect(page.locator('fieldset.missing')).toHaveCount(6);
-  await expect(page.locator('fieldset.missing').first()).toBeInViewport();
+  await expect(page.locator('#form-error')).toContainText('Yesterday’s training time');
+  await expect(page.locator('.missing')).toHaveCount(8);
+  await expect(page.locator('.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
-  await expect(page.locator('fieldset.missing')).toHaveCount(5);
+  await expect(page.locator('.missing')).toHaveCount(7);
+
+  // A rest day needs no effort rating.
   await answerAll(page, { value: 3 });
+  await page.selectOption('select[name=durationMin]', '0');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
+  expect((await todayEntry(page)).training).toEqual({ durationMin: 0, rpe: 0 });
 });
 
 test('reading days: all seven fit on one row and save when ticked', async ({ page }) => {
