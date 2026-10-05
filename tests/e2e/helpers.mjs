@@ -55,6 +55,7 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
 
 // Answer every questionnaire item.
 export async function answerAll(page, { value = 5, sleep = '8', minutes = '90', rpe = '5' } = {}) {
+  await page.locator('#checkin').waitFor();
   await pick(page, `input[name=sleepHours][value="${sleep}"]`);
   for (const k of ['sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'motivation']) {
     await pick(page, `input[name=${k}][value="${value}"]`);
