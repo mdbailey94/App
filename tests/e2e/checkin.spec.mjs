@@ -79,6 +79,7 @@ test('not a reading day: questions only, Today names the next reading day, strea
   await expect(page.locator('.streak')).toContainText('3-day streak – check in today to keep it going');
 
   await page.click('text=Start my morning check-in');
+  await page.locator('#checkin').waitFor(); // the check-in screen is open
   await expect(page.locator('#reading')).toHaveCount(0);
   await answerAll(page);
   await page.click('#save');
