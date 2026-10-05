@@ -5,19 +5,24 @@ import { loadEntries, loadTeam, markSynced, saveTeam } from './storage.js';
 
 // Apps Script web apps accept a plain-text POST without a CORS preflight and
 // answer with JSON after a redirect.
-export async function callSheet(url, body) {
+// `leaving`: the athlete is closing or switching away from the app. Then the
+// request is sent with keepalive so it can finish after the page is gone
+// (browsers allow that for small requests only). Some browsers have refused
+// keepalive requests that, like Apps Script, answer with a redirect, so a
+// keepalive failure is retried as a normal request.
+export async function callSheet(url, body, { leaving = false } = {}) {
   const text = JSON.stringify(body);
+  const send = (keepalive) => fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: text,
+    redirect: 'follow',
+    keepalive,
+  });
   let res;
   try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: text,
-      redirect: 'follow',
-      // Lets the request finish even if the athlete closes the app right
-      // after saving. Browsers only allow this for small requests (64 KB).
-      keepalive: text.length < 60000,
-    });
+    const keepalive = leaving && text.length < 60000;
+    res = await send(keepalive).catch((err) => { if (keepalive) return send(false); throw err; });
   } catch {
     throw new Error('Couldn’t reach the group sheet. Check your internet connection.');
   }
@@ -61,9 +66,11 @@ export function buildItems(allEntries, entries) {
 let inflight = null;
 
 // Send anything new or edited. Safe to call often: does nothing when there is
-// nothing to send, and only one sync runs at a time.
-export function syncPending() {
-  if (inflight) return inflight;
+// nothing to send, and only one sync runs at a time. A call made while one is
+// running (say, a check-in saved mid-send) runs another round straight after,
+// so nothing saved in the meantime waits for the next chance.
+export function syncPending(opts = {}) {
+  if (inflight) return inflight.then(() => syncPending(opts));
   inflight = (async () => {
     const team = loadTeam();
     if (!team) return { state: 'off' };
@@ -76,17 +83,24 @@ export function syncPending() {
       for (let i = 0; i < items.length; i += 100) {
         const res = await callSheet(team.url, {
           action: 'submit', group: team.group, athlete: team.athlete, items: items.slice(i, i + 100),
-        });
+        }, opts);
         markSynced(res.saved || [], stamp);
       }
-      saveTeam({ ...loadTeam(), lastSync: stamp, lastError: null });
+      saveTeam({ ...loadTeam(), lastSync: stamp, lastError: null, failingSince: null });
       return { state: 'synced' };
     } catch (err) {
-      if (loadTeam()) saveTeam({ ...loadTeam(), lastError: err.message });
+      const t = loadTeam();
+      if (t) saveTeam({ ...t, lastError: err.message, failingSince: t.failingSince || stamp });
       return { state: 'error', error: err.message };
     }
   })().finally(() => { inflight = null; });
   return inflight;
+}
+
+// Sending has failed for a day or more: probably not a passing network blip
+// (e.g. the coach set up a new sheet link), so the athlete needs to act.
+export function stuck(status, now = Date.now()) {
+  return Boolean(status.pending && status.failingSince && now - new Date(status.failingSince) > 24 * 3600e3);
 }
 
 export function syncStatus() {

@@ -1,9 +1,8 @@
 // The daily questionnaire form, shared by the Check-in and Morning screens:
-// markup, live behaviour, pre-filling from the last check-in, and reading
-// the answers back.
+// markup, live behaviour, and reading the answers back. A new day starts
+// blank: every answer is the athlete's own for that day.
 
-import { loadEntries } from './storage.js';
-import { SCALE_MAX, scaleMaxOf, sessionLoad, shiftDate, WELLNESS_ITEMS } from './readiness.js';
+import { SCALE_MAX, sessionLoad, WELLNESS_ITEMS } from './readiness.js';
 import { esc } from './ui.js';
 
 const RPE_LABELS = ['Rest', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
@@ -21,7 +20,9 @@ function trainingTimeOptions(current) {
   // Keep an older entry's exact time (e.g. 75 min) rather than silently rounding it.
   if (Number.isFinite(current) && !steps.includes(current)) steps.push(current);
   steps.sort((a, b) => a - b);
-  return steps.map((m) => `<option value="${m}" ${m === (current ?? 0) ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
+  // Nothing is chosen until the athlete picks, so "Rest day" is never a silent default.
+  return `<option value="" ${Number.isFinite(current) ? '' : 'selected'} disabled>Choose…</option>`
+    + steps.map((m) => `<option value="${m}" ${m === current ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
 }
 
 const INJURY_LEVELS = [
@@ -92,6 +93,7 @@ export function checkinSections(e) {
           <select name="durationMin">${trainingTimeOptions(t.durationMin)}</select></label>
         <label class="field">How hard was it overall? (session RPE)
           <select name="rpe">
+            <option value="" ${Number.isFinite(t.rpe) ? '' : 'selected'} disabled>Choose…</option>
             ${RPE_LABELS.map((l, i) => `<option value="${i}" ${t.rpe === i ? 'selected' : ''}>${i} – ${l}</option>`).join('')}
           </select></label>
         <p class="muted small" id="load-preview"></p>
@@ -118,35 +120,6 @@ export function wireCheckin(form) {
   loadPreview();
 }
 
-// "Same as yesterday": the most recent earlier check-in with answers.
-function previousAnswers(date) {
-  return loadEntries().filter((x) => x.date < date && x.wellness).at(-1) || null;
-}
-
-function sameAsLabel(prev, date) {
-  if (prev.date === shiftDate(date, -1)) return 'yesterday';
-  return new Date(`${prev.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
-}
-
-// A new day starts from the last check-in's answers (not its notes), so most
-// mornings are just a quick review. Returns [entryForForm, noteHtml].
-export function withDefaults(date, e) {
-  const prev = e.wellness ? null : previousAnswers(date);
-  if (!prev) return [e, ''];
-  const { pain, training } = prev;
-  // Answers from the old 1–5 scales don't carry over; only sleep hours do.
-  const wellness = scaleMaxOf(prev.wellness) === SCALE_MAX ? prev.wellness : { sleepHours: prev.wellness.sleepHours };
-  const note = `
-      <section class="card prefill-note">
-        ${wellness === prev.wellness
-          ? `<p><b>Pre-filled with your answers from ${esc(sameAsLabel(prev, date))}.</b>
-          Change anything that’s different, then save.</p>`
-          : `<p><b>The feeling questions now go from 1 to 7</b>, so please answer them fresh today.
-          The rest is pre-filled from ${esc(sameAsLabel(prev, date))}.</p>`}
-      </section>`;
-  return [{ ...e, wellness, pain, training }, note];
-}
-
 // Read the answers: { missing: [labels] } or { patch } ready to save.
 export function readCheckin(form) {
   const fd = new FormData(form);
@@ -155,6 +128,10 @@ export function readCheckin(form) {
   if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
     unanswered.unshift({ key: 'sleepHours', label: 'Hours slept' });
   }
+  // Training: how long is always asked; how hard only when they trained.
+  const trained = Number(fd.get('durationMin')) > 0;
+  if (!fd.get('durationMin')) unanswered.push({ key: 'durationMin', label: 'Yesterday’s training time' });
+  else if (trained && fd.get('rpe') === null) unanswered.push({ key: 'rpe', label: 'How hard training was' });
   if (unanswered.length) return { missing: unanswered.map((i) => i.label), missingKeys: unanswered.map((i) => i.key) };
   const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
   const painLevel = num('painLevel') || 0;
@@ -164,7 +141,7 @@ export function readCheckin(form) {
     patch: {
       wellness,
       pain: { level: painLevel, location: painLevel ? fd.get('painLocation').trim() : '' },
-      training: { durationMin: num('durationMin') || 0, rpe: num('rpe') || 0 },
+      training: { durationMin: num('durationMin') || 0, rpe: trained ? num('rpe') || 0 : 0 },
       notes: fd.get('notes').trim(),
     },
   };
@@ -181,7 +158,7 @@ export function showFormError(form, text, { scroll = true } = {}) {
 // rather than leaving them to hunt for what's missing.
 export function showMissing(form, { missing, missingKeys }) {
   form.querySelectorAll('.missing').forEach((el) => el.classList.remove('missing'));
-  const boxes = missingKeys.map((k) => form.querySelector(`[name="${k}"]`)?.closest('fieldset')).filter(Boolean);
+  const boxes = missingKeys.map((k) => form.querySelector(`[name="${k}"]`)?.closest('fieldset, .field')).filter(Boolean);
   boxes.forEach((el) => el.classList.add('missing'));
   showFormError(form, `Please answer: ${missing.join(', ')}.`, { scroll: !boxes.length });
   boxes[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });

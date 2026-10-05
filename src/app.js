@@ -8,10 +8,10 @@ import {
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
-import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin, withDefaults } from './checkin-form.js';
+import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin } from './checkin-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderCoach, renderTeam, syncLine } from './coach.js';
-import { syncPending, syncStatus } from './team.js';
+import { stuck, syncPending, syncStatus } from './team.js';
 
 const view = document.getElementById('view');
 
@@ -146,14 +146,13 @@ function renderToday() {
 
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
-  const [e, prefillNote] = withDefaults(date, getEntry(date) || {});
+  const e = getEntry(date) || {};
   view.innerHTML = `
     <form id="checkin" class="stack" novalidate>
       <section class="card">
         <h2>Daily check-in</h2>
         <label class="field">Date <input type="date" name="date" value="${date}" max="${todayISO()}" required></label>
       </section>
-      ${prefillNote}
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit">Save check-in</button>
@@ -205,7 +204,6 @@ function renderMorning(query = new URLSearchParams()) {
   const date = todayISO();
   const team = query.has('joined') ? loadTeam() : null;
   const e = getEntry(date) || {};
-  const [formEntry, prefillNote] = withDefaults(date, e);
   const settings = loadSettings();
   const supported = cameraSupported();
   // Heart readings are only asked for on the athlete's reading days.
@@ -257,8 +255,7 @@ function renderMorning(query = new URLSearchParams()) {
     ${e.hrv ? '' : toggleHtml}`}
 
     <form id="checkin" class="stack" novalidate>
-      ${prefillNote}
-      ${checkinSections(formEntry)}
+      ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <button class="btn block" type="submit" id="save">Save check-in</button>
     </form>`;
@@ -639,28 +636,45 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 }
 // Whether today's answers have reached the coach, with a way to push them
 // through by hand when they haven't.
+const STUCK_HELP = 'Your check-ins haven’t reached your coach for over a day. Their sheet link may have changed – ask them for a new QR code or invite link.';
+const sendNow = '<button class="btn small-btn" type="button" data-send-now>Send now</button>';
+
 function sendStatus(status) {
   if (!status.joined) return '';
-  return syncLine(status) + (status.pending ? ' <button class="btn small-btn" type="button" id="send-now">Send now</button>' : '');
+  if (stuck(status)) return `${syncLine(status)} ${sendNow}<br><span class="stuck-help">${STUCK_HELP} <a href="#team">Rejoin</a></span>`;
+  return syncLine(status) + (status.pending ? ` ${sendNow}` : '');
+}
+
+// On every other screen: a banner while something has failed to send, so an
+// unsent check-in can't go unnoticed.
+function updateSendUI() {
+  const status = syncStatus();
+  const line = document.getElementById('sync-line');
+  if (line) line.innerHTML = sendStatus(status);
+  const banner = document.getElementById('send-banner');
+  const route = (location.hash.slice(1) || 'today').split(/[?/]/)[0];
+  const show = status.joined && status.pending && status.lastError && !['today', 'coach'].includes(route);
+  banner.hidden = !show;
+  banner.innerHTML = show
+    ? `<span>${status.pending} check-in${status.pending > 1 ? 's haven’t' : ' hasn’t'} reached your coach yet.</span> ${sendNow}${stuck(status) ? `<span class="stuck-help">${STUCK_HELP} <a href="#team">Rejoin</a></span>` : ''}`
+    : '';
 }
 
 // Send new or edited days to the group sheet whenever there's a chance.
-function sync() {
-  return syncPending().then(() => {
-    const line = document.getElementById('sync-line');
-    if (line) line.innerHTML = sendStatus(syncStatus());
-  });
+function sync(opts) {
+  return syncPending(opts).then(updateSendUI);
 }
-window.addEventListener('hashchange', sync);
-window.addEventListener('online', sync);
-// Also when the athlete leaves the app: the request is sent with keepalive,
-// so it still gets through if the app is closed straight after saving.
-document.addEventListener('visibilitychange', sync);
-window.addEventListener('pagehide', sync);
-view.addEventListener('click', (ev) => {
-  if (ev.target.id !== 'send-now') return;
-  ev.target.disabled = true;
-  ev.target.textContent = 'Sending…';
+window.addEventListener('hashchange', () => sync());
+window.addEventListener('online', () => sync());
+// When the athlete leaves the app the request goes with keepalive, so it can
+// still get through if the app is closed straight after saving.
+document.addEventListener('visibilitychange', () => sync({ leaving: document.visibilityState === 'hidden' }));
+window.addEventListener('pagehide', () => sync({ leaving: true }));
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-send-now]');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
   sync();
 });
 setInterval(() => { if (syncStatus().pending) sync(); }, 60000);

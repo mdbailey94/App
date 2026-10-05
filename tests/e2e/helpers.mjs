@@ -54,11 +54,13 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
 });
 
 // Answer every questionnaire item.
-export async function answerAll(page, { value = 5, sleep = '8' } = {}) {
+export async function answerAll(page, { value = 5, sleep = '8', minutes = '90', rpe = '5' } = {}) {
   await pick(page, `input[name=sleepHours][value="${sleep}"]`);
   for (const k of ['sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'motivation']) {
     await pick(page, `input[name=${k}][value="${value}"]`);
   }
+  await page.selectOption('select[name=durationMin]', minutes);
+  await page.selectOption('select[name=rpe]', rpe);
 }
 
 // A fake group sheet of its own for each test.

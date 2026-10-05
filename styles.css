@@ -278,8 +278,6 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .hero .actions + p { margin-top: 12px; }
 .stats.two { grid-template-columns: repeat(2, 1fr); }
 .actions > .btn { white-space: nowrap; padding: 0 12px; }
-.prefill-note { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.prefill-note p { margin: 0; }
 .qr { max-width: 280px; margin: 12px auto; border-radius: 12px; overflow: hidden; }
 .qr svg { display: block; width: 100%; height: auto; }
 .welcome { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
@@ -328,8 +326,11 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 body.lit .tabs, body.lit header { visibility: hidden; }
 .days-note { margin-top: 6px; }
 .hero .sync-line { text-align: left; margin-top: 14px; font-size: 14px; }
-fieldset.missing { outline: 2px solid var(--critical); outline-offset: 6px; border-radius: 10px; }
+fieldset.missing, .field.missing { outline: 2px solid var(--critical); outline-offset: 6px; border-radius: 10px; }
 
 /* Today, after checking in: neutral, never red or green. */
 .usual { display: inline-block; margin: 6px 0 2px; padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .injury-note { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); border-radius: 6px; }
+.send-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; box-sizing: border-box; width: calc(100% - 32px); max-width: 608px; margin: 12px auto 0; padding: 10px 14px; border-radius: 12px; font-size: 14px; background: color-mix(in srgb, var(--warning) 18%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent); }
+.send-banner[hidden] { display: none; }
+.stuck-help { display: block; margin-top: 6px; font-size: 13px; color: var(--text-2); }
