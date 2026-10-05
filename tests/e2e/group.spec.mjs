@@ -124,6 +124,34 @@ test('a check-in saved while an earlier send is still going is sent straight aft
   await expect.poll(async () => (await sheetState(request, sheet, { delay: 3000 })).rows, { timeout: 20_000 }).toBe(4);
 });
 
+test('Save and send: waits for the sheet, then shows it reached the coach', async ({ page, request, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { settings });
+  await join(page, sheet, baseURL);
+  await sheetState(request, sheet, { delay: 1500 });
+  await expect(page.locator('#save')).toHaveText('Save and send');
+
+  await answerAll(page);
+  await page.click('#save');
+  await expect(page.locator('#save')).toHaveText('Sending to your coach…');
+  await page.waitForURL(/#today/);
+  // Already in the sheet by the time Today appears.
+  expect((await sheetState(request, sheet)).rows).toBe(1);
+  await expect(page.locator('.hero #sync-line')).toContainText('Shared with coach');
+});
+
+test('Save and send with the sheet down: answers kept, Today says not sent yet', async ({ page, request, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { settings });
+  await join(page, sheet, baseURL);
+  await sheetState(request, sheet, { down: true });
+  await answerAll(page);
+  await page.click('#save');
+  await page.waitForURL(/#today/, { timeout: 15_000 });
+  await expect(page.locator('.hero #sync-line')).toContainText('Not sent yet');
+  await expect(page.locator('.hero [data-send-now]')).toBeVisible();
+});
+
 test('a check-in is sent the moment it is saved, before the app can be closed', async ({ page, request, baseURL }, testInfo) => {
   const sheet = sheetFor(testInfo);
   await seed(page, { settings });

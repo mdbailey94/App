@@ -144,6 +144,18 @@ function renderToday() {
 }
 
 
+// The check-in button saves and then sends: for athletes in a group it says
+// "Save and send" and waits (up to 10 s) for the sheet to confirm before
+// moving on. If it can't get through, the answers are still saved, and Today
+// says so with a Send now button while it keeps retrying.
+const saveLabel = () => (syncStatus().joined ? 'Save and send' : 'Save check-in');
+
+async function sendAndWait(btn) {
+  if (!syncStatus().joined) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending to your coach…'; }
+  await Promise.race([sync(), new Promise((r) => setTimeout(r, 10000))]);
+}
+
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
   const e = getEntry(date) || {};
@@ -155,7 +167,7 @@ function renderCheckin(dateArg) {
       </section>
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit">Save check-in</button>
+      <button class="btn block" type="submit">${saveLabel()}</button>
     </form>`;
 
   const form = view.querySelector('#checkin');
@@ -169,7 +181,9 @@ function renderCheckin(dateArg) {
     if (answers.missing) { showMissing(form, answers); return; }
     const { patch } = answers;
     upsertEntry(form.date.value, patch);
-    location.hash = form.date.value === todayISO() ? '#today' : '#history';
+    sendAndWait(form.querySelector('button[type=submit]')).then(() => {
+      location.hash = form.date.value === todayISO() ? '#today' : '#history';
+    });
   });
 }
 
@@ -257,7 +271,7 @@ function renderMorning(query = new URLSearchParams()) {
     <form id="checkin" class="stack" novalidate>
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit" id="save">Save check-in</button>
+      <button class="btn block" type="submit" id="save">${saveLabel()}</button>
     </form>`;
 
   // Show the welcome once: an app added to the Home Screen from this page
@@ -281,9 +295,9 @@ function renderMorning(query = new URLSearchParams()) {
     $('#reading-msg').textContent = msg;
     $('#reading').dataset.state = level || '';
   };
-  const save = (patch) => {
+  const save = async (patch) => {
     upsertEntry(date, hrv ? { ...patch, hrv } : patch);
-    sync(); // send now, not on the next screen change
+    await sendAndWait($('#save'));
     // Not doing the reading here: go on to the normal HRV screen if today
     // still needs one.
     location.hash = readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
@@ -320,8 +334,7 @@ function renderMorning(query = new URLSearchParams()) {
         setReading('✓ Heart reading done', `${fmt(hrv.hr)} bpm · HRV ${fmt(hrv.rmssd)} ms – you can take your finger off the lens.`, 'ok');
         if (savedEarly) {
           upsertEntry(date, { hrv });
-          sync();
-          location.hash = '#today';
+          sendAndWait($('#save')).then(() => { location.hash = '#today'; });
         }
         return;
       }
@@ -347,10 +360,13 @@ function renderMorning(query = new URLSearchParams()) {
       // Save the answers now, so nothing is lost if the app is closed before
       // the reading finishes; the reading is added when it does.
       upsertEntry(date, patch);
-      sync();
       savedEarly = true;
-      $('#save').disabled = true;
-      $('#save').textContent = '✓ Answers saved – finishing your heart reading…';
+      sendAndWait($('#save')).then(() => {
+        if (state !== 'running') return; // the reading already finished
+        $('#save').textContent = syncStatus().joined && !syncStatus().pending
+          ? '✓ Answers sent – finishing your heart reading…'
+          : '✓ Answers saved – finishing your heart reading…';
+      });
       return;
     }
     reading?.stop();
@@ -367,7 +383,7 @@ function renderMeasure(query = new URLSearchParams()) {
   const front = settings.frontCamera;
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" id="next-step" role="status">
-      <p><b>✓ Answers saved.</b> Last step: your 1-minute heart reading.
+      <p><b>✓ Answers ${syncStatus().joined && !syncStatus().pending ? 'sent to your coach' : 'saved'}.</b> Last step: your 1-minute heart reading.
         <a href="#today" id="skip">Skip for today</a></p>
     </section>` : ''}
     <section class="card" id="measure-intro">
