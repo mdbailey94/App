@@ -28,7 +28,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
   straps.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
   edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
-- **History** — trend charts (readiness, ln RMSSD with your normal band, resting HR, wellness,
+- **History** — trend charts (readiness, HRV in ms with your normal band, resting HR, wellness,
   daily load), the entry table, export/import.
 
 ### How the score works

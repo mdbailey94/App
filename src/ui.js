@@ -30,7 +30,7 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
   const recent = sorted.slice(-42);
   container.innerHTML = `
     <section class="card"><h3>Readiness</h3><div data-c="ready"></div></section>
-    <section class="card"><h3>HRV (ln RMSSD)${athlete ? ' – 7-day average' : ''}</h3><p class="muted small">${athlete
+    <section class="card"><h3>HRV (ms)${athlete ? ' – 7-day average' : ''}</h3><p class="muted small">${athlete
     ? 'Averaged over a week, because single readings vary a lot from day to day. Shaded band = your normal range.'
     : `Shaded band = ${esc(who)} normal range (mean ± 1 SD of recent readings).`}</p><div data-c="hrv"></div></section>
     <section class="card"><h3>Resting heart rate${athlete ? ' – 7-day average' : ''}</h3><div data-c="hr"></div></section>
@@ -41,11 +41,13 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
 
   requestAnimationFrame(() => {
     lineChart($('ready'), series((e) => assessDay(sorted, e.date, { heart: !athlete }).score ?? NaN), { yMin: 0, yMax: 100 });
+    // Shown in milliseconds. The normal band and the weekly average are worked
+    // out on the log scale (day-to-day HRV is skewed), then converted back.
     const hrvBase = baseline(entries.map((e) => e.hrv?.lnRmssd));
-    lineChart($('hrv'), series((e) => (athlete ? smooth.get(e.date).hrv : e.hrv?.lnRmssd ?? NaN)), {
-      yFormat: (v) => v.toFixed(1),
-      band: hrvBase ? { lo: hrvBase.mean - hrvBase.sd, hi: hrvBase.mean + hrvBase.sd } : null,
-      tip: (d) => `${d.label}: <b>${fmt(d.y, 2)}</b>`,
+    lineChart($('hrv'), series((e) => Math.exp(athlete ? smooth.get(e.date).hrv : e.hrv?.lnRmssd ?? NaN)), {
+      yFormat: (v) => `${Math.round(v)}`,
+      band: hrvBase ? { lo: Math.exp(hrvBase.mean - hrvBase.sd), hi: Math.exp(hrvBase.mean + hrvBase.sd) } : null,
+      tip: (d) => `${d.label}: <b>${fmt(d.y)} ms</b>`,
     });
     lineChart($('hr'), series((e) => (athlete ? smooth.get(e.date).hr : e.hrv?.hr ?? NaN)), { yFormat: (v) => `${Math.round(v)}`, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
     lineChart($('well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });

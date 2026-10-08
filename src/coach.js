@@ -184,7 +184,7 @@ function renderGroup(view, coach, rows, date, span) {
     if (!e) return '–';
     const z = c.assessment.hrvZ;
     const arrow = z === null ? '' : z < -1 ? ' ▼' : z > 1 ? ' ▲' : '';
-    return `${fmt(e.lnRmssd, 2)}${arrow}`;
+    return `${fmt(e.rmssd ?? Math.exp(e.lnRmssd))}${arrow}`;
   };
 
   view.innerHTML = `
@@ -228,7 +228,7 @@ function renderGroup(view, coach, rows, date, span) {
           </tr>
           ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="6">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
-        <p class="muted small">Worst first. HRV = ln RMSSD; ▼/▲ = well below/above that athlete’s normal range. Load = minutes × RPE.</p>`
+        <p class="muted small">Worst first. HRV = RMSSD in ms; ▼/▲ = well below/above that athlete’s normal range. Load = minutes × RPE.</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
     </section>
 
