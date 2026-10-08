@@ -10,7 +10,7 @@ import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
 import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin } from './checkin-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
-import { renderCoach, renderTeam, syncLine } from './coach.js';
+import { renderTeam, syncLine } from './team-tab.js';
 import { stuck, syncPending, syncStatus } from './team.js';
 
 const view = document.getElementById('view');
@@ -24,7 +24,6 @@ const routes = {
   measure: (arg, query) => renderMeasure(query),
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
-  coach: (arg, query) => renderCoach(view, query),
 };
 let cleanup = null;
 
@@ -33,7 +32,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || 'today').split('?');
   const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  const tab = !routes[name] ? 'today' : { coach: 'team', morning: 'checkin' }[name] || name;
+  const tab = !routes[name] ? 'today' : { morning: 'checkin' }[name] || name;
   document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
   render(arg, new URLSearchParams(qs || ''));
@@ -669,7 +668,7 @@ function updateSendUI() {
   if (line) line.innerHTML = sendStatus(status);
   const banner = document.getElementById('send-banner');
   const route = (location.hash.slice(1) || 'today').split(/[?/]/)[0];
-  const show = status.joined && status.pending && status.lastError && !['today', 'coach'].includes(route);
+  const show = status.joined && status.pending && status.lastError && route !== 'today';
   banner.hidden = !show;
   banner.innerHTML = show
     ? `<span>${status.pending} check-in${status.pending > 1 ? 's haven’t' : ' hasn’t'} reached your coach yet.</span> ${sendNow}${stuck(status) ? `<span class="stuck-help">${STUCK_HELP} <a href="#team">Rejoin</a></span>` : ''}`
@@ -698,7 +697,7 @@ setInterval(() => { if (syncStatus().pending) sync(); }, 60000);
 // A Home Screen app on iPhone starts with empty storage but keeps the address
 // it was added from. If that address carries group details and this copy
 // hasn't joined yet, open the (pre-filled) join screen: one tap to finish.
-if (!loadTeam() && new URLSearchParams(location.search).get('u') && !/^#(team|coach)/.test(location.hash)) {
+if (!loadTeam() && new URLSearchParams(location.search).get('u') && !/^#team/.test(location.hash)) {
   history.replaceState(null, '', `${location.pathname}${location.search}#team`);
 }
 
@@ -707,6 +706,9 @@ if (!loadTeam() && new URLSearchParams(location.search).get('u') && !/^#(team|co
 if (/^#morning$/.test(location.hash) && getEntry(todayISO())?.wellness) {
   history.replaceState(null, '', `${location.pathname}${location.search}#today`);
 }
+
+// The coach dashboard moved to its own page; old #coach links still work.
+if (/^#coach/.test(location.hash)) location.replace('coach.html');
 
 route();
 sync();

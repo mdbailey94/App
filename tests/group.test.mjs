@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { groupByAthlete, groupDay, reminderText, teamTrend, trendSummary, watchList } from '../src/group.js';
+import {
+  checkinGrid, groupByAthlete, groupDay, recentNotes, reminderText, roster, teamTrend, trendSummary, watchList,
+} from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
 import { shiftDate } from '../src/readiness.js';
 
@@ -127,4 +129,45 @@ test('stuck: only when something is waiting and sending has failed for over a da
   assert.equal(stuck({ pending: 1, failingSince: '2026-10-05T07:00:00Z' }, now), false);
   assert.equal(stuck({ pending: 0, failingSince: '2026-10-01T07:00:00Z' }, now), false);
   assert.equal(stuck({ pending: 2, failingSince: null }, now), false);
+});
+
+test('checkinGrid: a row per recent swimmer, a cell per day, injuries marked', () => {
+  const r = [
+    day('Sam', 0, { wellness: good }), day('Sam', 2, { wellness: good }),
+    day('Ana', 1, { wellness: good, pain: { level: 2, location: 'knee' } }),
+    day('Old', 30, { wellness: good }),
+  ];
+  const g = checkinGrid(r, D, 3);
+  assert.deepEqual(g.dates, [shiftDate(D, -2), shiftDate(D, -1), D]);
+  assert.deepEqual(g.rows.map((x) => x.name), ['Ana', 'Sam']); // 'Old' isn't in the window
+  assert.deepEqual(g.rows[1].cells.map(Boolean), [true, false, true]);
+  assert.equal(g.rows[1].count, 2);
+  assert.equal(g.rows[0].cells[1].injury, true);
+});
+
+test('recentNotes: notes and injuries, newest first, only in the window', () => {
+  const r = [
+    day('Sam', 0, { wellness: good, notes: 'Tired after the meet' }),
+    day('Ana', 1, { wellness: good, pain: { level: 1, location: 'shoulder' } }),
+    day('Kai', 2, { wellness: good }), // nothing to say
+    day('Lou', 20, { wellness: good, notes: 'old note' }),
+  ];
+  const n = recentNotes(r, D, 14);
+  assert.deepEqual(n.map((x) => x.name), ['Sam', 'Ana']);
+  assert.equal(n[0].note, 'Tired after the meet');
+  assert.deepEqual(n[1].injury, { level: 1, location: 'shoulder' });
+});
+
+test('roster: recent swimmers with check-ins this week and their average', () => {
+  const r = [
+    ...[3, 2, 1, 0].map((n) => day('Mia', n, { wellness: good })),
+    day('Leo', 10, { wellness: good }),
+    day('Old', 40, { wellness: good }),
+  ];
+  const list = roster(r, D);
+  assert.deepEqual(list.map((x) => x.name), ['Leo', 'Mia']);
+  assert.equal(list[1].checkins7, 4);
+  assert.equal(list[1].avg7, 100);
+  assert.equal(list[0].checkins7, 0);
+  assert.equal(list[0].avg7, null);
 });

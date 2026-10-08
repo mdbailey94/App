@@ -334,3 +334,31 @@ fieldset.missing, .field.missing { outline: 2px solid var(--critical); outline-o
 .send-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; box-sizing: border-box; width: calc(100% - 32px); max-width: 608px; margin: 12px auto 0; padding: 10px 14px; border-radius: 12px; font-size: 14px; background: color-mix(in srgb, var(--warning) 18%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent); }
 .send-banner[hidden] { display: none; }
 .stuck-help { display: block; margin-top: 6px; font-size: 13px; color: var(--text-2); }
+
+/* ---------- coach page */
+.refresh-line { margin: 12px 0 0; }
+.roster { list-style: none; padding: 0; margin: 0; }
+.roster li { border-bottom: 1px solid var(--border); }
+.roster li:last-child { border-bottom: 0; }
+.roster a { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; text-decoration: none; color: var(--text); }
+.roster-name { font-weight: 600; color: var(--accent); }
+.roster-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.checkin-grid { border-collapse: collapse; font-size: 13px; }
+.checkin-grid th, .checkin-grid td { padding: 4px 2px; text-align: center; }
+.checkin-grid th:first-child, .checkin-grid td.who { text-align: left; padding-right: 8px; white-space: nowrap; }
+.checkin-grid .grid-miss { color: var(--muted); }
+.checkin-grid .grid-in { font-weight: 700; border-radius: 6px; }
+.grid-good { background: color-mix(in srgb, var(--good) 22%, transparent); }
+.grid-warning { background: color-mix(in srgb, var(--warning) 30%, transparent); }
+.grid-serious { background: color-mix(in srgb, var(--serious) 26%, transparent); }
+.grid-critical { background: color-mix(in srgb, var(--critical) 26%, transparent); }
+.notes-feed { list-style: none; padding: 0; margin: 0; }
+.notes-feed li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.notes-feed li:last-child { border-bottom: 0; }
+.note-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.note-head a { font-weight: 600; }
+.note-injury, .note-text { margin: 6px 0; }
+.note-text { color: var(--text-2); }
+.settings-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 8px 0 16px; }
+.settings-list dt { font-weight: 600; }
+.settings-list dd { margin: 0; word-break: break-all; }

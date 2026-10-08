@@ -55,7 +55,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icons src apps-script _site/
+      - run: mkdir _site && cp -r index.html coach.html styles.css sw.js manifest.webmanifest coach.webmanifest icons src apps-script _site/
       - uses: actions/upload-pages-artifact@v3
       - id: deployment
         uses: actions/deploy-pages@v4
@@ -96,7 +96,7 @@ jobs:
       - if: steps.cfg.outputs.enabled == 'true'
         uses: actions/checkout@v4
       - if: steps.cfg.outputs.enabled == 'true'
-        run: mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icons src apps-script _site/
+        run: mkdir _site && cp -r index.html coach.html styles.css sw.js manifest.webmanifest coach.webmanifest icons src apps-script _site/
       - if: steps.cfg.outputs.enabled == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

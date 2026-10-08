@@ -181,3 +181,65 @@ export function reminderText(missing, appUrl) {
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
   return `Morning check-in reminder 🏊 Still waiting on ${list}. It takes about a minute: ${appUrl}`;
 }
+
+// Who checked in on each of the last `days` days up to `date`: one row per
+// athlete active in that window, alphabetical, with a cell per day.
+// cell: null (no check-in) or { status, injury } from that day's check-in.
+export function checkinGrid(rows, date, days = 14) {
+  const dates = Array.from({ length: days }, (_, i) => shiftDate(date, i - days + 1));
+  const athletes = [...groupByAthlete(rows).values()]
+    .filter((a) => a.entries.some((e) => e.date >= dates[0] && e.date <= date))
+    .sort((x, y) => x.name.localeCompare(y.name));
+  return {
+    dates,
+    rows: athletes.map((a) => {
+      const byDate = new Map(a.entries.map((e) => [e.date, e]));
+      const cells = dates.map((d) => {
+        const e = byDate.get(d);
+        if (!e) return null;
+        return { status: assessDay(a.entries, d).status?.level ?? null, injury: e.pain?.level >= 2 };
+      });
+      return { key: a.key, name: a.name, cells, count: cells.filter(Boolean).length };
+    }),
+  };
+}
+
+// What athletes have told the coach in the last `days` days: their notes and
+// any injury they reported. Newest first.
+export function recentNotes(rows, date, days = 14) {
+  const from = shiftDate(date, -(days - 1));
+  const out = [];
+  for (const a of groupByAthlete(rows).values()) {
+    for (const e of a.entries) {
+      if (e.date < from || e.date > date) continue;
+      const note = String(e.notes || '').trim();
+      const injury = e.pain?.level > 0 ? { level: e.pain.level, location: e.pain.location || '' } : null;
+      if (note || injury) out.push({ key: a.key, name: a.name, date: e.date, note, injury });
+    }
+  }
+  return out.sort((x, y) => y.date.localeCompare(x.date) || x.name.localeCompare(y.name));
+}
+
+// Every athlete seen in the last `activeDays` days, with a short summary.
+export function roster(rows, date, { activeDays = 21 } = {}) {
+  const from = shiftDate(date, -activeDays);
+  const weekAgo = shiftDate(date, -6);
+  return [...groupByAthlete(rows).values()]
+    .map((a) => {
+      const upTo = a.entries.filter((e) => e.date <= date);
+      const last = upTo.at(-1);
+      if (!last || last.date < from) return null;
+      const week = upTo.filter((e) => e.date >= weekAgo);
+      const scores = week.map((e) => assessDay(upTo, e.date).score).filter(Number.isFinite);
+      return {
+        key: a.key,
+        name: a.name,
+        lastDate: last.date,
+        status: assessDay(upTo, last.date).status,
+        checkins7: week.length,
+        avg7: scores.length ? Math.round(avg(scores)) : null,
+      };
+    })
+    .filter(Boolean)
+    .sort((x, y) => x.name.localeCompare(y.name));
+}
