@@ -24,7 +24,7 @@ function niceTicks(lo, hi, count = 4) {
   return ticks;
 }
 
-function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zeroBased }) {
+function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zeroBased, xInset = 0 }) {
   container.innerHTML = '';
   container.classList.add('chart');
   const width = Math.max(260, container.clientWidth || 320);
@@ -45,7 +45,8 @@ function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zer
   const xHi = Math.max(...xs);
   const iw = width - PAD.left - PAD.right;
   const ih = height - PAD.top - PAD.bottom;
-  const sx = (x) => PAD.left + (xHi === xLo ? iw / 2 : ((x - xLo) / (xHi - xLo)) * iw);
+  // xInset keeps the first and last bars clear of the axis labels.
+  const sx = (x) => PAD.left + xInset + (xHi === xLo ? (iw - 2 * xInset) / 2 : ((x - xLo) / (xHi - xLo)) * (iw - 2 * xInset));
   const sy = (y) => PAD.top + ih - ((y - lo) / (hi - lo)) * ih;
 
   const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' }, container);
@@ -137,7 +138,7 @@ export function barChart(container, data, opts = {}) {
     height: 140, yFormat: (v) => String(v), xLabel: (d) => d.label, tip: (d) => `${d.label}: <b>${o.yFormat(d.y)}</b>`, ...opts,
   };
   if (!data.length) { container.innerHTML = '<p class="muted">No data yet.</p>'; return; }
-  const { svg, sx, sy, iw } = frame(container, { ...o, data, zeroBased: true });
+  const { svg, sx, sy, iw } = frame(container, { ...o, data, zeroBased: true, xInset: 13 }); // half the widest bar
   const span = Math.max(1, data[data.length - 1].x - data[0].x + 1);
   const bw = Math.max(2, Math.min(24, iw / span - 2));
   const base = sy(0);

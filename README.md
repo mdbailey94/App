@@ -28,7 +28,7 @@ a **practice group**, in which case each day's check-in is also sent to a Google
   straps.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
   edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
-- **History** — trend charts (readiness, ln RMSSD with your normal band, resting HR, wellness,
+- **History** — trend charts (readiness, HRV in ms with your normal band, resting HR, wellness,
   daily load), the entry table, export/import.
 
 ### How the score works
@@ -144,7 +144,7 @@ Data stored on phones is tied to the web address, so move hosts before athletes 
 ## Layout
 
 ```
-index.html, styles.css, sw.js, manifest.webmanifest
+index.html, styles.css, sw.js, manifest.webmanifest, coach.webmanifest
 src/signal.js     PPG processing (pure, tested)
 src/readiness.js  questionnaire definition, scoring, baselines, workload (pure, tested)
 src/camera.js     camera + torch capture, per-frame brightness
@@ -152,7 +152,8 @@ src/storage.js    localStorage, CSV/JSON export & import
 src/charts.js     small SVG charts with tooltips
 src/team.js       sending entries to the group sheet (retries, invite links)
 src/group.js      coach-side group summary (pure, tested)
-src/coach.js      Team tab and coach dashboard
+src/team-tab.js   swimmer's Team tab (joining the coach's group)
+coach.html, src/coach-app.js  coach dashboard: Group, History, Swimmers, Messages, Settings tabs
 src/ui.js         shared UI helpers and trend charts
 src/checkin-form.js  the daily questionnaire form
 src/reading.js    one heart reading: lens search, recording, analysis, diagnostics
