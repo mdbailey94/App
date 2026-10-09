@@ -132,8 +132,12 @@ test('training: morning and afternoon practice, weights and meet, each on its ow
   await expect(page.locator('[data-load-preview=""]')).toHaveText('Practice load: 1320 AU (minutes × effort)');
   for (const q of ['Weights?', 'Meet?']) {
     const row = page.locator('.yes-no', { hasText: q });
-    const tops = await row.locator('.q, label').evaluateAll((l) => new Set(l.map((x) => Math.round(x.getBoundingClientRect().top / 10))).size);
-    expect(tops, `${q} on one row`).toBe(1);
+    // The question and both buttons share a row: the question's middle is
+    // within the buttons' height, and the buttons line up with each other.
+    const [text, yes, no] = await row.locator('.q, label').evaluateAll((l) => l.map((x) => x.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2 })));
+    expect(text.mid, `${q} on one row`).toBeGreaterThan(yes.top);
+    expect(text.mid, `${q} on one row`).toBeLessThan(yes.bottom);
+    expect(Math.abs(yes.top - no.top)).toBeLessThan(2);
   }
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
