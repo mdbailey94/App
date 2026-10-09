@@ -100,6 +100,14 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
   // Practice length starts at the usual time: 2 h in the morning, 1½ h in the afternoon.
   await expect(page.locator('select[name=amMin]')).toHaveValue('120');
   await expect(page.locator('select[name=pmMin]')).toHaveValue('90');
+  // Afternoon practice is a yes/no first; Yes opens its time and effort.
+  await expect(page.locator('[data-details=pm]')).toBeHidden();
+  await page.click('input[name=pmDid][value=yes]');
+  await expect(page.locator('[data-details=pm]')).toBeVisible();
+  await expect(page.locator('select[name=pmMin] option')).toHaveCount(10); // no "No practice": that's the No button
+  await page.click('input[name=pmDid][value=no]');
+  await expect(page.locator('[data-details=pm]')).toBeHidden();
+  await page.$$eval('input[name=pmDid]', (all) => all.forEach((r) => { r.checked = false; }));
   await expect(page.locator('select[name=amMin] option')).toHaveText([
     'No practice', '30 min', '1 h', '1 h 30 min', '2 h', '2 h 30 min', '3 h', '3 h 30 min', '4 h', '4 h 30 min', '5 h',
   ]);
@@ -112,7 +120,7 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
   // Unanswered questions are outlined; answering clears them.
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
-  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How hard afternoon practice was, Weights?, Meet?');
+  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, Afternoon practice?, Weights?, Meet?');
   await expect(page.locator('.missing')).toHaveCount(11);
   await expect(page.locator('.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
@@ -129,7 +137,7 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 test('training: morning and afternoon practice, weights and meet, each on its own row', async ({ page }) => {
   await seed(page, { hash: '#checkin' });
   await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: 'yes', meet: 'no' });
-  await expect(page.locator('[data-label-for=pmRpe]')).toHaveText('8 – Very hard+');
+  await expect(page.locator('[data-label-for=amRpe]')).toHaveText('4 – Somewhat hard');
   await expect(page.locator('[data-load-preview=""]')).toHaveText('Practice load: 1320 AU (minutes × effort)');
   for (const q of ['Weights?', 'Meet?']) {
     const row = page.locator('.yes-no', { hasText: q });
@@ -149,6 +157,8 @@ test('training: morning and afternoon practice, weights and meet, each on its ow
   // Editing today's check-in shows the saved answers.
   await page.goto('/#checkin');
   await expect(page.locator('select[name=amMin]')).toHaveValue('90');
+  await expect(page.locator('input[name=pmDid]:checked')).toHaveValue('yes');
+  await expect(page.locator('[data-details=pm]')).toBeVisible();
   await expect(page.locator('input[name=pmRpe]:checked')).toHaveValue('8');
   await expect(page.locator('input[name=weights]:checked')).toHaveValue('yes');
   await expect(page.locator('input[name=meet]:checked')).toHaveValue('no');

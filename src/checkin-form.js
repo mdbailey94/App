@@ -16,9 +16,11 @@ const hoursLabel = (min) => {
 // Training questions. Each practice: how long (a drop-down that starts at
 // the usual length, so most days it's untouched) and how hard (ten small
 // buttons, nothing picked). Then two yes/no questions: weights, and a meet.
+// Afternoon practice is a yes/no first (many days have none); a Yes brings
+// up its time and effort. Morning practice asks time and effort straight away.
 const PRACTICES = [
   { key: 'am', title: 'Morning practice', usual: 120 },
-  { key: 'pm', title: 'Afternoon practice', usual: 90 },
+  { key: 'pm', title: 'Afternoon practice', usual: 90, askFirst: true },
 ];
 const YES_NO = [
   { key: 'weights', title: 'Weights?' },
@@ -27,14 +29,20 @@ const YES_NO = [
 const checked = (on) => (on ? 'checked' : '');
 const effortText = (v) => (v > 0 ? `${v} – ${RPE_LABELS[v]}` : '');
 
-function timeOptions(current) {
-  // No practice, then 30 min to 5 h in half hours; an older odd time (e.g. 75 min) is kept.
+function timeOptions(current, { none = true } = {}) {
+  // (No practice,) then 30 min to 5 h in half hours; an older odd time (e.g. 75 min) is kept.
   const steps = Array.from({ length: 10 }, (_, i) => 30 + i * 30);
   if (current > 0 && !steps.includes(current)) steps.push(current);
   steps.sort((x, y) => x - y);
-  return `<option value="0" ${current === 0 ? 'selected' : ''}>No practice</option>`
+  return (none ? `<option value="0" ${current === 0 ? 'selected' : ''}>No practice</option>` : '')
     + steps.map((m) => `<option value="${m}" ${m === current ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
 }
+
+const yesNoButtons = (name, value) => `
+          <div class="chips yn">
+            <label><input type="radio" name="${name}" value="yes" ${checked(value === true)}><span>Yes</span></label>
+            <label><input type="radio" name="${name}" value="no" ${checked(value === false)}><span>No</span></label>
+          </div>`;
 
 // Ten small squares in one row, green (easy) to blue (maximal): effort isn't
 // good or bad, so no red.
@@ -49,27 +57,31 @@ function effortButtons(name, current) {
 export function trainingSection(t, { title = 'Yesterday’s training', prefix = '' } = {}) {
   // Saved answers when editing today; otherwise the usual practice lengths.
   const split = t && PRACTICES.some((p) => p.key in t);
-  const minutes = (p) => (split ? t[p.key]?.durationMin ?? 0 : p.usual);
+  const minutes = (p) => (split ? t[p.key]?.durationMin ?? (p.askFirst ? p.usual : 0) : p.usual);
   const effort = (p) => (split ? t[p.key]?.rpe : undefined);
   const yesNo = (k) => (split ? Boolean(t[k]) : undefined);
+  const timeAndEffort = (p) => `
+          <label class="field inline-q"><span class="q">How long?</span>
+            <select name="${prefix}${p.key}Min">${timeOptions(minutes(p), { none: !p.askFirst })}</select></label>
+          <div class="field" data-effort="${prefix}${p.key}" ${p.askFirst || minutes(p) > 0 ? '' : 'hidden'}>
+            <span class="q">How hard was it? <span class="muted small">1 easy · 10 max</span></span>
+            ${effortButtons(`${prefix}${p.key}Rpe`, effort(p))}</div>`;
   return `
       <section class="card training" data-prefix="${prefix}">
         <h3>${esc(title)}</h3>
-        ${PRACTICES.map((p) => `
+        ${PRACTICES.map((p) => (p.askFirst ? `
+        <fieldset class="session asked-first">
+          <div class="field inline-q yes-no"><span class="q">${p.title}?</span>${yesNoButtons(`${prefix}${p.key}Did`, yesNo(p.key))}</div>
+          <div data-details="${prefix}${p.key}" ${yesNo(p.key) ? '' : 'hidden'}>
+            ${timeAndEffort(p)}
+          </div>
+        </fieldset>` : `
         <fieldset class="session">
           <legend><span>${p.title}</span><span class="effort-label" data-label-for="${prefix}${p.key}Rpe">${effortText(effort(p))}</span></legend>
-          <label class="field inline-q"><span class="q">How long?</span>
-            <select name="${prefix}${p.key}Min">${timeOptions(minutes(p))}</select></label>
-          <div class="field" data-effort="${prefix}${p.key}" ${minutes(p) > 0 ? '' : 'hidden'}>
-            <span class="q">How hard was it? <span class="muted small">1 easy · 10 max</span></span>
-            ${effortButtons(`${prefix}${p.key}Rpe`, effort(p))}</div>
-        </fieldset>`).join('')}
+          ${timeAndEffort(p)}
+        </fieldset>`)).join('')}
         ${YES_NO.map((q) => `
-        <div class="field inline-q yes-no"><span class="q">${q.title}</span>
-          <div class="chips yn">
-            <label><input type="radio" name="${prefix}${q.key}" value="yes" ${checked(yesNo(q.key) === true)}><span>Yes</span></label>
-            <label><input type="radio" name="${prefix}${q.key}" value="no" ${checked(yesNo(q.key) === false)}><span>No</span></label>
-          </div></div>`).join('')}
+        <div class="field inline-q yes-no"><span class="q">${q.title}</span>${yesNoButtons(`${prefix}${q.key}`, yesNo(q.key))}</div>`).join('')}
         <p class="muted small" data-load-preview="${prefix}"></p>
       </section>`;
 }
@@ -156,8 +168,10 @@ export function wireCheckin(form) {
     ev.target.closest('.missing')?.classList.remove('missing');
     if (ev.target.name === 'painLevel') form.querySelector('#pain-location').hidden = ev.target.value === '0';
     if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
-    const practice = /^(.*(?:am|pm))Min$/.exec(ev.target.name)?.[1];
+    const practice = /^(.*am)Min$/.exec(ev.target.name)?.[1];
     if (practice) form.querySelector(`[data-effort="${practice}"]`).hidden = !(Number(ev.target.value) > 0);
+    const asked = /^(.*pm)Did$/.exec(ev.target.name)?.[1];
+    if (asked) form.querySelector(`[data-details="${asked}"]`).hidden = ev.target.value !== 'yes';
     const label = form.querySelector(`[data-label-for="${ev.target.name}"]`);
     if (label) label.textContent = effortText(Number(ev.target.value));
     loadPreview();
@@ -191,10 +205,16 @@ export function readCheckin(form) {
 
 // Unanswered training questions: how hard, for each practice they went to,
 // and both yes/no questions.
+// Did they go? A practice asked first (afternoon) counts only after a Yes.
+const went = (fd, prefix, p) => (p.askFirst ? fd.get(`${prefix}${p.key}Did`) === 'yes' : true)
+  && Number(fd.get(`${prefix}${p.key}Min`)) > 0;
+
 function trainingMissing(fd, prefix = '') {
   const out = [];
   for (const p of PRACTICES) {
-    if (Number(fd.get(`${prefix}${p.key}Min`)) > 0 && fd.get(`${prefix}${p.key}Rpe`) === null) {
+    if (p.askFirst && fd.get(`${prefix}${p.key}Did`) === null) {
+      out.push({ key: `${prefix}${p.key}Did`, label: `${p.title}?` });
+    } else if (went(fd, prefix, p) && fd.get(`${prefix}${p.key}Rpe`) === null) {
       out.push({ key: `${prefix}${p.key}Rpe`, label: `How hard ${p.title.toLowerCase()} was` });
     }
   }
@@ -203,12 +223,11 @@ function trainingMissing(fd, prefix = '') {
 }
 
 function readTraining(fd, prefix = '') {
-  const practice = (k) => {
-    const durationMin = Number(fd.get(`${prefix}${k}Min`));
-    return durationMin > 0 ? { durationMin, rpe: Number(fd.get(`${prefix}${k}Rpe`)) } : null;
-  };
+  const practice = (p) => (went(fd, prefix, p)
+    ? { durationMin: Number(fd.get(`${prefix}${p.key}Min`)), rpe: Number(fd.get(`${prefix}${p.key}Rpe`)) }
+    : null);
   return trainingFrom({
-    am: practice('am'), pm: practice('pm'),
+    am: practice(PRACTICES[0]), pm: practice(PRACTICES[1]),
     weights: fd.get(`${prefix}weights`) === 'yes', meet: fd.get(`${prefix}meet`) === 'yes',
   });
 }
