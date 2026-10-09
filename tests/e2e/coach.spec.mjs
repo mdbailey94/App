@@ -8,7 +8,7 @@ const practice = { durationMin: 120, rpe: 6 };
 const SWIMMERS = {
   'Maya Torres': (n) => ({
     wellness: W(6, 8),
-    training: { am: { durationMin: 90, rpe: 4 }, pm: n % 2 ? null : { durationMin: 120, rpe: 8 }, weights: { rpe: 6 }, durationMin: n % 2 ? 90 : 210, rpe: n % 2 ? 4 : 6 },
+    training: { am: { durationMin: 90, rpe: 4 }, pm: n % 2 ? null : { durationMin: 120, rpe: 8 }, weights: true, meet: n === 0, durationMin: n % 2 ? 90 : 210, rpe: n % 2 ? 4 : 6 },
     notes: n === 1 ? 'Shoulder a bit tight after drills' : '',
   }),
   'Sam Lee': (n) => ({ wellness: W(n < 4 ? 3 : 6, n < 4 ? 6 : 8), training: practice }),
@@ -74,7 +74,9 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(watch.nth(1)).toContainText('Training load spike');
   await expect(page.locator('.plain li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
   // Effort per session: Maya's split check-in, and an older whole-day one.
-  await expect(page.locator('.group-table tr', { hasText: 'Maya Torres' }).locator('td.effort')).toHaveText('4 · 8 · 6');
+  const maya = page.locator('.group-table tr', { hasText: 'Maya Torres' }).locator('td.effort');
+  await expect(maya).toContainText('4 · 8');
+  await expect(maya.locator('.tag')).toHaveText(['Wt', 'Meet']);
   await expect(page.locator('.group-table tr', { hasText: 'Sam Lee' }).locator('td.effort')).toHaveText('6');
 
   await page.click('a:has-text("Send a reminder")');
@@ -102,7 +104,7 @@ test('History tab: 7/28-day trends and the check-in record', async ({ page }, te
   const effort = page.locator('#effort-stats .stat-num');
   await expect(effort.nth(0)).toHaveText(/^4/);
   await expect(effort.nth(1)).toHaveText(/^8/);
-  await expect(effort.nth(2)).toHaveText(/^6/);
+  await expect(page.locator('#lift-meet')).toHaveText('28 weights sessions · 1 meet day reported');
   await expect(page.locator('[data-t="rpePm"] svg')).toBeVisible();
 });
 

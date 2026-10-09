@@ -3,12 +3,14 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, sessionLoad, WEEKDAYS, wellnessScore,
+  assessDay, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, sessionLoad, shiftDate, WEEKDAYS, wellnessScore,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
-import { checkinSections, readCheckin, showFormError, showMissing, wireCheckin } from './checkin-form.js';
+import {
+  checkinSections, readCheckin, readTrainingOnly, showFormError, showMissing, trainingSection, wireCheckin,
+} from './checkin-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
 import { stuck, syncPending, syncStatus } from './team.js';
@@ -22,6 +24,7 @@ const routes = {
   checkin: renderCheckin,
   morning: (arg, query) => renderMorning(query),
   measure: (arg, query) => renderMeasure(query),
+  saturday: (arg, query) => renderSaturday(query),
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
 };
@@ -32,7 +35,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || 'today').split('?');
   const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  const tab = !routes[name] ? 'today' : { morning: 'checkin' }[name] || name;
+  const tab = !routes[name] ? 'today' : { morning: 'checkin', saturday: 'checkin' }[name] || name;
   document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
   render(arg, new URLSearchParams(qs || ''));
@@ -155,6 +158,53 @@ async function sendAndWait(btn) {
   await Promise.race([sync(), new Promise((r) => setTimeout(r, 10000))]);
 }
 
+// ------------------------------------------------- Monday: Saturday's training
+// Each check-in reports the day before, so Saturday's sessions arrive with
+// Sunday's check-in. On a Monday with no Sunday check-in, ask about Saturday
+// once, right after today's check-in. The answer is filed under Sunday (the
+// day it would normally have been reported), with training only.
+
+function askAboutSaturday(today = todayISO()) {
+  if (new Date(`${today}T12:00:00`).getDay() !== 1) return false;
+  if (loadSettings().askedSaturday === today) return false;
+  return !getEntry(shiftDate(today, -1))?.training;
+}
+
+// Where to go once today's check-in is saved: Saturday's question first if needed.
+function afterCheckin(next) {
+  location.hash = askAboutSaturday() ? `#saturday?next=${encodeURIComponent(next)}` : next;
+}
+
+function renderSaturday(query) {
+  const today = todayISO();
+  const next = query.get('next') || '#today';
+  if (!askAboutSaturday(today)) { location.replace(next); return; }
+  const saturday = shiftDate(today, -2);
+  view.innerHTML = `
+    <form id="saturday" class="stack" novalidate>
+      <section class="card welcome">
+        <p><b>✓ Today’s check-in is saved.</b> One more: you didn’t check in yesterday, so how was
+          <b>${esc(prettyDate(saturday))}</b>’s training?</p>
+      </section>
+      ${trainingSection(null, { title: 'Saturday’s training', prefix: 'sat' })}
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <button class="btn block" type="submit" id="save">${saveLabel()}</button>
+      <a class="btn secondary block" href="${esc(next)}" id="skip-saturday">Skip – I don’t remember</a>
+    </form>`;
+  const form = view.querySelector('#saturday');
+  wireCheckin(form);
+  const done = () => saveSettings({ askedSaturday: today });
+  view.querySelector('#skip-saturday').addEventListener('click', done);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const answers = readTrainingOnly(form, 'sat');
+    if (answers.missing) { showMissing(form, answers); return; }
+    upsertEntry(shiftDate(today, -1), { training: answers.training });
+    done();
+    sendAndWait(form.querySelector('#save')).then(() => { location.hash = next; });
+  });
+}
+
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
   const e = getEntry(date) || {};
@@ -181,7 +231,8 @@ function renderCheckin(dateArg) {
     const { patch } = answers;
     upsertEntry(form.date.value, patch);
     sendAndWait(form.querySelector('button[type=submit]')).then(() => {
-      location.hash = form.date.value === todayISO() ? '#today' : '#history';
+      if (form.date.value === todayISO()) afterCheckin('#today');
+      else location.hash = '#history';
     });
   });
 }
@@ -299,7 +350,7 @@ function renderMorning(query = new URLSearchParams()) {
     await sendAndWait($('#save'));
     // Not doing the reading here: go on to the normal HRV screen if today
     // still needs one.
-    location.hash = readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today';
+    afterCheckin(readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today');
   };
 
   const start = () => {
@@ -333,7 +384,7 @@ function renderMorning(query = new URLSearchParams()) {
         setReading('✓ Heart reading done', `${fmt(hrv.hr)} bpm · HRV ${fmt(hrv.rmssd)} ms – you can take your finger off the lens.`, 'ok');
         if (savedEarly) {
           upsertEntry(date, { hrv });
-          sendAndWait($('#save')).then(() => { location.hash = '#today'; });
+          sendAndWait($('#save')).then(() => afterCheckin('#today'));
         }
         return;
       }
@@ -631,7 +682,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   // for the next screen change.
   const hadController = Boolean(navigator.serviceWorker.controller);
   let updateReady = false;
-  const busy = () => /^#(checkin|measure|morning)/.test(location.hash);
+  const busy = () => /^#(checkin|measure|morning|saturday)/.test(location.hash);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || updateReady) return;
     updateReady = true;

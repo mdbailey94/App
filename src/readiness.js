@@ -23,32 +23,31 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 // Yesterday's training, as asked since sessions were split:
 //   { am: { durationMin, rpe } | null,   morning practice (null = none)
 //     pm: { durationMin, rpe } | null,   afternoon practice
-//     weights: { rpe } | null,           weights (effort only, no time asked)
+//     weights: boolean, meet: boolean,   did they lift / race
 //     durationMin, rpe }                 practice totals: minutes, and the
 //                                        time-weighted average effort
 // Older check-ins have only { durationMin, rpe } for the whole day.
-export const SESSIONS = ['am', 'pm', 'weights'];
-const isSplit = (t) => Boolean(t) && SESSIONS.some((k) => k in t);
+export const PRACTICE_KEYS = ['am', 'pm'];
+const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
 const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
 
-// Load = minutes × effort (session RPE), for the swim practices. Weights have
-// no time, so they're tracked by effort only and not counted in the load.
+// Load = practice minutes × effort (session RPE), summed over the practices.
 export function sessionLoad(training) {
   if (!training) return 0;
   if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm);
   return practiceLoad(training);
 }
 
-// Build the stored training from the three answers (null = didn't do it).
-export function trainingFrom({ am, pm, weights }) {
+// Build the stored training from the answers (null practice = didn't go).
+export function trainingFrom({ am, pm, weights = false, meet = false }) {
   const practices = [am, pm].filter((s) => s?.durationMin > 0);
   const durationMin = practices.reduce((n, s) => n + s.durationMin, 0);
   const rpe = durationMin ? Math.round(practices.reduce((n, s) => n + s.durationMin * s.rpe, 0) / durationMin) : 0;
-  return { am: am || null, pm: pm || null, weights: weights || null, durationMin, rpe };
+  return { am: am || null, pm: pm || null, weights: Boolean(weights), meet: Boolean(meet), durationMin, rpe };
 }
 
-// Effort (1–10) for one session: a number, null if they didn't do it, or
-// undefined for an older check-in that wasn't split into sessions.
+// Effort (1–10) for one practice: a number, null if they didn't go, or
+// undefined for an older check-in that wasn't split into practices.
 export function sessionRpe(training, which) {
   if (!isSplit(training)) return undefined;
   return training[which]?.rpe ?? null;

@@ -55,20 +55,24 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
 
 // Answer every questionnaire item.
 // Training: morning and afternoon practice minutes ('0' = none) and effort,
-// and weights effort ('0' = no weights).
-export async function answerAll(page, {
-  value = 5, sleep = '8', am = ['90', '5'], pm = ['120', '6'], weights = '4',
-} = {}) {
+// then weights and meet ('yes' / 'no'). `prefix` answers another training
+// card (the Monday question about Saturday).
+export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6'], weights = 'no', meet = 'no', prefix = '' } = {}) {
+  for (const [k, [min, rpe]] of [['am', am], ['pm', pm]]) {
+    await page.selectOption(`select[name=${prefix}${k}Min]`, min);
+    if (min !== '0') await pick(page, `input[name=${prefix}${k}Rpe][value="${rpe}"]`);
+  }
+  await pick(page, `input[name=${prefix}weights][value=${weights}]`);
+  await pick(page, `input[name=${prefix}meet][value=${meet}]`);
+}
+
+export async function answerAll(page, { value = 5, sleep = '8', ...training } = {}) {
   await page.locator('#checkin').waitFor();
   await pick(page, `input[name=sleepHours][value="${sleep}"]`);
   for (const k of ['sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'motivation']) {
     await pick(page, `input[name=${k}][value="${value}"]`);
   }
-  for (const [k, [min, rpe]] of [['am', am], ['pm', pm]]) {
-    await pick(page, `input[name=${k}Min][value="${min}"]`);
-    if (min !== '0') await pick(page, `input[name=${k}Rpe][value="${rpe}"]`);
-  }
-  await pick(page, `input[name=wtRpe][value="${weights}"]`);
+  await answerTraining(page, training);
 }
 
 // A fake group sheet of its own for each test.

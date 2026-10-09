@@ -115,7 +115,7 @@ test('teamTrend: daily average readiness, check-in rate and load', () => {
   assert.deepEqual(t.map((d) => d.date), [shiftDate(D, -1), D]);
   assert.deepEqual(t.map((d) => d.rate), [100, 50]);
   assert.equal(t[0].avgLoad, 240);
-  assert.deepEqual(trendSummary(t), { avgReadiness: Math.round((t[0].avgReadiness + 100) / 2), rate: 75, avgLoad: 240, rpeAm: null, rpePm: null, rpeWeights: null });
+  assert.deepEqual(trendSummary(t), { avgReadiness: Math.round((t[0].avgReadiness + 100) / 2), rate: 75, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
 });
 
 test('reminderText lists who is missing', () => {
@@ -172,13 +172,17 @@ test('roster: recent swimmers with check-ins this week and their average', () =>
   assert.equal(list[0].avg7, null);
 });
 
-test('teamTrend: average effort per session, over those who did it', () => {
-  const split = (am, pm, wt) => trainingFrom({ am: am && { durationMin: 90, rpe: am }, pm: pm && { durationMin: 120, rpe: pm }, weights: wt && { rpe: wt } });
+test('teamTrend: average effort per practice over those who went, and weights / meet counts', () => {
+  const split = (am, pm, weights = false, meet = false) => trainingFrom({ am: am && { durationMin: 90, rpe: am }, pm: pm && { durationMin: 120, rpe: pm }, weights, meet });
   const r = [
-    day('A', 0, { wellness: good, training: split(4, 8, 6) }),
-    day('B', 0, { wellness: good, training: split(6, null, null) }), // no afternoon, no weights
+    day('A', 0, { wellness: good, training: split(4, 8, true) }),
+    day('B', 0, { wellness: good, training: split(6, null, false, true) }), // no afternoon practice; a meet
     day('C', 0, { wellness: good, training: { durationMin: 60, rpe: 5 } }), // older, unsplit check-in
+    day('D', 0, { training: split(2, null) }), // Monday's answer about Saturday: training only
   ];
   const [t] = teamTrend(r, D, 1);
-  assert.deepEqual([t.rpeAm, t.rpePm, t.rpeWeights], [5, 8, 6]);
+  assert.deepEqual([t.rpeAm, t.rpePm, t.weights, t.meet], [4, 8, 1, 1]);
+  // Training-only entries are not check-ins.
+  assert.equal(t.checkedIn, 3);
+  assert.deepEqual(groupDay(r, D).checkedIn.map((c) => c.name).sort(), ['A', 'B', 'C']);
 });

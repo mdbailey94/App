@@ -1,7 +1,7 @@
 // The morning check-in: questions, reading days, reading during the
 // check-in, pre-filling and streaks.
 import {
-  test, expect, seed, settings, todayEntry, answerAll, pick, dayISO, weekday, WELLNESS, HEART,
+  test, expect, seed, settings, todayEntry, answerAll, answerTraining, pick, dayISO, weekday, WELLNESS, HEART,
 } from './helpers.mjs';
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
@@ -93,59 +93,113 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
   await expect(page.locator('.prefill-note')).toHaveCount(0);
   await expect(page.locator('input[name=energy]')).toHaveCount(7);
   await expect(page.locator('#checkin input[type=radio][name]:not([name=painLevel]):checked')).toHaveCount(0);
-  await expect(page.locator('.chips.times').first().locator('span')).toHaveText(['None', '30m', '1h', '1½h', '2h', '2½h', '3h', '3½h', '4h', '4½h', '5h']);
-  await expect(page.locator('input[name=amMin]')).toHaveCount(11); // None, 30 min … 5 h
-  await expect(page.locator('input[name=amRpe]')).toHaveCount(10);
-  await expect(page.locator('#checkin input:is([name$=Min], [name$=Rpe]):checked')).toHaveCount(0);
-  await expect(page.locator('[data-effort=am]')).toBeHidden(); // asked once they say they went
   await expect(page.locator('fieldset.scale', { hasText: 'Stressed or relaxed' }).locator('.scale-ends'))
     .toHaveText(/Very stressed\s*Very relaxed/);
 
-  // Unanswered questions, training included, are outlined; answering clears them.
+  // Practice length starts at the usual time: 2 h in the morning, 1½ h in the afternoon.
+  await expect(page.locator('select[name=amMin]')).toHaveValue('120');
+  await expect(page.locator('select[name=pmMin]')).toHaveValue('90');
+  await expect(page.locator('select[name=amMin] option')).toHaveText([
+    'No practice', '30 min', '1 h', '1 h 30 min', '2 h', '2 h 30 min', '3 h', '3 h 30 min', '4 h', '4 h 30 min', '5 h',
+  ]);
+  // Effort: ten small buttons on one row; nothing picked.
+  const effort = page.locator('[data-effort=am] .effort-row label');
+  await expect(effort).toHaveCount(10);
+  const tops = await effort.evaluateAll((l) => new Set(l.map((x) => Math.round(x.getBoundingClientRect().top))).size);
+  expect(tops).toBe(1);
+
+  // Unanswered questions are outlined; answering clears them.
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
-  await expect(page.locator('#form-error')).toContainText('Morning practice time, Afternoon practice time, Weights');
-  await expect(page.locator('.missing')).toHaveCount(10);
+  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How hard afternoon practice was, Weights?, Meet?');
+  await expect(page.locator('.missing')).toHaveCount(11);
   await expect(page.locator('.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
-  await expect(page.locator('.missing')).toHaveCount(9);
+  await expect(page.locator('.missing')).toHaveCount(10);
 
-  // A practice they went to needs its effort too.
-  await answerAll(page, { value: 3 });
-  await page.click('input[name=amMin][value="60"]');
-  await page.$$eval('input[name=amRpe]', (all) => all.forEach((r) => { r.checked = false; }));
-  await page.click('button[type=submit]');
-  await expect(page.locator('#form-error')).toHaveText('Please answer: How hard morning practice was.');
-
-  // A rest day: no practices, no weights, no effort asked.
-  await page.click('input[name=amMin][value="0"]');
+  // A rest day: no practices (no effort asked), no weights, no meet.
+  await answerAll(page, { value: 3, am: ['0'], pm: ['0'] });
   await expect(page.locator('[data-effort=am]')).toBeHidden();
-  await page.click('input[name=pmMin][value="0"]');
-  await page.click('input[name=wtRpe][value="0"]');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toEqual({ am: null, pm: null, weights: null, durationMin: 0, rpe: 0 });
+  expect((await todayEntry(page)).training).toEqual({ am: null, pm: null, weights: false, meet: false, durationMin: 0, rpe: 0 });
 });
 
-test('training: morning, afternoon and weights are kept separately', async ({ page }) => {
+test('training: morning and afternoon practice, weights and meet, each on its own row', async ({ page }) => {
   await seed(page, { hash: '#checkin' });
-  await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: '6' });
+  await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: 'yes', meet: 'no' });
   await expect(page.locator('[data-label-for=pmRpe]')).toHaveText('8 – Very hard+');
-  // A 5-hour practice is an option.
-  await page.click('input[name=pmMin][value="300"]');
-  await page.click('input[name=pmMin][value="120"]');
-  await expect(page.locator('#load-preview')).toHaveText('Practice load: 1320 AU (minutes × effort)');
+  await expect(page.locator('[data-load-preview=""]')).toHaveText('Practice load: 1320 AU (minutes × effort)');
+  for (const q of ['Weights?', 'Meet?']) {
+    const row = page.locator('.yes-no', { hasText: q });
+    const tops = await row.locator('.q, label').evaluateAll((l) => new Set(l.map((x) => Math.round(x.getBoundingClientRect().top / 10))).size);
+    expect(tops, `${q} on one row`).toBe(1);
+  }
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
   expect((await todayEntry(page)).training).toEqual({
-    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: { rpe: 6 }, durationMin: 210, rpe: 6,
+    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false, durationMin: 210, rpe: 6,
   });
 
   // Editing today's check-in shows the saved answers.
   await page.goto('/#checkin');
-  await expect(page.locator('input[name=amMin]:checked')).toHaveValue('90');
+  await expect(page.locator('select[name=amMin]')).toHaveValue('90');
   await expect(page.locator('input[name=pmRpe]:checked')).toHaveValue('8');
-  await expect(page.locator('input[name=wtRpe]:checked')).toHaveValue('6');
+  await expect(page.locator('input[name=weights]:checked')).toHaveValue('yes');
+  await expect(page.locator('input[name=meet]:checked')).toHaveValue('no');
+});
+
+test.describe('on a Monday', () => {
+  const MONDAY = '2026-10-12', SUNDAY = '2026-10-11', SATURDAY_CHECKIN = '2026-10-10';
+  const entry = (date) => ({ date, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } });
+  test.beforeEach(async ({ page }) => { await page.clock.setFixedTime(new Date(`${MONDAY}T07:00:00`)); });
+
+  test('no Sunday check-in: after checking in, they are asked about Saturday once', async ({ page }) => {
+    await seed(page, { entries: [entry(SATURDAY_CHECKIN)], settings: { hrvDays: [3] }, hash: '#morning' });
+    await answerAll(page);
+    await page.click('#save');
+    await page.waitForURL(/#saturday/);
+    await expect(page.locator('.welcome')).toContainText('how was Sat, Oct 10’s training');
+    await expect(page.locator('.training h3')).toHaveText('Saturday’s training');
+
+    await page.click('#save');
+    await expect(page.locator('#form-error')).toContainText('Weights?, Meet?');
+    await answerTraining(page, { prefix: 'sat', am: ['180', '7'], pm: ['0'], meet: 'yes' });
+    await page.click('#save');
+    await page.waitForURL(/#today$/);
+
+    const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), 'athlete-readiness/entries/v1');
+    const sunday = saved.find((e) => e.date === SUNDAY);
+    expect(sunday.training).toEqual({ am: { durationMin: 180, rpe: 7 }, pm: null, weights: false, meet: true, durationMin: 180, rpe: 7 });
+    expect(sunday.wellness).toBeUndefined(); // training only: not a Sunday check-in
+    // Today's own check-in is untouched, and the streak doesn't count Sunday.
+    expect(saved.find((e) => e.date === MONDAY).wellness.energy).toBe(5);
+    await expect(page.locator('.streak')).toHaveCount(0);
+
+    // Not asked again.
+    await page.goto('/#checkin');
+    await page.click('button[type=submit]');
+    await page.waitForURL(/#today$/);
+  });
+
+  test('they can skip it, and are not asked again that day', async ({ page }) => {
+    await seed(page, { settings: { hrvDays: [3] }, hash: '#morning' });
+    await answerAll(page);
+    await page.click('#save');
+    await page.waitForURL(/#saturday/);
+    await page.click('#skip-saturday');
+    await page.waitForURL(/#today$/);
+    await page.goto('/#checkin');
+    await page.click('button[type=submit]');
+    await page.waitForURL(/#today$/);
+  });
+
+  test('with a Sunday check-in, Saturday is already reported: no question', async ({ page }) => {
+    await seed(page, { entries: [entry(SUNDAY)], settings: { hrvDays: [3] }, hash: '#morning' });
+    await answerAll(page);
+    await page.click('#save');
+    await page.waitForURL(/#today$/);
+  });
 });
 
 test('reading days: all seven fit on one row and save when ticked', async ({ page }) => {
