@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -120,10 +120,29 @@ test('reading days: Mon/Wed/Fri by weekday; none set means every day', () => {
 test('checkInStreak counts days in a row, still alive before today is done', () => {
   const w = { energy: 5 };
   const days = (...ds) => ds.map((date) => ({ date, wellness: w }));
-  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27', '2026-09-28'), '2026-09-28'), { days: 3, doneToday: true });
-  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27'), '2026-09-28'), { days: 2, doneToday: false });
-  assert.deepEqual(checkInStreak(days('2026-09-25', '2026-09-27'), '2026-09-28'), { days: 1, doneToday: false });
-  assert.deepEqual(checkInStreak([{ date: '2026-09-28', hrv: {} }], '2026-09-28'), { days: 0, doneToday: false });
+  // 2026-09-23 is a Wednesday.
+  assert.deepEqual(checkInStreak(days('2026-09-21', '2026-09-22', '2026-09-23'), '2026-09-23'), { days: 3, doneToday: true, nudge: false });
+  assert.deepEqual(checkInStreak(days('2026-09-21', '2026-09-22'), '2026-09-23'), { days: 2, doneToday: false, nudge: true });
+  assert.deepEqual(checkInStreak(days('2026-09-20', '2026-09-22'), '2026-09-23'), { days: 1, doneToday: false, nudge: true });
+  assert.deepEqual(checkInStreak([{ date: '2026-09-23', hrv: {} }], '2026-09-23'), { days: 0, doneToday: false, nudge: true });
+});
+
+test('checkInStreak: Sunday counts when made up on Monday, and never nags', () => {
+  const w = { energy: 5 };
+  const checkIns = (...ds) => ds.map((date) => ({ date, wellness: w }));
+  const madeUp = (date) => ({ date, training: { am: null, pm: null, weights: false, meet: false, durationMin: 0, rpe: 0 } });
+  // Thu 1 … Sat 3 Oct 2026, no Sunday check-in, Monday 5 Oct.
+  const week = checkIns('2026-10-01', '2026-10-02', '2026-10-03');
+  // Sunday: no "check in today".
+  assert.deepEqual(checkInStreak(week, '2026-10-04'), { days: 3, doneToday: false, nudge: false });
+  // Monday before checking in: Sunday can still be made up, so the streak is still 3.
+  assert.equal(checkInStreak(week, '2026-10-05').days, 3);
+  // Monday checked in and Saturday made up: Sunday counts, the streak continues.
+  assert.equal(checkInStreak([...week, madeUp('2026-10-04'), ...checkIns('2026-10-05')], '2026-10-05').days, 5);
+  // Monday checked in but Saturday skipped: the streak starts again.
+  assert.equal(checkInStreak([...week, ...checkIns('2026-10-05')], '2026-10-05').days, 1);
+  // A training-only entry on another day isn't a check-in.
+  assert.equal(checkInStreak([...checkIns('2026-10-06'), madeUp('2026-10-07'), ...checkIns('2026-10-08')], '2026-10-08').days, 1);
 });
 
 test('compareToUsual: thanks only until 5 earlier check-ins, then today against their own usual', () => {
@@ -138,4 +157,24 @@ test('compareToUsual: thanks only until 5 earlier check-ins, then today against 
   // A swimmer whose answers swing a lot needs a bigger gap before it counts.
   const swingy = [6, 5, 4, 3, 2, 1].map((n) => day(n, n % 2 ? 7 : 3));
   assert.equal(compareToUsual([...swingy, day(0, 3)], '2026-10-02').level, 'same');
+});
+
+test('training split into practices; weights count as 45 min at hard (5); meet is yes/no', () => {
+  const t = trainingFrom({ am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false });
+  assert.equal(t.durationMin, 255); // 90 + 120 + 45 for weights
+  assert.equal(t.rpe, 6); // (90×4 + 120×8 + 45×5) / 255 = 6.1
+  assert.equal(sessionLoad(t), 90 * 4 + 120 * 8 + 45 * 5);
+  assert.equal(sessionLoad(trainingFrom({ am: null, pm: null, weights: true })), 225);
+  assert.deepEqual(['am', 'pm'].map((k) => sessionRpe(t, k)), [4, 8]);
+  assert.equal(t.weights, true);
+  assert.equal(t.meet, false);
+
+  const restDay = trainingFrom({ am: null, pm: null });
+  assert.deepEqual(restDay, { am: null, pm: null, weights: false, meet: false, durationMin: 0, rpe: 0 });
+  assert.equal(sessionLoad(restDay), 0);
+  assert.equal(sessionRpe(restDay, 'am'), null);
+
+  // Older check-ins: one number for the whole day, no per-session effort.
+  assert.equal(sessionLoad({ durationMin: 60, rpe: 5 }), 300);
+  assert.equal(sessionRpe({ durationMin: 60, rpe: 5 }, 'am'), undefined);
 });

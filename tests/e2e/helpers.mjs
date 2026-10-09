@@ -54,14 +54,29 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
 });
 
 // Answer every questionnaire item.
-export async function answerAll(page, { value = 5, sleep = '8', minutes = '90', rpe = '5' } = {}) {
+// Training: morning and afternoon practice minutes ('0' = none) and effort,
+// then weights and meet ('yes' / 'no'). Afternoon practice is a yes/no that
+// opens its time and effort. `prefix` answers another training card (the
+// Monday question about Saturday).
+export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6'], weights = 'no', meet = 'no', prefix = '' } = {}) {
+  await page.selectOption(`select[name=${prefix}amMin]`, am[0]);
+  if (am[0] !== '0') await pick(page, `input[name=${prefix}amRpe][value="${am[1]}"]`);
+  await pick(page, `input[name=${prefix}pmDid][value=${pm[0] === '0' ? 'no' : 'yes'}]`);
+  if (pm[0] !== '0') {
+    await page.selectOption(`select[name=${prefix}pmMin]`, pm[0]);
+    await pick(page, `input[name=${prefix}pmRpe][value="${pm[1]}"]`);
+  }
+  await pick(page, `input[name=${prefix}weights][value=${weights}]`);
+  await pick(page, `input[name=${prefix}meet][value=${meet}]`);
+}
+
+export async function answerAll(page, { value = 5, sleep = '8', ...training } = {}) {
   await page.locator('#checkin').waitFor();
   await pick(page, `input[name=sleepHours][value="${sleep}"]`);
   for (const k of ['sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'motivation']) {
     await pick(page, `input[name=${k}][value="${value}"]`);
   }
-  await page.selectOption('select[name=durationMin]', minutes);
-  await page.selectOption('select[name=rpe]', rpe);
+  await answerTraining(page, training);
 }
 
 // A fake group sheet of its own for each test.

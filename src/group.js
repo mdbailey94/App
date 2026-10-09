@@ -1,6 +1,11 @@
 // Coach-side analysis of the group's rows from the sheet. Pure functions.
 
-import { assessDay, daysBetween, sessionLoad, shiftDate, wellnessScore, workload } from './readiness.js';
+import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
+
+// A check-in has answers. An entry can also hold training only: a Monday
+// answer about Saturday, filed under Sunday. That counts for training, not
+// as a check-in.
+const isCheckIn = (e) => Boolean(e.wellness);
 
 // rows: [{ athlete, date, entry }] → Map(key → { name, entries[] }).
 // Names match case-insensitively; the most recent spelling is displayed.
@@ -35,8 +40,8 @@ function dayOf(athletes, date, { activeDays = 21 } = {}) {
   const missing = [];
   for (const a of athletes.values()) {
     const upTo = a.entries.filter((e) => e.date <= date);
-    const today = upTo.find((e) => e.date === date);
-    const lastSeen = upTo.at(-1)?.date;
+    const today = upTo.find((e) => e.date === date && isCheckIn(e));
+    const lastSeen = upTo.filter(isCheckIn).at(-1)?.date;
     if (!today) {
       // missedDays: days in a row without a check-in, up to and including `date`.
       if (lastSeen && lastSeen >= sinceISO) missing.push({ key: a.key, name: a.name, lastSeen, missedDays: daysBetween(lastSeen, date) });
@@ -81,7 +86,19 @@ export function teamTrend(rows, endDate, days = 7) {
     const date = shiftDate(endDate, -i);
     const day = dayOf(athletes, date);
     const loads = day.checkedIn.map((c) => c.load).filter((v) => v > 0);
+    // Average effort per practice, over those who went (training is reported
+    // the next morning, so this is the previous day's sessions; a Monday
+    // answer about Saturday counts too), and how many lifted or raced.
+    const trainings = [...athletes.values()].map((a) => a.entries.find((e) => e.date === date)?.training).filter(Boolean);
+    const effort = Object.fromEntries(PRACTICE_KEYS.map((k) => {
+      const vals = trainings.map((t) => sessionRpe(t, k)).filter((v) => v > 0);
+      return [k, vals.length ? +avg(vals).toFixed(1) : null];
+    }));
     out.push({
+      rpeAm: effort.am,
+      rpePm: effort.pm,
+      weights: trainings.filter((t) => t.weights === true).length,
+      meet: trainings.filter((t) => t.meet === true).length,
       date,
       avgReadiness: day.avgReadiness,
       checkedIn: day.checkedIn.length,
@@ -99,10 +116,15 @@ export function trendSummary(trend) {
   const r = avg(pick('avgReadiness'));
   const rate = avg(pick('rate'));
   const load = avg(pick('avgLoad').filter((v) => v > 0));
+  const oneDp = (k) => { const v = avg(pick(k)); return v === null ? null : +v.toFixed(1); };
   return {
     avgReadiness: r === null ? null : Math.round(r),
     rate: rate === null ? null : Math.round(rate),
     avgLoad: load === null ? null : Math.round(load),
+    rpeAm: oneDp('rpeAm'),
+    rpePm: oneDp('rpePm'),
+    weights: trend.reduce((n, d) => n + (d.weights || 0), 0),
+    meet: trend.reduce((n, d) => n + (d.meet || 0), 0),
   };
 }
 
@@ -117,7 +139,7 @@ export function watchList(rows, date) {
   const list = [];
   for (const a of groupByAthlete(rows).values()) {
     const upTo = a.entries.filter((e) => e.date <= date);
-    const week = upTo.filter((e) => e.date >= weekAgo);
+    const week = upTo.filter((e) => e.date >= weekAgo && isCheckIn(e));
     if (!week.length) continue;
     const latest = week.at(-1);
     const ago = daysBetween(latest.date, date);
@@ -193,7 +215,7 @@ export function checkinGrid(rows, date, days = 14) {
   return {
     dates,
     rows: athletes.map((a) => {
-      const byDate = new Map(a.entries.map((e) => [e.date, e]));
+      const byDate = new Map(a.entries.filter(isCheckIn).map((e) => [e.date, e]));
       const cells = dates.map((d) => {
         const e = byDate.get(d);
         if (!e) return null;
@@ -227,9 +249,9 @@ export function roster(rows, date, { activeDays = 21 } = {}) {
   return [...groupByAthlete(rows).values()]
     .map((a) => {
       const upTo = a.entries.filter((e) => e.date <= date);
-      const last = upTo.at(-1);
+      const last = upTo.filter(isCheckIn).at(-1);
       if (!last || last.date < from) return null;
-      const week = upTo.filter((e) => e.date >= weekAgo);
+      const week = upTo.filter((e) => e.date >= weekAgo && isCheckIn(e));
       const scores = week.map((e) => assessDay(upTo, e.date).score).filter(Number.isFinite);
       return {
         key: a.key,

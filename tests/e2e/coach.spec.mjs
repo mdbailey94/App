@@ -6,7 +6,11 @@ const W = (v, sleep) => ({ sleepHours: sleep, scaleMax: 7, sleepQuality: v, ener
 const practice = { durationMin: 120, rpe: 6 };
 // n = days ago; returning null skips that day.
 const SWIMMERS = {
-  'Maya Torres': (n) => ({ wellness: W(6, 8), training: practice, notes: n === 1 ? 'Shoulder a bit tight after drills' : '' }),
+  'Maya Torres': (n) => ({
+    wellness: W(6, 8),
+    training: { am: { durationMin: 90, rpe: 4 }, pm: n % 2 ? null : { durationMin: 120, rpe: 8 }, weights: true, meet: n === 0, durationMin: n % 2 ? 90 : 210, rpe: n % 2 ? 4 : 6 },
+    notes: n === 1 ? 'Shoulder a bit tight after drills' : '',
+  }),
   'Sam Lee': (n) => ({ wellness: W(n < 4 ? 3 : 6, n < 4 ? 6 : 8), training: practice }),
   'Kai Moana': (n) => ({ wellness: W(5, 7.5), training: practice, pain: n === 0 ? { level: 3, location: 'right shoulder' } : { level: 0 } }),
   'Ana Ruiz': (n) => ({ wellness: W(5, n < 4 ? 6 : 8), training: n < 7 ? { durationMin: 240, rpe: 8 } : { durationMin: 90, rpe: 5 } }),
@@ -69,6 +73,11 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(watch.first()).toContainText('Injury stopping certain strokes or movements (right shoulder), reported today.');
   await expect(watch.nth(1)).toContainText('Training load spike');
   await expect(page.locator('.plain li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
+  // Effort per session: Maya's split check-in, and an older whole-day one.
+  const maya = page.locator('.group-table tr', { hasText: 'Maya Torres' }).locator('td.effort');
+  await expect(maya).toContainText('4 · 8');
+  await expect(maya.locator('.tag')).toHaveText(['Wt', 'Meet']);
+  await expect(page.locator('.group-table tr', { hasText: 'Sam Lee' }).locator('td.effort')).toHaveText('6');
 
   await page.click('a:has-text("Send a reminder")');
   await expect(page).toHaveURL(/#messages/);
@@ -90,6 +99,13 @@ test('History tab: 7/28-day trends and the check-in record', async ({ page }, te
   await expect(leo.locator('.grid-count')).toHaveText('11/14'); // missed the last 3 days
   await expect(leo.locator('td.grid-miss')).toHaveCount(3);
   await expect(grid.filter({ hasText: 'Kai' }).locator('td.grid-critical')).toHaveText('✕'); // injury today
+
+  // Only Maya split her training: morning 4 every day, afternoon 8 on the days she went.
+  const effort = page.locator('#effort-stats .stat-num');
+  await expect(effort.nth(0)).toHaveText(/^4/);
+  await expect(effort.nth(1)).toHaveText(/^8/);
+  await expect(page.locator('#lift-meet')).toHaveText('28 weights sessions · 1 meet day reported');
+  await expect(page.locator('[data-t="rpePm"] svg')).toBeVisible();
 });
 
 test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, testInfo) => {

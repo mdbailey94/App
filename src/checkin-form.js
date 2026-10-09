@@ -2,27 +2,87 @@
 // markup, live behaviour, and reading the answers back. A new day starts
 // blank: every answer is the athlete's own for that day.
 
-import { SCALE_MAX, sessionLoad, WELLNESS_ITEMS } from './readiness.js';
+import { SCALE_MAX, sessionLoad, trainingFrom, WELLNESS_ITEMS } from './readiness.js';
 import { esc } from './ui.js';
 
-const RPE_LABELS = ['Rest', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
-// Training time in half-hour steps, stored as minutes.
+// Effort, 1–10 (session RPE).
+const RPE_LABELS = ['', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
 const hoursLabel = (min) => {
-  if (!min) return 'Rest day';
   const h = Math.floor(min / 60);
   const m = min % 60;
   return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
 };
 
-function trainingTimeOptions(current) {
-  // Rest day, then 1 h to 5 h in half-hour steps.
-  const steps = [0, ...Array.from({ length: 9 }, (_, i) => 60 + i * 30)];
-  // Keep an older entry's exact time (e.g. 75 min) rather than silently rounding it.
-  if (Number.isFinite(current) && !steps.includes(current)) steps.push(current);
-  steps.sort((a, b) => a - b);
-  // Nothing is chosen until the athlete picks, so "Rest day" is never a silent default.
-  return `<option value="" ${Number.isFinite(current) ? '' : 'selected'} disabled>Choose…</option>`
+// Training questions. Each practice: how long (a drop-down that starts at
+// the usual length, so most days it's untouched) and how hard (ten small
+// buttons, nothing picked). Then two yes/no questions: weights, and a meet.
+// Afternoon practice is a yes/no first (many days have none); a Yes brings
+// up its time and effort. Morning practice asks time and effort straight away.
+const PRACTICES = [
+  { key: 'am', title: 'Morning practice', usual: 120 },
+  { key: 'pm', title: 'Afternoon practice', usual: 90, askFirst: true },
+];
+const YES_NO = [
+  { key: 'weights', title: 'Weights?' },
+  { key: 'meet', title: 'Meet?' },
+];
+const checked = (on) => (on ? 'checked' : '');
+
+function timeOptions(current, { none = true } = {}) {
+  // (No practice,) then 30 min to 5 h in half hours; an older odd time (e.g. 75 min) is kept.
+  const steps = Array.from({ length: 10 }, (_, i) => 30 + i * 30);
+  if (current > 0 && !steps.includes(current)) steps.push(current);
+  steps.sort((x, y) => x - y);
+  return (none ? `<option value="0" ${current === 0 ? 'selected' : ''}>No practice</option>` : '')
     + steps.map((m) => `<option value="${m}" ${m === current ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
+}
+
+const yesNoButtons = (name, value) => `
+          <div class="chips yn">
+            <label><input type="radio" name="${name}" value="yes" ${checked(value === true)}><span>Yes</span></label>
+            <label><input type="radio" name="${name}" value="no" ${checked(value === false)}><span>No</span></label>
+          </div>`;
+
+// Ten small squares in one row, green (easy) to blue (maximal): effort isn't
+// good or bad, so no red.
+function effortButtons(name, current) {
+  return `<div class="effort-row" role="radiogroup" aria-label="How hard, 1 to 10">
+    ${RPE_LABELS.slice(1).map((l, i) => `<label style="--hue:${140 + i * 9}" title="${i + 1} – ${l}"><input type="radio" name="${name}" value="${i + 1}" ${checked(current === i + 1)} aria-label="${i + 1} – ${l}"><span>${i + 1}</span></label>`).join('')}
+  </div>`;
+}
+
+// The training card. `prefix` keeps the fields apart when a second card is
+// on screen (the Monday question about Saturday).
+export function trainingSection(t, { title = 'Yesterday’s training', prefix = '' } = {}) {
+  // Saved answers when editing today; otherwise the usual practice lengths.
+  const split = t && PRACTICES.some((p) => p.key in t);
+  const minutes = (p) => (split ? t[p.key]?.durationMin ?? (p.askFirst ? p.usual : 0) : p.usual);
+  const effort = (p) => (split ? t[p.key]?.rpe : undefined);
+  const yesNo = (k) => (split ? Boolean(t[k]) : undefined);
+  const timeAndEffort = (p) => `
+          <label class="field inline-q"><span class="q">How long?</span>
+            <select name="${prefix}${p.key}Min">${timeOptions(minutes(p), { none: !p.askFirst })}</select></label>
+          <div class="field" data-effort="${prefix}${p.key}" ${p.askFirst || minutes(p) > 0 ? '' : 'hidden'}>
+            <span class="q">How hard was it?</span>
+            ${effortButtons(`${prefix}${p.key}Rpe`, effort(p))}</div>`;
+  return `
+      <section class="card training" data-prefix="${prefix}">
+        <h3>${esc(title)}</h3>
+        ${PRACTICES.map((p) => (p.askFirst ? `
+        <fieldset class="session asked-first">
+          <div class="field inline-q yes-no"><span class="q">${p.title}?</span>${yesNoButtons(`${prefix}${p.key}Did`, yesNo(p.key))}</div>
+          <div data-details="${prefix}${p.key}" ${yesNo(p.key) ? '' : 'hidden'}>
+            ${timeAndEffort(p)}
+          </div>
+        </fieldset>` : `
+        <fieldset class="session">
+          <legend>${p.title}</legend>
+          ${timeAndEffort(p)}
+        </fieldset>`)).join('')}
+        ${YES_NO.map((q) => `
+        <div class="field inline-q yes-no"><span class="q">${q.title}</span>${yesNoButtons(`${prefix}${q.key}`, yesNo(q.key))}</div>`).join('')}
+        <p class="muted small" data-load-preview="${prefix}"></p>
+      </section>`;
 }
 
 const INJURY_LEVELS = [
@@ -50,7 +110,6 @@ function scaleField(item, value) {
 // The questionnaire sections.
 export function checkinSections(e) {
   const w = e.wellness || {};
-  const t = e.training || {};
   const pain = e.pain || { level: 0 };
   const otherSleep = Number.isFinite(w.sleepHours) && !SLEEP_STEPS.includes(w.sleepHours);
   return `
@@ -87,17 +146,7 @@ export function checkinSections(e) {
           <input type="text" name="painLocation" value="${esc(pain.location)}" placeholder="e.g. left hamstring strain"></label>
       </section>
 
-      <section class="card">
-        <h3>Yesterday’s training</h3>
-        <label class="field">How long did you train yesterday? (all sessions)
-          <select name="durationMin">${trainingTimeOptions(t.durationMin)}</select></label>
-        <label class="field">How hard was it overall? (session RPE)
-          <select name="rpe">
-            <option value="" ${Number.isFinite(t.rpe) ? '' : 'selected'} disabled>Choose…</option>
-            ${RPE_LABELS.map((l, i) => `<option value="${i}" ${t.rpe === i ? 'selected' : ''}>${i} – ${l}</option>`).join('')}
-          </select></label>
-        <p class="muted small" id="load-preview"></p>
-      </section>
+${trainingSection(e.training)}
 
       <section class="card">
         <h3>Notes <span class="muted small">(optional)</span></h3>
@@ -108,13 +157,20 @@ export function checkinSections(e) {
 
 export function wireCheckin(form) {
   const loadPreview = () => {
-    const load = sessionLoad({ durationMin: +form.durationMin.value, rpe: +form.rpe.value });
-    form.querySelector('#load-preview').textContent = load ? `Session load: ${load} AU` : '';
+    const fd = new FormData(form);
+    form.querySelectorAll('[data-load-preview]').forEach((el) => {
+      const load = sessionLoad(readTraining(fd, el.dataset.loadPreview));
+      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, hard)` : '';
+    });
   };
   form.addEventListener('input', (ev) => {
     ev.target.closest('.missing')?.classList.remove('missing');
     if (ev.target.name === 'painLevel') form.querySelector('#pain-location').hidden = ev.target.value === '0';
     if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
+    const practice = /^(.*am)Min$/.exec(ev.target.name)?.[1];
+    if (practice) form.querySelector(`[data-effort="${practice}"]`).hidden = !(Number(ev.target.value) > 0);
+    const asked = /^(.*pm)Did$/.exec(ev.target.name)?.[1];
+    if (asked) form.querySelector(`[data-details="${asked}"]`).hidden = ev.target.value !== 'yes';
     loadPreview();
   });
   loadPreview();
@@ -128,10 +184,7 @@ export function readCheckin(form) {
   if (!fd.get('sleepHours') || !(sleepHours >= 0 && sleepHours <= 16) || (fd.get('sleepHours') === 'other' && fd.get('sleepOther') === '')) {
     unanswered.unshift({ key: 'sleepHours', label: 'Hours slept' });
   }
-  // Training: how long is always asked; how hard only when they trained.
-  const trained = Number(fd.get('durationMin')) > 0;
-  if (!fd.get('durationMin')) unanswered.push({ key: 'durationMin', label: 'Yesterday’s training time' });
-  else if (trained && fd.get('rpe') === null) unanswered.push({ key: 'rpe', label: 'How hard training was' });
+  unanswered.push(...trainingMissing(fd));
   if (unanswered.length) return { missing: unanswered.map((i) => i.label), missingKeys: unanswered.map((i) => i.key) };
   const num = (k) => (fd.get(k) === '' || fd.get(k) === null ? undefined : Number(fd.get(k)));
   const painLevel = num('painLevel') || 0;
@@ -141,10 +194,47 @@ export function readCheckin(form) {
     patch: {
       wellness,
       pain: { level: painLevel, location: painLevel ? fd.get('painLocation').trim() : '' },
-      training: { durationMin: num('durationMin') || 0, rpe: trained ? num('rpe') || 0 : 0 },
+      training: readTraining(fd),
       notes: fd.get('notes').trim(),
     },
   };
+}
+
+// Unanswered training questions: how hard, for each practice they went to,
+// and both yes/no questions.
+// Did they go? A practice asked first (afternoon) counts only after a Yes.
+const went = (fd, prefix, p) => (p.askFirst ? fd.get(`${prefix}${p.key}Did`) === 'yes' : true)
+  && Number(fd.get(`${prefix}${p.key}Min`)) > 0;
+
+function trainingMissing(fd, prefix = '') {
+  const out = [];
+  for (const p of PRACTICES) {
+    if (p.askFirst && fd.get(`${prefix}${p.key}Did`) === null) {
+      out.push({ key: `${prefix}${p.key}Did`, label: `${p.title}?` });
+    } else if (went(fd, prefix, p) && fd.get(`${prefix}${p.key}Rpe`) === null) {
+      out.push({ key: `${prefix}${p.key}Rpe`, label: `How hard ${p.title.toLowerCase()} was` });
+    }
+  }
+  for (const q of YES_NO) if (fd.get(`${prefix}${q.key}`) === null) out.push({ key: `${prefix}${q.key}`, label: q.title });
+  return out;
+}
+
+function readTraining(fd, prefix = '') {
+  const practice = (p) => (went(fd, prefix, p)
+    ? { durationMin: Number(fd.get(`${prefix}${p.key}Min`)), rpe: Number(fd.get(`${prefix}${p.key}Rpe`)) }
+    : null);
+  return trainingFrom({
+    am: practice(PRACTICES[0]), pm: practice(PRACTICES[1]),
+    weights: fd.get(`${prefix}weights`) === 'yes', meet: fd.get(`${prefix}meet`) === 'yes',
+  });
+}
+
+// Just a training card (the Monday question about Saturday): { missing } or { training }.
+export function readTrainingOnly(form, prefix) {
+  const fd = new FormData(form);
+  const unanswered = trainingMissing(fd, prefix);
+  if (unanswered.length) return { missing: unanswered.map((i) => i.label), missingKeys: unanswered.map((i) => i.key) };
+  return { training: readTraining(fd, prefix) };
 }
 
 export function showFormError(form, text, { scroll = true } = {}) {

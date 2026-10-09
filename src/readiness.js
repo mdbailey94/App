@@ -20,10 +20,40 @@ export const scaleMaxOf = (w) => w?.scaleMax || 5;
 
 const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 
+// Yesterday's training, as asked since sessions were split:
+//   { am: { durationMin, rpe } | null,   morning practice (null = none)
+//     pm: { durationMin, rpe } | null,   afternoon practice
+//     weights: boolean, meet: boolean,   did they lift / race
+//     durationMin, rpe }                 totals: minutes, and the
+//                                        time-weighted average effort
+// A weights session isn't timed or rated: for load it counts as WEIGHTS
+// (45 minutes at hard effort, 5 on the 1–10 scale).
+// Older check-ins have only { durationMin, rpe } for the whole day.
+export const PRACTICE_KEYS = ['am', 'pm'];
+const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
+const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
+export const WEIGHTS = { durationMin: 45, rpe: 5 };
+
+// Load = minutes × effort (session RPE), summed over the practices and weights.
 export function sessionLoad(training) {
   if (!training) return 0;
-  const { durationMin, rpe } = training;
-  return durationMin > 0 && rpe >= 0 ? Math.round(durationMin * rpe) : 0;
+  if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm) + (training.weights ? practiceLoad(WEIGHTS) : 0);
+  return practiceLoad(training);
+}
+
+// Build the stored training from the answers (null practice = didn't go).
+export function trainingFrom({ am, pm, weights = false, meet = false }) {
+  const practices = [am, pm, weights && WEIGHTS].filter((s) => s?.durationMin > 0);
+  const durationMin = practices.reduce((n, s) => n + s.durationMin, 0);
+  const rpe = durationMin ? Math.round(practices.reduce((n, s) => n + s.durationMin * s.rpe, 0) / durationMin) : 0;
+  return { am: am || null, pm: pm || null, weights: Boolean(weights), meet: Boolean(meet), durationMin, rpe };
+}
+
+// Effort (1–10) for one practice: a number, null if they didn't go, or
+// undefined for an older check-in that wasn't split into practices.
+export function sessionRpe(training, which) {
+  if (!isSplit(training)) return undefined;
+  return training[which]?.rpe ?? null;
 }
 
 // 0–100 from the six subjective scales plus sleep duration.
@@ -175,12 +205,22 @@ export function nextReadingDay(days, date) {
 
 // Check-ins in a row up to today. A streak is still alive until today is
 // over, so it counts back from yesterday if today isn't done yet.
+// Swimmers don't usually check in on Sundays: a Sunday counts if they
+// checked in, or made it up on Monday by reporting Saturday's training
+// (filed under Sunday, training only). Until Monday's check-in is done,
+// Sunday can still be made up, so it doesn't break the streak yet.
+// `nudge`: whether to say "check in today" (not on Sundays).
 export function checkInStreak(entries, today) {
   const done = new Set(entries.filter((e) => e.wellness).map((e) => e.date));
-  let d = done.has(today) ? today : shiftDate(today, -1);
+  const madeUp = new Set(entries.filter((e) => !e.wellness && e.training).map((e) => e.date));
+  const isSunday = (d) => weekday(d) === 0;
+  const counts = (d) => done.has(d) || (isSunday(d) && madeUp.has(d));
+  const doneToday = done.has(today);
+  let d = doneToday ? today : shiftDate(today, -1);
+  if (!doneToday && weekday(today) === 1 && !counts(d)) d = shiftDate(d, -1); // Sunday: not made up yet
   let n = 0;
-  while (done.has(d)) { n++; d = shiftDate(d, -1); }
-  return { days: n, doneToday: done.has(today) };
+  while (counts(d)) { n++; d = shiftDate(d, -1); }
+  return { days: n, doneToday, nudge: !doneToday && !isSunday(today) };
 }
 
 // ---- today compared with the athlete's own usual

@@ -362,3 +362,31 @@ fieldset.missing, .field.missing { outline: 2px solid var(--critical); outline-o
 .settings-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 8px 0 16px; }
 .settings-list dt { font-weight: 600; }
 .settings-list dd { margin: 0; word-break: break-all; }
+.th-sub { font-weight: 400; font-size: 11px; color: var(--muted); white-space: nowrap; }
+td.effort { white-space: nowrap; font-variant-numeric: tabular-nums; }
+fieldset.session { border: 0; padding: 0; margin: 12px 0 4px; }
+fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
+
+/* Training card: one row per question */
+.field > .q { display: block; margin-bottom: 6px; }
+.inline-q { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.inline-q .q { margin: 0; flex-shrink: 0; }
+.inline-q select { width: auto; min-width: 150px; }
+.effort-row { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; margin-top: 4px; }
+.effort-row label { position: relative; }
+.effort-row input { position: absolute; opacity: 0; inset: 0; }
+.effort-row span {
+  display: flex; align-items: center; justify-content: center; height: 34px;
+  border-radius: 7px; font-weight: 700; font-size: 14px; cursor: pointer;
+  --tone: hsl(var(--hue) 55% 42%);
+  background: color-mix(in srgb, var(--tone) 16%, var(--bg)); border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--border));
+}
+.effort-row input:checked + span { background: var(--tone); border-color: var(--tone); color: #fff; }
+.effort-row input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips.yn { grid-template-columns: repeat(2, 72px); }
+.chips.yn label:last-child { grid-column: auto; }
+.chips.yn span { height: 38px; }
+.yes-no { margin-top: 10px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; margin: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tag-meet { background: color-mix(in srgb, var(--warning) 25%, transparent); }
+.asked-first [data-details] { margin-top: 4px; }
