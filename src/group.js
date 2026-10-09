@@ -1,6 +1,6 @@
 // Coach-side analysis of the group's rows from the sheet. Pure functions.
 
-import { assessDay, daysBetween, sessionLoad, shiftDate, wellnessScore, workload } from './readiness.js';
+import { assessDay, daysBetween, SESSIONS, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
 
 // rows: [{ athlete, date, entry }] → Map(key → { name, entries[] }).
 // Names match case-insensitively; the most recent spelling is displayed.
@@ -81,7 +81,16 @@ export function teamTrend(rows, endDate, days = 7) {
     const date = shiftDate(endDate, -i);
     const day = dayOf(athletes, date);
     const loads = day.checkedIn.map((c) => c.load).filter((v) => v > 0);
+    // Average effort per session, over those who did it (training is reported
+    // the next morning, so this is the previous day's sessions).
+    const effort = Object.fromEntries(SESSIONS.map((k) => {
+      const vals = day.checkedIn.map((c) => sessionRpe(c.entry.training, k)).filter((v) => v > 0);
+      return [k, vals.length ? +avg(vals).toFixed(1) : null];
+    }));
     out.push({
+      rpeAm: effort.am,
+      rpePm: effort.pm,
+      rpeWeights: effort.weights,
       date,
       avgReadiness: day.avgReadiness,
       checkedIn: day.checkedIn.length,
@@ -99,10 +108,14 @@ export function trendSummary(trend) {
   const r = avg(pick('avgReadiness'));
   const rate = avg(pick('rate'));
   const load = avg(pick('avgLoad').filter((v) => v > 0));
+  const oneDp = (k) => { const v = avg(pick(k)); return v === null ? null : +v.toFixed(1); };
   return {
     avgReadiness: r === null ? null : Math.round(r),
     rate: rate === null ? null : Math.round(rate),
     avgLoad: load === null ? null : Math.round(load),
+    rpeAm: oneDp('rpeAm'),
+    rpePm: oneDp('rpePm'),
+    rpeWeights: oneDp('rpeWeights'),
   };
 }
 

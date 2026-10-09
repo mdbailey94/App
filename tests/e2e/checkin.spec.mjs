@@ -93,26 +93,52 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
   await expect(page.locator('.prefill-note')).toHaveCount(0);
   await expect(page.locator('input[name=energy]')).toHaveCount(7);
   await expect(page.locator('#checkin input[type=radio][name]:not([name=painLevel]):checked')).toHaveCount(0);
-  await expect(page.locator('select[name=durationMin]')).toHaveValue('');
-  await expect(page.locator('select[name=rpe]')).toHaveValue('');
+  for (const name of ['amMin', 'pmMin', 'wtRpe']) await expect(page.locator(`select[name=${name}]`)).toHaveValue('');
+  await expect(page.locator('[data-effort=am]')).toBeHidden(); // asked once they say they went
   await expect(page.locator('fieldset.scale', { hasText: 'Stressed or relaxed' }).locator('.scale-ends'))
     .toHaveText(/Very stressed\s*Very relaxed/);
 
   // Unanswered questions, training included, are outlined; answering clears them.
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
-  await expect(page.locator('#form-error')).toContainText('Yesterday’s training time');
-  await expect(page.locator('.missing')).toHaveCount(8);
+  await expect(page.locator('#form-error')).toContainText('Morning practice time, Afternoon practice time, Weights');
+  await expect(page.locator('.missing')).toHaveCount(10);
   await expect(page.locator('.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
-  await expect(page.locator('.missing')).toHaveCount(7);
+  await expect(page.locator('.missing')).toHaveCount(9);
 
-  // A rest day needs no effort rating.
+  // A practice they went to needs its effort too.
   await answerAll(page, { value: 3 });
-  await page.selectOption('select[name=durationMin]', '0');
+  await page.selectOption('select[name=amMin]', '60');
+  await page.$eval('select[name=amRpe]', (s) => { s.value = ''; });
+  await page.click('button[type=submit]');
+  await expect(page.locator('#form-error')).toHaveText('Please answer: How hard morning practice was.');
+
+  // A rest day: no practices, no weights, no effort asked.
+  await page.selectOption('select[name=amMin]', '0');
+  await expect(page.locator('[data-effort=am]')).toBeHidden();
+  await page.selectOption('select[name=pmMin]', '0');
+  await page.selectOption('select[name=wtRpe]', '0');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toEqual({ durationMin: 0, rpe: 0 });
+  expect((await todayEntry(page)).training).toEqual({ am: null, pm: null, weights: null, durationMin: 0, rpe: 0 });
+});
+
+test('training: morning, afternoon and weights are kept separately', async ({ page }) => {
+  await seed(page, { hash: '#checkin' });
+  await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: '6' });
+  await expect(page.locator('#load-preview')).toHaveText('Practice load: 1320 AU (minutes × effort)');
+  await page.click('button[type=submit]');
+  await page.waitForURL(/#today/);
+  expect((await todayEntry(page)).training).toEqual({
+    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: { rpe: 6 }, durationMin: 210, rpe: 6,
+  });
+
+  // Editing today's check-in shows the saved answers.
+  await page.goto('/#checkin');
+  await expect(page.locator('select[name=amMin]')).toHaveValue('90');
+  await expect(page.locator('select[name=pmRpe]')).toHaveValue('8');
+  await expect(page.locator('select[name=wtRpe]')).toHaveValue('6');
 });
 
 test('reading days: all seven fit on one row and save when ticked', async ({ page }) => {

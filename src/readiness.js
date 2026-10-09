@@ -20,10 +20,38 @@ export const scaleMaxOf = (w) => w?.scaleMax || 5;
 
 const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 
+// Yesterday's training, as asked since sessions were split:
+//   { am: { durationMin, rpe } | null,   morning practice (null = none)
+//     pm: { durationMin, rpe } | null,   afternoon practice
+//     weights: { rpe } | null,           weights (effort only, no time asked)
+//     durationMin, rpe }                 practice totals: minutes, and the
+//                                        time-weighted average effort
+// Older check-ins have only { durationMin, rpe } for the whole day.
+export const SESSIONS = ['am', 'pm', 'weights'];
+const isSplit = (t) => Boolean(t) && SESSIONS.some((k) => k in t);
+const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
+
+// Load = minutes × effort (session RPE), for the swim practices. Weights have
+// no time, so they're tracked by effort only and not counted in the load.
 export function sessionLoad(training) {
   if (!training) return 0;
-  const { durationMin, rpe } = training;
-  return durationMin > 0 && rpe >= 0 ? Math.round(durationMin * rpe) : 0;
+  if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm);
+  return practiceLoad(training);
+}
+
+// Build the stored training from the three answers (null = didn't do it).
+export function trainingFrom({ am, pm, weights }) {
+  const practices = [am, pm].filter((s) => s?.durationMin > 0);
+  const durationMin = practices.reduce((n, s) => n + s.durationMin, 0);
+  const rpe = durationMin ? Math.round(practices.reduce((n, s) => n + s.durationMin * s.rpe, 0) / durationMin) : 0;
+  return { am: am || null, pm: pm || null, weights: weights || null, durationMin, rpe };
+}
+
+// Effort (1–10) for one session: a number, null if they didn't do it, or
+// undefined for an older check-in that wasn't split into sessions.
+export function sessionRpe(training, which) {
+  if (!isSplit(training)) return undefined;
+  return training[which]?.rpe ?? null;
 }
 
 // 0–100 from the six subjective scales plus sleep duration.

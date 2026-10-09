@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -138,4 +138,21 @@ test('compareToUsual: thanks only until 5 earlier check-ins, then today against 
   // A swimmer whose answers swing a lot needs a bigger gap before it counts.
   const swingy = [6, 5, 4, 3, 2, 1].map((n) => day(n, n % 2 ? 7 : 3));
   assert.equal(compareToUsual([...swingy, day(0, 3)], '2026-10-02').level, 'same');
+});
+
+test('training split into sessions: load counts practices, weights tracked by effort only', () => {
+  const t = trainingFrom({ am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: { rpe: 6 } });
+  assert.equal(t.durationMin, 210);
+  assert.equal(t.rpe, 6); // (90×4 + 120×8) / 210 = 6.3
+  assert.equal(sessionLoad(t), 90 * 4 + 120 * 8);
+  assert.deepEqual(['am', 'pm', 'weights'].map((k) => sessionRpe(t, k)), [4, 8, 6]);
+
+  const restDay = trainingFrom({ am: null, pm: null, weights: null });
+  assert.deepEqual(restDay, { am: null, pm: null, weights: null, durationMin: 0, rpe: 0 });
+  assert.equal(sessionLoad(restDay), 0);
+  assert.equal(sessionRpe(restDay, 'am'), null);
+
+  // Older check-ins: one number for the whole day, no per-session effort.
+  assert.equal(sessionLoad({ durationMin: 60, rpe: 5 }), 300);
+  assert.equal(sessionRpe({ durationMin: 60, rpe: 5 }, 'am'), undefined);
 });
