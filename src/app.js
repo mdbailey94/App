@@ -94,7 +94,7 @@ function renderToday() {
   const status = syncStatus();
   const streak = checkInStreak(entries, date);
   const streakLine = streak.days >= 2
-    ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.doneToday ? '' : ' – check in today to keep it going'}</p>` : '';
+    ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.nudge ? ' – check in today to keep it going' : ''}</p>` : '';
 
   view.innerHTML = `
     <section class="card hero">

@@ -76,7 +76,8 @@ test('not a reading day: questions only, Today names the next reading day, strea
   const tomorrow = weekday(-1);
   await seed(page, { entries: [past(3), past(2), past(1)], settings: { hrvDays: [tomorrow] }, hash: '#today' });
   await expect(page.locator('.hero')).toContainText('No heart reading needed today');
-  await expect(page.locator('.streak')).toContainText('3-day streak – check in today to keep it going');
+  // No "check in today" nudge on Sundays.
+  await expect(page.locator('.streak')).toHaveText(weekday(0) === 0 ? '🔥 3-day streak' : '🔥 3-day streak – check in today to keep it going');
 
   await page.click('text=Start my morning check-in');
   await page.locator('#checkin').waitFor(); // the check-in screen is open
@@ -176,9 +177,9 @@ test.describe('on a Monday', () => {
     const sunday = saved.find((e) => e.date === SUNDAY);
     expect(sunday.training).toEqual({ am: { durationMin: 180, rpe: 7 }, pm: null, weights: false, meet: true, durationMin: 180, rpe: 7 });
     expect(sunday.wellness).toBeUndefined(); // training only: not a Sunday check-in
-    // Today's own check-in is untouched, and the streak doesn't count Sunday.
     expect(saved.find((e) => e.date === MONDAY).wellness.energy).toBe(5);
-    await expect(page.locator('.streak')).toHaveCount(0);
+    // Making up Saturday keeps the streak going through Sunday: Sat, Sun, Mon.
+    await expect(page.locator('.streak')).toHaveText('🔥 3-day streak');
 
     // Not asked again.
     await page.goto('/#checkin');
@@ -186,13 +187,16 @@ test.describe('on a Monday', () => {
     await page.waitForURL(/#today$/);
   });
 
-  test('they can skip it, and are not asked again that day', async ({ page }) => {
-    await seed(page, { settings: { hrvDays: [3] }, hash: '#morning' });
+  test('before Monday’s check-in the streak waits; skipping Saturday ends it; not asked again', async ({ page }) => {
+    await seed(page, { entries: [entry('2026-10-09'), entry(SATURDAY_CHECKIN)], settings: { hrvDays: [3] }, hash: '#today' });
+    await expect(page.locator('.streak')).toHaveText('🔥 2-day streak – check in today to keep it going');
+    await page.goto('/#morning');
     await answerAll(page);
     await page.click('#save');
     await page.waitForURL(/#saturday/);
     await page.click('#skip-saturday');
     await page.waitForURL(/#today$/);
+    await expect(page.locator('.streak')).toHaveCount(0); // Sunday wasn't made up: a new streak of 1
     await page.goto('/#checkin');
     await page.click('button[type=submit]');
     await page.waitForURL(/#today$/);

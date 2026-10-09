@@ -120,10 +120,29 @@ test('reading days: Mon/Wed/Fri by weekday; none set means every day', () => {
 test('checkInStreak counts days in a row, still alive before today is done', () => {
   const w = { energy: 5 };
   const days = (...ds) => ds.map((date) => ({ date, wellness: w }));
-  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27', '2026-09-28'), '2026-09-28'), { days: 3, doneToday: true });
-  assert.deepEqual(checkInStreak(days('2026-09-26', '2026-09-27'), '2026-09-28'), { days: 2, doneToday: false });
-  assert.deepEqual(checkInStreak(days('2026-09-25', '2026-09-27'), '2026-09-28'), { days: 1, doneToday: false });
-  assert.deepEqual(checkInStreak([{ date: '2026-09-28', hrv: {} }], '2026-09-28'), { days: 0, doneToday: false });
+  // 2026-09-23 is a Wednesday.
+  assert.deepEqual(checkInStreak(days('2026-09-21', '2026-09-22', '2026-09-23'), '2026-09-23'), { days: 3, doneToday: true, nudge: false });
+  assert.deepEqual(checkInStreak(days('2026-09-21', '2026-09-22'), '2026-09-23'), { days: 2, doneToday: false, nudge: true });
+  assert.deepEqual(checkInStreak(days('2026-09-20', '2026-09-22'), '2026-09-23'), { days: 1, doneToday: false, nudge: true });
+  assert.deepEqual(checkInStreak([{ date: '2026-09-23', hrv: {} }], '2026-09-23'), { days: 0, doneToday: false, nudge: true });
+});
+
+test('checkInStreak: Sunday counts when made up on Monday, and never nags', () => {
+  const w = { energy: 5 };
+  const checkIns = (...ds) => ds.map((date) => ({ date, wellness: w }));
+  const madeUp = (date) => ({ date, training: { am: null, pm: null, weights: false, meet: false, durationMin: 0, rpe: 0 } });
+  // Thu 1 … Sat 3 Oct 2026, no Sunday check-in, Monday 5 Oct.
+  const week = checkIns('2026-10-01', '2026-10-02', '2026-10-03');
+  // Sunday: no "check in today".
+  assert.deepEqual(checkInStreak(week, '2026-10-04'), { days: 3, doneToday: false, nudge: false });
+  // Monday before checking in: Sunday can still be made up, so the streak is still 3.
+  assert.equal(checkInStreak(week, '2026-10-05').days, 3);
+  // Monday checked in and Saturday made up: Sunday counts, the streak continues.
+  assert.equal(checkInStreak([...week, madeUp('2026-10-04'), ...checkIns('2026-10-05')], '2026-10-05').days, 5);
+  // Monday checked in but Saturday skipped: the streak starts again.
+  assert.equal(checkInStreak([...week, ...checkIns('2026-10-05')], '2026-10-05').days, 1);
+  // A training-only entry on another day isn't a check-in.
+  assert.equal(checkInStreak([...checkIns('2026-10-06'), madeUp('2026-10-07'), ...checkIns('2026-10-08')], '2026-10-08').days, 1);
 });
 
 test('compareToUsual: thanks only until 5 earlier check-ins, then today against their own usual', () => {

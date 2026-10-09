@@ -202,12 +202,22 @@ export function nextReadingDay(days, date) {
 
 // Check-ins in a row up to today. A streak is still alive until today is
 // over, so it counts back from yesterday if today isn't done yet.
+// Swimmers don't usually check in on Sundays: a Sunday counts if they
+// checked in, or made it up on Monday by reporting Saturday's training
+// (filed under Sunday, training only). Until Monday's check-in is done,
+// Sunday can still be made up, so it doesn't break the streak yet.
+// `nudge`: whether to say "check in today" (not on Sundays).
 export function checkInStreak(entries, today) {
   const done = new Set(entries.filter((e) => e.wellness).map((e) => e.date));
-  let d = done.has(today) ? today : shiftDate(today, -1);
+  const madeUp = new Set(entries.filter((e) => !e.wellness && e.training).map((e) => e.date));
+  const isSunday = (d) => weekday(d) === 0;
+  const counts = (d) => done.has(d) || (isSunday(d) && madeUp.has(d));
+  const doneToday = done.has(today);
+  let d = doneToday ? today : shiftDate(today, -1);
+  if (!doneToday && weekday(today) === 1 && !counts(d)) d = shiftDate(d, -1); // Sunday: not made up yet
   let n = 0;
-  while (done.has(d)) { n++; d = shiftDate(d, -1); }
-  return { days: n, doneToday: done.has(today) };
+  while (counts(d)) { n++; d = shiftDate(d, -1); }
+  return { days: n, doneToday, nudge: !doneToday && !isSunday(today) };
 }
 
 // ---- today compared with the athlete's own usual
