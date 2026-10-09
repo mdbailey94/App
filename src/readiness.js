@@ -27,12 +27,12 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 //     durationMin, rpe }                 totals: minutes, and the
 //                                        time-weighted average effort
 // A weights session isn't timed or rated: for load it counts as WEIGHTS
-// (45 minutes at moderate effort, 3 on the 1–10 scale).
+// (45 minutes at hard effort, 5 on the 1–10 scale).
 // Older check-ins have only { durationMin, rpe } for the whole day.
 export const PRACTICE_KEYS = ['am', 'pm'];
 const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
 const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
-export const WEIGHTS = { durationMin: 45, rpe: 3 };
+export const WEIGHTS = { durationMin: 45, rpe: 5 };
 
 // Load = minutes × effort (session RPE), summed over the practices and weights.
 export function sessionLoad(training) {

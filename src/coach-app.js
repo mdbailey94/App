@@ -313,7 +313,7 @@ function renderSwimmer({ rows, arg }) {
   ].filter(Boolean).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
       <p class="muted small">HRV = RMSSD in ms. Training is reported the morning after, so each row is the day before’s
-        effort (1–10) for morning · afternoon practice, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at moderate effort (3).</p>
+        effort (1–10) for morning · afternoon practice, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
   renderTrends(view.querySelector('#trends'), a.entries, { who: 'their' });
 }

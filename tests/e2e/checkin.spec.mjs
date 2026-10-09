@@ -139,8 +139,8 @@ test('training: morning and afternoon practice, weights and meet, each on its ow
   await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: 'yes', meet: 'no' });
   // No words describing the rating, just the numbers.
   await expect(page.locator('section.training')).not.toContainText(/easy|max|Somewhat|Very hard/i);
-  // Weights count as 45 minutes at moderate effort (3): 90×4 + 120×8 + 45×3.
-  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1455 AU (minutes × effort; weights count as 45 min, moderate)');
+  // Weights count as 45 minutes at hard effort (5): 90×4 + 120×8 + 45×5.
+  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1545 AU (minutes × effort; weights count as 45 min, hard)');
   for (const q of ['Weights?', 'Meet?']) {
     const row = page.locator('.yes-no', { hasText: q });
     // The question and both buttons share a row: the question's middle is
