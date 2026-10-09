@@ -159,11 +159,12 @@ test('compareToUsual: thanks only until 5 earlier check-ins, then today against 
   assert.equal(compareToUsual([...swingy, day(0, 3)], '2026-10-02').level, 'same');
 });
 
-test('training split into practices: load counts practices; weights and meet are yes/no', () => {
+test('training split into practices; weights count as 45 min at moderate (3); meet is yes/no', () => {
   const t = trainingFrom({ am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false });
-  assert.equal(t.durationMin, 210);
-  assert.equal(t.rpe, 6); // (90×4 + 120×8) / 210 = 6.3
-  assert.equal(sessionLoad(t), 90 * 4 + 120 * 8);
+  assert.equal(t.durationMin, 255); // 90 + 120 + 45 for weights
+  assert.equal(t.rpe, 6); // (90×4 + 120×8 + 45×3) / 255 = 5.7
+  assert.equal(sessionLoad(t), 90 * 4 + 120 * 8 + 45 * 3);
+  assert.equal(sessionLoad(trainingFrom({ am: null, pm: null, weights: true })), 135);
   assert.deepEqual(['am', 'pm'].map((k) => sessionRpe(t, k)), [4, 8]);
   assert.equal(t.weights, true);
   assert.equal(t.meet, false);

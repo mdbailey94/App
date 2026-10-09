@@ -27,7 +27,6 @@ const YES_NO = [
   { key: 'meet', title: 'Meet?' },
 ];
 const checked = (on) => (on ? 'checked' : '');
-const effortText = (v) => (v > 0 ? `${v} – ${RPE_LABELS[v]}` : '');
 
 function timeOptions(current, { none = true } = {}) {
   // (No practice,) then 30 min to 5 h in half hours; an older odd time (e.g. 75 min) is kept.
@@ -64,7 +63,7 @@ export function trainingSection(t, { title = 'Yesterday’s training', prefix = 
           <label class="field inline-q"><span class="q">How long?</span>
             <select name="${prefix}${p.key}Min">${timeOptions(minutes(p), { none: !p.askFirst })}</select></label>
           <div class="field" data-effort="${prefix}${p.key}" ${p.askFirst || minutes(p) > 0 ? '' : 'hidden'}>
-            <span class="q">How hard was it? <span class="muted small">1 easy · 10 max</span></span>
+            <span class="q">How hard was it?</span>
             ${effortButtons(`${prefix}${p.key}Rpe`, effort(p))}</div>`;
   return `
       <section class="card training" data-prefix="${prefix}">
@@ -77,7 +76,7 @@ export function trainingSection(t, { title = 'Yesterday’s training', prefix = 
           </div>
         </fieldset>` : `
         <fieldset class="session">
-          <legend><span>${p.title}</span><span class="effort-label" data-label-for="${prefix}${p.key}Rpe">${effortText(effort(p))}</span></legend>
+          <legend>${p.title}</legend>
           ${timeAndEffort(p)}
         </fieldset>`)).join('')}
         ${YES_NO.map((q) => `
@@ -161,7 +160,7 @@ export function wireCheckin(form) {
     const fd = new FormData(form);
     form.querySelectorAll('[data-load-preview]').forEach((el) => {
       const load = sessionLoad(readTraining(fd, el.dataset.loadPreview));
-      el.textContent = load ? `Practice load: ${load} AU (minutes × effort)` : '';
+      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, moderate)` : '';
     });
   };
   form.addEventListener('input', (ev) => {
@@ -172,8 +171,6 @@ export function wireCheckin(form) {
     if (practice) form.querySelector(`[data-effort="${practice}"]`).hidden = !(Number(ev.target.value) > 0);
     const asked = /^(.*pm)Did$/.exec(ev.target.name)?.[1];
     if (asked) form.querySelector(`[data-details="${asked}"]`).hidden = ev.target.value !== 'yes';
-    const label = form.querySelector(`[data-label-for="${ev.target.name}"]`);
-    if (label) label.textContent = effortText(Number(ev.target.value));
     loadPreview();
   });
   loadPreview();

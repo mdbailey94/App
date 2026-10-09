@@ -368,10 +368,7 @@ fieldset.session { border: 0; padding: 0; margin: 12px 0 4px; }
 fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 
 /* Training card: one row per question */
-.training legend { display: flex; justify-content: space-between; align-items: baseline; width: 100%; gap: 8px; }
 .field > .q { display: block; margin-bottom: 6px; }
-.effort-label { font-weight: 600; color: var(--text); }
-.training .effort-label { font-size: 13px; }
 .inline-q { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .inline-q .q { margin: 0; flex-shrink: 0; }
 .inline-q select { width: auto; min-width: 150px; }

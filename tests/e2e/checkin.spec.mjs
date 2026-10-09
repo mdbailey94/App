@@ -137,8 +137,10 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 test('training: morning and afternoon practice, weights and meet, each on its own row', async ({ page }) => {
   await seed(page, { hash: '#checkin' });
   await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: 'yes', meet: 'no' });
-  await expect(page.locator('[data-label-for=amRpe]')).toHaveText('4 – Somewhat hard');
-  await expect(page.locator('[data-load-preview=""]')).toHaveText('Practice load: 1320 AU (minutes × effort)');
+  // No words describing the rating, just the numbers.
+  await expect(page.locator('section.training')).not.toContainText(/easy|max|Somewhat|Very hard/i);
+  // Weights count as 45 minutes at moderate effort (3): 90×4 + 120×8 + 45×3.
+  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1455 AU (minutes × effort; weights count as 45 min, moderate)');
   for (const q of ['Weights?', 'Meet?']) {
     const row = page.locator('.yes-no', { hasText: q });
     // The question and both buttons share a row: the question's middle is
@@ -151,7 +153,7 @@ test('training: morning and afternoon practice, weights and meet, each on its ow
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
   expect((await todayEntry(page)).training).toEqual({
-    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false, durationMin: 210, rpe: 6,
+    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false, durationMin: 255, rpe: 6,
   });
 
   // Editing today's check-in shows the saved answers.

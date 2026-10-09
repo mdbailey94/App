@@ -24,23 +24,26 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 //   { am: { durationMin, rpe } | null,   morning practice (null = none)
 //     pm: { durationMin, rpe } | null,   afternoon practice
 //     weights: boolean, meet: boolean,   did they lift / race
-//     durationMin, rpe }                 practice totals: minutes, and the
+//     durationMin, rpe }                 totals: minutes, and the
 //                                        time-weighted average effort
+// A weights session isn't timed or rated: for load it counts as WEIGHTS
+// (45 minutes at moderate effort, 3 on the 1–10 scale).
 // Older check-ins have only { durationMin, rpe } for the whole day.
 export const PRACTICE_KEYS = ['am', 'pm'];
 const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
 const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
+export const WEIGHTS = { durationMin: 45, rpe: 3 };
 
-// Load = practice minutes × effort (session RPE), summed over the practices.
+// Load = minutes × effort (session RPE), summed over the practices and weights.
 export function sessionLoad(training) {
   if (!training) return 0;
-  if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm);
+  if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm) + (training.weights ? practiceLoad(WEIGHTS) : 0);
   return practiceLoad(training);
 }
 
 // Build the stored training from the answers (null practice = didn't go).
 export function trainingFrom({ am, pm, weights = false, meet = false }) {
-  const practices = [am, pm].filter((s) => s?.durationMin > 0);
+  const practices = [am, pm, weights && WEIGHTS].filter((s) => s?.durationMin > 0);
   const durationMin = practices.reduce((n, s) => n + s.durationMin, 0);
   const rpe = durationMin ? Math.round(practices.reduce((n, s) => n + s.durationMin * s.rpe, 0) / durationMin) : 0;
   return { am: am || null, pm: pm || null, weights: Boolean(weights), meet: Boolean(meet), durationMin, rpe };
