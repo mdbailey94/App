@@ -93,7 +93,10 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
   await expect(page.locator('.prefill-note')).toHaveCount(0);
   await expect(page.locator('input[name=energy]')).toHaveCount(7);
   await expect(page.locator('#checkin input[type=radio][name]:not([name=painLevel]):checked')).toHaveCount(0);
-  for (const name of ['amMin', 'pmMin', 'wtRpe']) await expect(page.locator(`select[name=${name}]`)).toHaveValue('');
+  await expect(page.locator('.chips.times').first().locator('span')).toHaveText(['None', '30m', '1h', '1½h', '2h', '2½h', '3h', '3½h', '4h', '4½h', '5h']);
+  await expect(page.locator('input[name=amMin]')).toHaveCount(11); // None, 30 min … 5 h
+  await expect(page.locator('input[name=amRpe]')).toHaveCount(10);
+  await expect(page.locator('#checkin input:is([name$=Min], [name$=Rpe]):checked')).toHaveCount(0);
   await expect(page.locator('[data-effort=am]')).toBeHidden(); // asked once they say they went
   await expect(page.locator('fieldset.scale', { hasText: 'Stressed or relaxed' }).locator('.scale-ends'))
     .toHaveText(/Very stressed\s*Very relaxed/);
@@ -109,16 +112,16 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 
   // A practice they went to needs its effort too.
   await answerAll(page, { value: 3 });
-  await page.selectOption('select[name=amMin]', '60');
-  await page.$eval('select[name=amRpe]', (s) => { s.value = ''; });
+  await page.click('input[name=amMin][value="60"]');
+  await page.$$eval('input[name=amRpe]', (all) => all.forEach((r) => { r.checked = false; }));
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toHaveText('Please answer: How hard morning practice was.');
 
   // A rest day: no practices, no weights, no effort asked.
-  await page.selectOption('select[name=amMin]', '0');
+  await page.click('input[name=amMin][value="0"]');
   await expect(page.locator('[data-effort=am]')).toBeHidden();
-  await page.selectOption('select[name=pmMin]', '0');
-  await page.selectOption('select[name=wtRpe]', '0');
+  await page.click('input[name=pmMin][value="0"]');
+  await page.click('input[name=wtRpe][value="0"]');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
   expect((await todayEntry(page)).training).toEqual({ am: null, pm: null, weights: null, durationMin: 0, rpe: 0 });
@@ -127,6 +130,10 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 test('training: morning, afternoon and weights are kept separately', async ({ page }) => {
   await seed(page, { hash: '#checkin' });
   await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: '6' });
+  await expect(page.locator('[data-label-for=pmRpe]')).toHaveText('8 – Very hard+');
+  // A 5-hour practice is an option.
+  await page.click('input[name=pmMin][value="300"]');
+  await page.click('input[name=pmMin][value="120"]');
   await expect(page.locator('#load-preview')).toHaveText('Practice load: 1320 AU (minutes × effort)');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
@@ -136,9 +143,9 @@ test('training: morning, afternoon and weights are kept separately', async ({ pa
 
   // Editing today's check-in shows the saved answers.
   await page.goto('/#checkin');
-  await expect(page.locator('select[name=amMin]')).toHaveValue('90');
-  await expect(page.locator('select[name=pmRpe]')).toHaveValue('8');
-  await expect(page.locator('select[name=wtRpe]')).toHaveValue('6');
+  await expect(page.locator('input[name=amMin]:checked')).toHaveValue('90');
+  await expect(page.locator('input[name=pmRpe]:checked')).toHaveValue('8');
+  await expect(page.locator('input[name=wtRpe]:checked')).toHaveValue('6');
 });
 
 test('reading days: all seven fit on one row and save when ticked', async ({ page }) => {

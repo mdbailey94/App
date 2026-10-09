@@ -65,10 +65,10 @@ export async function answerAll(page, {
     await pick(page, `input[name=${k}][value="${value}"]`);
   }
   for (const [k, [min, rpe]] of [['am', am], ['pm', pm]]) {
-    await page.selectOption(`select[name=${k}Min]`, min);
-    if (min !== '0') await page.selectOption(`select[name=${k}Rpe]`, rpe);
+    await pick(page, `input[name=${k}Min][value="${min}"]`);
+    if (min !== '0') await pick(page, `input[name=${k}Rpe][value="${rpe}"]`);
   }
-  await page.selectOption('select[name=wtRpe]', weights);
+  await pick(page, `input[name=wtRpe][value="${weights}"]`);
 }
 
 // A fake group sheet of its own for each test.

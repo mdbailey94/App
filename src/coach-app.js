@@ -224,7 +224,7 @@ function renderHistory({ rows, query }) {
       <div class="trend-block"><h4>Morning practice</h4><div data-t="rpeAm"></div></div>
       <div class="trend-block"><h4>Afternoon practice</h4><div data-t="rpePm"></div></div>
       <div class="trend-block"><h4>Weights</h4><div data-t="rpeWeights"></div></div>
-      <p class="muted small">Dates are when swimmers checked in: the effort is for the day before.</p>
+      <p class="muted small">Each bar is the day the session happened (swimmers report it the next morning).</p>
     </section>
 
     <section class="card">
@@ -242,9 +242,14 @@ function renderHistory({ rows, query }) {
     lineChart($t('ready'), series('avgReadiness'), { yMin: 0, yMax: 100 });
     barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
     barChart($t('load'), series('avgLoad'), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
+    // Effort is reported the morning after, so each bar sits on the day the
+    // session happened. No bar = nobody reported that session.
+    const trained = (k) => trend.map((d) => {
+      const day = shiftDate(d.date, -1);
+      return { x: dayIndex(day), y: d[k] ?? 0, label: shortDate(day) };
+    });
     for (const k of ['rpeAm', 'rpePm', 'rpeWeights']) {
-      // Days nobody did the session are skipped, so the line joins the days that have one.
-      lineChart($t(k), series(k).filter((p) => Number.isFinite(p.y)), { yMin: 0, yMax: 10, height: 120, tip: (d) => `${d.label}: <b>${fmt(d.y, 1)}</b>` });
+      barChart($t(k), trained(k), { yMax: 10, height: 120, tip: (d) => `${d.label}: <b>${d.y ? fmt(d.y, 1) : 'no sessions reported'}</b>` });
     }
   });
 }

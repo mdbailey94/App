@@ -7,32 +7,42 @@ import { esc } from './ui.js';
 
 // Effort, 1–10 (session RPE).
 const RPE_LABELS = ['', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard+', 'Very hard', 'Very hard+', 'Near maximal', 'Maximal'];
-const hoursLabel = (min) => {
+// Short labels for the time buttons: 30m, 1h, 1½h … 5h.
+const timeLabel = (min) => {
   const h = Math.floor(min / 60);
-  const m = min % 60;
-  return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+  const rest = min % 60;
+  if (!h) return `${min}m`;
+  return `${h}${rest === 30 ? '½' : rest ? `:${String(rest).padStart(2, '0')}` : ''}h`;
 };
 
 // Yesterday's sessions. Practices ask how long and how hard; weights only how
-// hard. Each starts at "Choose…", so "didn't do it" is never a silent default.
+// hard. Nothing is picked until the athlete taps, so "didn't do it" is never a
+// silent default.
 const PRACTICES = [
-  { key: 'am', title: 'Morning practice', none: 'No morning practice' },
-  { key: 'pm', title: 'Afternoon practice', none: 'No afternoon practice' },
+  { key: 'am', title: 'Morning practice' },
+  { key: 'pm', title: 'Afternoon practice' },
 ];
-const choose = (picked) => `<option value="" ${picked ? '' : 'selected'} disabled>Choose…</option>`;
+const checked = (on) => (on ? 'checked' : '');
 
-function practiceTimeOptions(none, current) {
-  // 30 min to 3 h in half-hour steps; an older odd time (e.g. 75 min) is kept.
-  const steps = Array.from({ length: 6 }, (_, i) => 30 + i * 30);
+function timeButtons(name, current) {
+  // None, then 30 min to 5 h in half hours; an older odd time (e.g. 75 min) is kept.
+  const steps = Array.from({ length: 10 }, (_, i) => 30 + i * 30);
   if (current > 0 && !steps.includes(current)) steps.push(current);
   steps.sort((x, y) => x - y);
-  return choose(current !== undefined) + `<option value="0" ${current === 0 ? 'selected' : ''}>${none}</option>`
-    + steps.map((m) => `<option value="${m}" ${m === current ? 'selected' : ''}>${hoursLabel(m)}</option>`).join('');
+  return `<div class="chips times">
+    <label class="none"><input type="radio" name="${name}" value="0" ${checked(current === 0)}><span>None</span></label>
+    ${steps.map((m) => `<label><input type="radio" name="${name}" value="${m}" ${checked(m === current)}><span>${timeLabel(m)}</span></label>`).join('')}
+  </div>`;
 }
 
-const rpeOptions = (current, none) => choose(current !== undefined)
-  + (none ? `<option value="0" ${current === null ? 'selected' : ''}>${none}</option>` : '')
-  + RPE_LABELS.slice(1).map((l, i) => `<option value="${i + 1}" ${current === i + 1 ? 'selected' : ''}>${i + 1} – ${l}</option>`).join('');
+// Ten squares, green (easy) to blue (maximal): effort isn't good or bad, so
+// no red. The picked level's name shows underneath.
+function effortButtons(name, current) {
+  return `<div class="effort-scale">
+    ${RPE_LABELS.slice(1).map((l, i) => `<label style="--hue:${140 + i * 9}" title="${i + 1} – ${l}"><input type="radio" name="${name}" value="${i + 1}" ${checked(current === i + 1)} aria-label="${i + 1} – ${l}"><span>${i + 1}</span></label>`).join('')}
+  </div>
+  <div class="scale-ends"><span>Very easy</span><span class="effort-label" data-label-for="${name}">${current > 0 ? `${current} – ${RPE_LABELS[current]}` : ''}</span><span>Maximal</span></div>`;
+}
 
 function trainingSection(t) {
   // Today's saved answers when editing; blank for a new day or an older,
@@ -46,15 +56,14 @@ function trainingSection(t) {
         ${PRACTICES.map((p) => `
         <fieldset class="session">
           <legend>${p.title}</legend>
-          <label class="field">How long?
-            <select name="${p.key}Min">${practiceTimeOptions(p.none, minutes(p.key))}</select></label>
-          <label class="field" data-effort="${p.key}" ${minutes(p.key) > 0 ? '' : 'hidden'}>How hard was it? (1–10)
-            <select name="${p.key}Rpe">${rpeOptions(effort(p.key))}</select></label>
+          <div class="field"><span class="q">How long?</span>${timeButtons(`${p.key}Min`, minutes(p.key))}</div>
+          <div class="field" data-effort="${p.key}" ${minutes(p.key) > 0 ? '' : 'hidden'}><span class="q">How hard was it?</span>${effortButtons(`${p.key}Rpe`, effort(p.key))}</div>
         </fieldset>`).join('')}
         <fieldset class="session">
           <legend>Weights</legend>
-          <label class="field">How hard was it? (1–10)
-            <select name="wtRpe">${rpeOptions(split ? effort('weights') ?? null : undefined, 'No weights')}</select></label>
+          <div class="field"><span class="q">How hard was it?</span>
+            <div class="chips times"><label class="none"><input type="radio" name="wtRpe" value="0" ${checked(split && !t.weights)}><span>No weights</span></label></div>
+            ${effortButtons('wtRpe', effort('weights'))}</div>
         </fieldset>
         <p class="muted small" id="load-preview"></p>
       </section>`;
@@ -141,6 +150,8 @@ export function wireCheckin(form) {
     if (ev.target.name === 'sleepHours') form.querySelector('#sleep-other').hidden = ev.target.value !== 'other';
     const practice = /^(am|pm)Min$/.exec(ev.target.name)?.[1];
     if (practice) form.querySelector(`[data-effort="${practice}"]`).hidden = !(Number(ev.target.value) > 0);
+    const label = form.querySelector(`[data-label-for="${ev.target.name}"]`);
+    if (label) label.textContent = Number(ev.target.value) > 0 ? `${ev.target.value} – ${RPE_LABELS[ev.target.value]}` : '';
     loadPreview();
   });
   loadPreview();
