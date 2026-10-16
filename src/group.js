@@ -121,6 +121,9 @@ export function teamTrend(rows, endDate, days = 7) {
     const date = shiftDate(endDate, -i);
     const day = dayOf(athletes, date);
     const loads = day.checkedIn.map((c) => c.load).filter((v) => v > 0);
+    // The day before's work as the team reported it this morning, rest days
+    // (0) included, so it sits fairly next to the morning's readiness.
+    const reported = day.checkedIn.filter((c) => c.entry.training).map((c) => c.load);
     // Average effort per practice, over those who went (training is reported
     // the next morning, so this is the previous day's sessions; a Monday
     // answer about Saturday counts too), and how many lifted or raced.
@@ -140,6 +143,7 @@ export function teamTrend(rows, endDate, days = 7) {
       total: day.total,
       rate: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null,
       avgLoad: loads.length ? Math.round(avg(loads)) : 0,
+      loadReported: reported.length ? Math.round(avg(reported)) : null,
     });
   }
   return out;
