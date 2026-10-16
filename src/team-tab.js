@@ -30,7 +30,7 @@ export function renderTeam(view, query, rerender) {
         <h2>${returning ? `Finish setting up, ${esc(invited.athlete.split(' ')[0])}` : 'Share with your coach'}</h2>
         ${returning ? `<p>This copy of the app needs to reconnect to <b>${esc(invitedGroup)}</b>. Check your name and tap
           <b>Join group</b>.</p>` : ''}
-        <p${returning ? ' class="muted small"' : ''}>Join your practice group so your coach can follow your recovery. Your check-ins
+        <p class="${returning ? 'muted small' : 'muted'}">Join your practice group so your coach can follow your recovery. Your check-ins
           (including injuries and notes) and heart readings are sent to the group’s spreadsheet,
           which only your coach can open.</p>
         <form id="join" class="stack">

@@ -97,9 +97,10 @@ function renderToday() {
     ? `<p class="streak">🔥 <b>${streak.days}-day streak</b>${streak.nudge ? ' – check in today to keep it going' : ''}</p>` : '';
 
   view.innerHTML = `
-    <section class="card hero">
+    <section class="card hero${answered ? ' hero-done' : ''}">
       <p class="eyebrow">${esc(prettyDate(date))}</p>
       ${answered ? `
+        <span class="hero-badge" aria-hidden="true">✓</span>
         <h2>Thanks for checking in${first ? `, ${esc(first)}` : ''}!</h2>
         ${compareLine(compareToUsual(entries, date))}
         ${injuryNote(entry.pain)}
@@ -130,13 +131,13 @@ function renderToday() {
 
     ${heartDone ? `<section class="card"><h3>This morning’s heart</h3>${heartStats(entry.hrv)}</section>` : ''}
 
-    <section class="card"><h3>Training load</h3>
+    <section class="card"><h3>Your training</h3>
       <div class="stats">
-        <div><span class="stat-num">${a.load.acute7}</span><span class="stat-label">last 7 days (AU)</span></div>
-        <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">4-week weekly avg</span></div>
-        <div><span class="stat-num">${a.load.acwr !== null ? a.load.acwr.toFixed(2) : '–'}</span><span class="stat-label">acute:chronic</span></div>
+        <div><span class="stat-num">${a.load.acute7}</span><span class="stat-label">last 7 days</span></div>
+        <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">usual week</span></div>
+        <div><span class="stat-num">${a.load.acwr !== null ? `${a.load.acwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
       </div>
-      <p class="muted small">Load = training minutes × session RPE.${a.load.acwr === null ? ' Acute:chronic ratio appears after 3 weeks of check-ins.' : ''}</p>
+      <p class="muted small">Load = training minutes × effort. “Vs usual” compares the last 7 days with your 4-week weekly average: around 1× is a normal week.${a.load.acwr === null ? ' It appears after 3 weeks of check-ins.' : ''}</p>
     </section>
 
     ${status.joined && !answered ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}
@@ -216,7 +217,8 @@ function renderCheckin(dateArg) {
       </section>
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit">${saveLabel()}</button>
+      <div class="save-bar"><span class="save-progress" data-progress aria-live="polite"></span>
+        <button class="btn block" type="submit">${saveLabel()}</button></div>
     </form>`;
 
   const form = view.querySelector('#checkin');
@@ -321,7 +323,8 @@ function renderMorning(query = new URLSearchParams()) {
     <form id="checkin" class="stack" novalidate>
       ${checkinSections(e)}
       <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit" id="save">${saveLabel()}</button>
+      <div class="save-bar"><span class="save-progress" data-progress aria-live="polite"></span>
+        <button class="btn block" type="submit" id="save">${saveLabel()}</button></div>
     </form>`;
 
   // Show the welcome once: an app added to the Home Screen from this page

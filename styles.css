@@ -415,3 +415,72 @@ fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 .day-table td.who { white-space: normal; }
 .day-table td, .day-table th, .compare-table td, .compare-table th { padding-left: 4px; padding-right: 4px; }
 .response-table { width: 100%; }
+
+/* ---------- polish: header, cards, tiles, tabs, save bar */
+:root {
+  --radius: 16px;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --shadow: 0 1px 2px rgba(20, 20, 18, 0.04), 0 6px 18px rgba(20, 20, 18, 0.05);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --shadow: 0 1px 2px rgba(0, 0, 0, 0.4); } }
+:root[data-theme="dark"] { --shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+body { -webkit-font-smoothing: antialiased; }
+.topbar { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.topbar h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+.brand-mark { width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; }
+main { padding-top: 14px; }
+.card { box-shadow: var(--shadow); margin-bottom: 14px; }
+.card > h2:first-child, .card > h3:first-child { margin-bottom: 10px; }
+h3 { font-size: 16px; letter-spacing: -0.005em; }
+.eyebrow { margin: 0 0 4px; font-weight: 600; }
+
+/* Today: the hero card */
+.hero { background: linear-gradient(180deg, var(--accent-soft), var(--surface) 75%); border-color: color-mix(in srgb, var(--accent) 22%, var(--border)); }
+.hero h2 { font-size: 24px; letter-spacing: -0.02em; text-wrap: balance; }
+.hero-badge {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: 2px 0 6px;
+  border-radius: 50%; background: var(--good); color: #fff; font-weight: 700;
+}
+.done-list li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.done-list li:last-child { border-bottom: 0; }
+.streak { display: inline-block; margin: 10px 0 0; padding: 5px 12px; border-radius: 999px; background: color-mix(in srgb, var(--warning) 20%, var(--surface)); font-size: 14px; }
+
+/* Buttons */
+.btn { transition: transform 0.08s ease, filter 0.15s ease; }
+.btn:not(.secondary):not(.danger) { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px color-mix(in srgb, var(--accent) 28%, transparent); }
+.btn:active { transform: scale(0.98); }
+.btn:focus-visible, .tabs a:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.btn.block { min-height: 52px; font-size: 17px; }
+
+/* Number tiles */
+.stats > div { background: var(--bg); border-radius: 12px; padding: 10px 4px; }
+.stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.stats.four > div { padding: 8px 2px; }
+.stats.four .stat-label { font-size: 11px; line-height: 1.3; text-wrap: balance; }
+.stat-label { line-height: 1.3; }
+
+/* Bottom tabs: a pill behind the current section */
+.tabs { box-shadow: 0 -4px 18px rgba(20, 20, 18, 0.05); }
+.tabs a { position: relative; isolation: isolate; gap: 3px; transition: color 0.15s ease; }
+.tabs a[aria-current]::before {
+  content: ''; position: absolute; z-index: -1; top: 7px; width: 54px; height: 30px; border-radius: 15px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.tabs a[aria-current] { font-weight: 700; }
+
+/* Coach: day arrows */
+.coach-head .icon-btn { min-width: 40px; min-height: 40px; font-size: 20px; }
+.coach-head h2 { font-size: 21px; }
+
+/* Check-in: the Save button stays in reach, with how many questions are left */
+.save-bar {
+  position: sticky; bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom) + 8px); z-index: 6;
+  margin-top: 10px; padding: 10px 12px 12px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px);
+  border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(20, 20, 18, 0.14);
+}
+.save-bar .btn.block { margin-top: 6px; }
+.save-progress { display: block; text-align: center; font-size: 13px; color: var(--muted); }
+.save-progress.done { color: var(--good); font-weight: 600; }
