@@ -106,22 +106,20 @@ test('watchList: readiness well down on their usual, and old injuries drop off',
   assert.match(list[0].reasons[0].text, /Readiness down \d+ points/);
 });
 
-test('teamTrend: daily average readiness (with 3+ scores), check-in rate and load', () => {
+test('teamTrend: daily averages of readiness and load (with 6+ swimmers), check-in rate', () => {
+  const six = ['A', 'B', 'C', 'D', 'E', 'F'];
   const r = [
-    day('A', 1, { wellness: good, training: { durationMin: 60, rpe: 5 } }),
-    day('B', 1, { wellness: poor, training: { durationMin: 60, rpe: 3 } }),
-    day('C', 1, { wellness: good, training: { durationMin: 60, rpe: 4 } }),
-    day('A', 0, { wellness: good }),
+    ...six.map((n, i) => day(n, 1, { wellness: i % 2 ? poor : good, training: { durationMin: 60, rpe: 4 } })),
+    ...['A', 'B', 'C', 'D', 'E'].map((n) => day(n, 0, { wellness: good, training: { durationMin: 60, rpe: 5 } })),
   ];
   const t = teamTrend(r, D, 2);
   assert.deepEqual(t.map((d) => d.date), [shiftDate(D, -1), D]);
-  assert.deepEqual(t.map((d) => d.rate), [100, 33]);
-  assert.equal(t[0].avgLoad, 240);
+  assert.deepEqual(t.map((d) => d.rate), [100, 83]);
   assert.equal(typeof t[0].avgReadiness, 'number');
-  assert.equal(t[1].avgReadiness, null); // only one swimmer scored: no team average
-  assert.equal(t[0].loadReported, 240); // what they reported that morning for the day before
-  assert.equal(t[1].loadReported, null); // A reported no training
-  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 67, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
+  assert.deepEqual([t[0].avgLoad, t[0].loadReported], [240, 240]);
+  // Only five swimmers today: no team averages for the day.
+  assert.deepEqual([t[1].avgReadiness, t[1].avgLoad, t[1].loadReported], [null, 0, null]);
+  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 92, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
 });
 
 test('reminderText lists who is missing', () => {
@@ -201,7 +199,7 @@ test('groupDay: each check-in against yesterday and their usual; team averages',
   const r = [
     ...usualWeek('Ana'), day('Ana', 0, { wellness: W7(3) }),
     ...usualWeek('Ben'), day('Ben', 0, { wellness: W7(5) }),
-    ...usualWeek('Dee'), day('Dee', 0, { wellness: W7(5) }),
+    ...['Dee', 'Eve', 'Fay', 'Gus'].flatMap((n) => [...usualWeek(n), day(n, 0, { wellness: W7(5) })]),
     day('Cy', 2, { wellness: W7(4) }), day('Cy', 0, { wellness: W7(6) }), // no usual yet
   ];
   const g = groupDay(r, D);

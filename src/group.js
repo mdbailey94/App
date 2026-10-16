@@ -7,11 +7,11 @@ import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDa
 // as a check-in.
 const isCheckIn = (e) => Boolean(e.wellness);
 
-// A team readiness average for a past day (charts, the team's "usual" and
-// yesterday) counts only when at least this many swimmers had a score: one
-// or two check-ins on a quiet day would swing it.
-export const MIN_TEAM_SCORES = 3;
-const teamAvg = (day) => (day.scored >= MIN_TEAM_SCORES ? day.avgReadiness : null);
+// A team average of readiness or load for a past day (charts, the team's
+// "usual", yesterday, a week ago) counts only when at least this many
+// swimmers gave one: a handful of check-ins on a quiet day would swing it.
+export const MIN_TEAM = 6;
+const teamAvg = (day) => (day.scored >= MIN_TEAM ? day.avgReadiness : null);
 
 // rows: [{ athlete, date, entry }] → Map(key → { name, entries[] }).
 // Names match case-insensitively; the most recent spelling is displayed.
@@ -142,8 +142,8 @@ export function teamTrend(rows, endDate, days = 7) {
       checkedIn: day.checkedIn.length,
       total: day.total,
       rate: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null,
-      avgLoad: loads.length ? Math.round(avg(loads)) : 0,
-      loadReported: reported.length ? Math.round(avg(reported)) : null,
+      avgLoad: loads.length >= MIN_TEAM ? Math.round(avg(loads)) : 0,
+      loadReported: reported.length >= MIN_TEAM ? Math.round(avg(reported)) : null,
     });
   }
   return out;
@@ -317,8 +317,9 @@ const trainingOn = (a, d) => a.entries.find((e) => e.date === d)?.training ?? nu
 const sameWeekdays = (date, weeks = 4) => Array.from({ length: weeks }, (_, i) => shiftDate(date, -7 * (i + 1)));
 
 // The team's training reported on one day: how many swam each practice, their
-// average time and effort, how many lifted and raced, and the average load.
-function teamTraining(athletes, d) {
+// average time and effort, how many lifted and raced, and the average load
+// (for a past day, only with MIN_TEAM reports).
+function teamTraining(athletes, d, { past = false } = {}) {
   const trainings = [...athletes.values()].map((a) => trainingOn(a, d)).filter(Boolean);
   const split = trainings.filter(isSplitTraining);
   const practice = (k) => {
@@ -336,7 +337,7 @@ function teamTraining(athletes, d) {
     pm: practice('pm'),
     weights: split.filter((t) => t.weights).length,
     meet: split.filter((t) => t.meet).length,
-    avgLoad: loads.length ? Math.round(avg(loads)) : null,
+    avgLoad: loads.length >= (past ? MIN_TEAM : 1) ? Math.round(avg(loads)) : null,
   };
 }
 
@@ -396,8 +397,8 @@ export function trainingCompare(rows, date) {
     weekAgo: weeks[0],
     team: {
       now: teamTraining(athletes, date),
-      weekAgo: teamTraining(athletes, weeks[0]),
-      usual: usualOf(weeks.map((d) => teamTraining(athletes, d))),
+      weekAgo: teamTraining(athletes, weeks[0], { past: true }),
+      usual: usualOf(weeks.map((d) => teamTraining(athletes, d, { past: true }))),
     },
     swimmers,
   };
