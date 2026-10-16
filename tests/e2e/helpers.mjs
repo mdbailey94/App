@@ -55,10 +55,10 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
 
 // Answer every questionnaire item.
 // Training: morning and afternoon practice minutes ('0' = none) and effort,
-// then weights and meet ('yes' / 'no'). Afternoon practice is a yes/no that
+// then weights and meet ('yes' / 'no'; a meet also asks how hard: meetLevel). Afternoon practice is a yes/no that
 // opens its time and effort. `prefix` answers another training card (the
 // Monday question about Saturday).
-export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6'], weights = 'no', meet = 'no', prefix = '' } = {}) {
+export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6'], weights = 'no', meet = 'no', meetLevel = 'moderate', prefix = '' } = {}) {
   await page.selectOption(`select[name=${prefix}amMin]`, am[0]);
   if (am[0] !== '0') await pick(page, `input[name=${prefix}amRpe][value="${am[1]}"]`);
   await pick(page, `input[name=${prefix}pmDid][value=${pm[0] === '0' ? 'no' : 'yes'}]`);
@@ -68,6 +68,7 @@ export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6']
   }
   await pick(page, `input[name=${prefix}weights][value=${weights}]`);
   await pick(page, `input[name=${prefix}meet][value=${meet}]`);
+  if (meet === 'yes' && meetLevel) await pick(page, `input[name=${prefix}meetLevel][value=${meetLevel}]`);
 }
 
 export async function answerAll(page, { value = 5, sleep = '8', ...training } = {}) {

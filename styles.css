@@ -277,6 +277,15 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .done-list li { padding: 2px 0; }
 .hero .actions + p { margin-top: 12px; }
 .stats.two { grid-template-columns: repeat(2, 1fr); }
+.stats.four { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.stats.four .stat-num { font-size: 22px; }
+.stats.four .stat-label { font-size: 12px; }
+.compare-table { width: 100%; }
+.compare-table th[scope=row] { text-align: left; font-weight: 600; white-space: normal; }
+.compare-table td { white-space: nowrap; }
+.compare-table .sub-row th { font-weight: 400; padding-left: 14px; color: var(--muted); }
+.compare-table td, .compare-table thead th { text-align: right; }
+.checkin-table td:nth-child(n+2) { white-space: nowrap; }
 .actions > .btn { white-space: nowrap; padding: 0 12px; }
 .qr { max-width: 280px; margin: 12px auto; border-radius: 12px; overflow: hidden; }
 .qr svg { display: block; width: 100%; height: auto; }
@@ -387,6 +396,10 @@ fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 .chips.yn label:last-child { grid-column: auto; }
 .chips.yn span { height: 38px; }
 .yes-no { margin-top: 10px; }
+.chips.meet-level { grid-template-columns: repeat(3, 70px); gap: 4px; }
+.chips.meet-level label:last-child { grid-column: auto; }
+.chips.meet-level span { height: 38px; font-size: 12.5px; padding: 0 2px; }
+[data-details$="meet"] { margin-top: 6px; }
 .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; margin: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tag-meet { background: color-mix(in srgb, var(--warning) 25%, transparent); }
 .asked-first [data-details] { margin-top: 4px; }
@@ -397,4 +410,6 @@ fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 .delta.big { font-weight: 700; }
 .stat-num .delta { font-size: inherit; }
 .day-table td, .day-table th { white-space: nowrap; }
+.day-table td.who { white-space: normal; }
+.day-table td, .day-table th, .compare-table td, .compare-table th { padding-left: 4px; padding-right: 4px; }
 .response-table { width: 100%; }

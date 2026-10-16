@@ -101,6 +101,7 @@ const CSV_COLUMNS = [
   ['pm_rpe', (e) => e.training?.pm?.rpe],
   ['weights', (e) => (e.training && 'weights' in e.training ? (e.training.weights ? 'yes' : 'no') : '')],
   ['meet', (e) => (e.training && 'meet' in e.training ? (e.training.meet ? 'yes' : 'no') : '')],
+  ['meet_level', (e) => (e.training?.meet ? e.training.meetLevel || 'moderate' : '')],
   ['hr_bpm', (e) => e.hrv?.hr?.toFixed(1)],
   ['rmssd_ms', (e) => e.hrv?.rmssd?.toFixed(1)],
   ['ln_rmssd', (e) => e.hrv?.lnRmssd?.toFixed(3)],

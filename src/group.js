@@ -29,8 +29,36 @@ const RANK = { critical: 0, serious: 1, warning: 2, good: 3 };
 
 // The group on `date`: who checked in (worst first) and who didn't.
 // Athletes count as "in the group" if they sent anything in the last `activeDays`.
+// Each check-in also gets how readiness moved: vsPrev (since their previous
+// check-in, normally yesterday; Saturday on a Monday) and vsUsual (against
+// their average over the 7 days before; needs 3 check-ins). The team: the
+// average readiness yesterday and over the 7 days before.
 export function groupDay(rows, date, opts) {
-  return dayOf(groupByAthlete(rows), date, opts);
+  const athletes = groupByAthlete(rows);
+  const day = dayOf(athletes, date, opts);
+  for (const c of day.checkedIn) Object.assign(c, readinessMove(athletes.get(c.key).entries, date, c.assessment.score));
+  const prevDays = Array.from({ length: 7 }, (_, i) => shiftDate(date, -(i + 1)));
+  const daily = prevDays.map((d) => dayOf(athletes, d).avgReadiness).filter((v) => v !== null);
+  day.readinessYesterday = dayOf(athletes, prevDays[0]).avgReadiness;
+  day.readiness7 = daily.length ? Math.round(avg(daily)) : null;
+  return day;
+}
+
+function readinessMove(entries, date, score) {
+  const upTo = entries.filter((e) => e.date <= date);
+  const prev = upTo.filter((e) => e.date < date && isCheckIn(e)).at(-1);
+  const before = upTo.filter((e) => e.date >= shiftDate(date, -7) && e.date < date && isCheckIn(e))
+    .map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
+  const prevScore = prev ? scoreOn(upTo, prev.date) : null;
+  const usualScore = before.length >= 3 ? Math.round(avg(before)) : null;
+  const ok = (v) => Number.isFinite(score) && Number.isFinite(v);
+  return {
+    prevDate: prev?.date ?? null,
+    prevScore,
+    usualScore,
+    vsPrev: ok(prevScore) ? score - prevScore : null,
+    vsUsual: ok(usualScore) ? score - usualScore : null,
+  };
 }
 
 function dayOf(athletes, date, { activeDays = 21 } = {}) {
@@ -272,116 +300,145 @@ const isSplitTraining = (t) => Boolean(t) && ('am' in t || 'pm' in t);
 const round1 = (v) => (v === null ? null : +v.toFixed(1));
 const scoreOn = (entries, date) => assessDay(entries, date).score;
 
-// Training reported on `date` (so done the day before) and how each swimmer's
-// readiness moved. Per swimmer:
-//   training, load, usualLoad (their average load reported over the 7 days
-//   before), loadChange (% vs usual), score (readiness on `date`),
-//   prevScore (their previous check-in), usualScore (average of their
-//   check-ins in the 7 days before; needs 3), vsPrev, vsUsual.
-// Team: how many swam each practice, average time and effort, weights and
-// meet counts, average load against the 7 days before, and average readiness
-// against yesterday and the 7 days before.
-export function dayBefore(rows, date) {
-  const athletes = groupByAthlete(rows);
-  const weekFrom = shiftDate(date, -7);
-  const swimmers = [];
-  for (const a of athletes.values()) {
-    const upTo = a.entries.filter((e) => e.date <= date);
-    const today = upTo.find((e) => e.date === date);
-    const before = upTo.filter((e) => e.date >= weekFrom && e.date < date);
-    const loadsBefore = before.filter((e) => e.training).map((e) => sessionLoad(e.training));
-    const scoresBefore = before.filter(isCheckIn).map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
-    const prev = upTo.filter((e) => e.date < date && isCheckIn(e)).at(-1);
-    const score = today && isCheckIn(today) ? scoreOn(upTo, date) : null;
-    const prevScore = prev ? scoreOn(upTo, prev.date) : null;
-    const usualScore = scoresBefore.length >= 3 ? avg(scoresBefore) : null;
-    const load = today?.training ? sessionLoad(today.training) : null;
-    const usualLoad = loadsBefore.length >= 3 ? avg(loadsBefore) : null;
-    if (!today && !before.length) continue; // not active this week
-    swimmers.push({
-      key: a.key,
-      name: a.name,
-      training: today?.training ?? null,
-      load,
-      usualLoad: usualLoad === null ? null : Math.round(usualLoad),
-      loadChange: load !== null && usualLoad > 0 ? Math.round(((load - usualLoad) / usualLoad) * 100) : null,
-      score,
-      prevScore,
-      usualScore: usualScore === null ? null : Math.round(usualScore),
-      vsPrev: score !== null && prevScore !== null ? score - prevScore : null,
-      vsUsual: score !== null && usualScore !== null ? Math.round(score - usualScore) : null,
-    });
-  }
-  swimmers.sort((x, y) => x.name.localeCompare(y.name));
+const pctChange = (now, base) => (now !== null && base > 0 ? Math.round(((now - base) / base) * 100) : null);
+const trainingOn = (a, d) => a.entries.find((e) => e.date === d)?.training ?? null;
+// The same weekday in each of the `weeks` weeks before `date`.
+const sameWeekdays = (date, weeks = 4) => Array.from({ length: weeks }, (_, i) => shiftDate(date, -7 * (i + 1)));
 
-  const trainings = swimmers.map((s) => s.training).filter(isSplitTraining);
+// The team's training reported on one day: how many swam each practice, their
+// average time and effort, how many lifted and raced, and the average load.
+function teamTraining(athletes, d) {
+  const trainings = [...athletes.values()].map((a) => trainingOn(a, d)).filter(Boolean);
+  const split = trainings.filter(isSplitTraining);
   const practice = (k) => {
-    const went = trainings.map((t) => t[k]).filter((p) => p?.durationMin > 0);
+    const went = split.map((t) => t[k]).filter((p) => p?.durationMin > 0);
     return {
       count: went.length,
       avgMin: went.length ? Math.round(avg(went.map((p) => p.durationMin))) : null,
       avgRpe: went.length ? round1(avg(went.map((p) => p.rpe))) : null,
     };
   };
-  const loads = swimmers.map((s) => s.load).filter((v) => v !== null);
-  // The team's average load on each of the 7 days before, then averaged.
-  const prevDays = Array.from({ length: 7 }, (_, i) => shiftDate(date, -(i + 1)));
-  const dailyLoad = prevDays.map((d) => {
-    const vals = [...athletes.values()].map((a) => a.entries.find((e) => e.date === d)?.training).filter(Boolean).map(sessionLoad);
-    return vals.length ? avg(vals) : null;
-  }).filter((v) => v !== null);
-  const teamScore = (d) => dayOf(athletes, d).avgReadiness;
-  const dailyScore = prevDays.map(teamScore).filter((v) => v !== null);
-  const avgLoad = loads.length ? Math.round(avg(loads)) : null;
-  const avgLoad7 = dailyLoad.length ? Math.round(avg(dailyLoad)) : null;
-  const team = {
-    reported: loads.length,
+  const loads = trainings.map(sessionLoad);
+  return {
+    reported: trainings.length,
     am: practice('am'),
     pm: practice('pm'),
-    weights: trainings.filter((t) => t.weights).length,
-    meet: trainings.filter((t) => t.meet).length,
-    avgLoad,
-    avgLoad7,
-    loadChange: avgLoad !== null && avgLoad7 > 0 ? Math.round(((avgLoad - avgLoad7) / avgLoad7) * 100) : null,
-    readiness: teamScore(date),
-    readinessYesterday: teamScore(shiftDate(date, -1)),
-    readiness7: dailyScore.length ? Math.round(avg(dailyScore)) : null,
+    weights: split.filter((t) => t.weights).length,
+    meet: split.filter((t) => t.meet).length,
+    avgLoad: loads.length ? Math.round(avg(loads)) : null,
   };
-  return { date, trainedOn: shiftDate(date, -1), team, swimmers };
+}
+
+// The usual over several days: each number averaged over the days that had it.
+function usualOf(days) {
+  const got = days.filter((d) => d.reported > 0);
+  if (got.length < 2) return null;
+  const mean = (f, digits = 1) => {
+    const vals = got.map(f).filter((v) => v !== null && v !== undefined);
+    return vals.length ? +avg(vals).toFixed(digits) : null;
+  };
+  const practice = (k) => ({ count: mean((d) => d[k].count), avgMin: mean((d) => d[k].avgMin, 0), avgRpe: mean((d) => d[k].avgRpe) });
+  return {
+    days: got.length,
+    reported: mean((d) => d.reported),
+    am: practice('am'),
+    pm: practice('pm'),
+    weights: mean((d) => d.weights),
+    meet: mean((d) => d.meet),
+    avgLoad: mean((d) => d.avgLoad, 0),
+  };
+}
+
+// Training reported on `date` (so done the day before), against the same day
+// a week earlier (Monday to Monday) and the usual for that weekday: the
+// average of the same weekday over the 4 weeks before (needs 2).
+// team: { now, weekAgo, usual } as teamTraining (usual may be null).
+// swimmers: everyone who reported training on `date`, with load, weekAgoLoad,
+// usualLoad, and the % changes vsWeekAgo, vsUsual.
+export function trainingCompare(rows, date) {
+  const athletes = groupByAthlete(rows);
+  const weeks = sameWeekdays(date);
+  const swimmers = [];
+  for (const a of athletes.values()) {
+    const training = trainingOn(a, date);
+    if (!training) continue;
+    const load = sessionLoad(training);
+    const past = weeks.map((d) => trainingOn(a, d)).map((t) => (t ? sessionLoad(t) : null));
+    const weekAgoLoad = past[0];
+    const reported = past.filter((v) => v !== null);
+    const usualLoad = reported.length >= 2 ? Math.round(avg(reported)) : null;
+    swimmers.push({
+      key: a.key,
+      name: a.name,
+      training,
+      load,
+      weekAgoLoad,
+      usualLoad,
+      vsWeekAgo: pctChange(load, weekAgoLoad),
+      vsUsual: pctChange(load, usualLoad),
+    });
+  }
+  swimmers.sort((x, y) => y.load - x.load || x.name.localeCompare(y.name));
+  return {
+    date,
+    trainedOn: shiftDate(date, -1),
+    weekAgo: weeks[0],
+    team: {
+      now: teamTraining(athletes, date),
+      weekAgo: teamTraining(athletes, weeks[0]),
+      usual: usualOf(weeks.map((d) => teamTraining(athletes, d))),
+    },
+    swimmers,
+  };
 }
 
 // Does training show up in the next morning's readiness? Over the last `days`
 // days, pair each check-in's reported training load with how that swimmer's
-// readiness changed from their previous check-in, then group the loads into
-// light / moderate / heavy thirds. An association, not proof: other things
-// (sleep, school, meets) move readiness too. Needs `minPairs` pairs.
+// readiness changed from their previous check-in, then group the pairs into
+// light / moderate / heavy thirds two ways:
+//   absolute: by the load itself, the same cut-offs for everyone;
+//   relative: by the load against that swimmer's own usual (their average
+//     reported load over the 28 days up to `date`; needs 5 reports), so a
+//     heavy day is heavy for them.
+// An association, not proof: other things (sleep, school, meets) move
+// readiness too. Each needs `minPairs` pairs.
 export function loadResponse(rows, date, { days = 28, minPairs = 15 } = {}) {
   const from = shiftDate(date, -(days - 1));
+  const usualFrom = shiftDate(date, -27);
   const pairs = [];
   for (const a of groupByAthlete(rows).values()) {
+    const loads = a.entries.filter((e) => e.training && e.date >= usualFrom && e.date <= date).map((e) => sessionLoad(e.training));
+    const usual = loads.length >= 5 && avg(loads) > 0 ? avg(loads) : null;
     const checkIns = a.entries.filter(isCheckIn);
     for (let i = 1; i < checkIns.length; i++) {
       const e = checkIns[i];
       if (e.date < from || e.date > date || !e.training) continue;
       const now = scoreOn(a.entries, e.date);
       const prev = scoreOn(a.entries, checkIns[i - 1].date);
-      if (Number.isFinite(now) && Number.isFinite(prev)) pairs.push({ load: sessionLoad(e.training), change: now - prev });
+      if (!Number.isFinite(now) || !Number.isFinite(prev)) continue;
+      const load = sessionLoad(e.training);
+      pairs.push({ load, ratio: usual ? Math.round((load / usual) * 100) : null, change: now - prev });
     }
   }
+  return {
+    days,
+    absolute: thirds(pairs, 'load', minPairs),
+    relative: thirds(pairs.filter((p) => p.ratio !== null), 'ratio', minPairs),
+  };
+}
+
+// Equal thirds by `key` (by rank, so days with the same load can't empty a
+// group), each with its size, average readiness change and range of `key`.
+function thirds(pairs, key, minPairs) {
   if (pairs.length < minPairs) return { enough: false, pairs: pairs.length, needed: minPairs };
-  // Equal thirds by load (by rank, so days with the same load can't empty a group).
-  pairs.sort((x, y) => x.load - y.load);
-  const third = Math.round(pairs.length / 3);
-  const bucket = (b) => ({
-    n: b.length,
-    change: round1(avg(b.map((p) => p.change))),
-    loads: [b[0].load, b.at(-1).load],
-  });
+  const sorted = [...pairs].sort((x, y) => x[key] - y[key]);
+  const third = Math.round(sorted.length / 3);
+  const bucket = (b) => ({ n: b.length, change: round1(avg(b.map((p) => p.change))), range: [b[0][key], b.at(-1)[key]] });
   return {
     enough: true,
-    pairs: pairs.length,
-    light: bucket(pairs.slice(0, third)),
-    moderate: bucket(pairs.slice(third, pairs.length - third)),
-    heavy: bucket(pairs.slice(pairs.length - third)),
+    pairs: sorted.length,
+    light: bucket(sorted.slice(0, third)),
+    moderate: bucket(sorted.slice(third, sorted.length - third)),
+    heavy: bucket(sorted.slice(sorted.length - third)),
   };
 }

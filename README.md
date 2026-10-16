@@ -3,7 +3,8 @@
 A phone web app that tracks an athlete's daily state from two sources:
 
 1. **A short daily questionnaire** (~1 minute) — sleep, fatigue, soreness, stress, mood,
-   motivation, injury (kept separate from normal training soreness), and yesterday’s training (rest day or 1–5 h in half-hour steps × session RPE).
+   motivation, injury (kept separate from normal training soreness), and yesterday’s training: morning and afternoon practice (time and effort 1–10), weights, and a meet
+   (light, moderate or hard). Load = minutes × effort; weights count as 45 min at 5; meets aren't counted in load.
 2. **Camera heart rate & HRV** — the rear camera and flashlight read the pulse through a fingertip
    (photoplethysmography, the same principle as a pulse oximeter), giving resting HR, RMSSD,
    ln RMSSD, SDNN and pNN50.
@@ -94,10 +95,11 @@ What the coach gets:
 
 - **Coach dashboard**: per day, who checked in (worst readiness first, with flags for injury,
   short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
-  athlete's trends and notes. **Yesterday's training** (who did morning/afternoon practice, weights,
-  meets, each swimmer's load against their usual), **Readiness change** (team and per swimmer, vs
-  their last check-in and their 7-day average) and, on History, **training vs next-morning readiness**
-  (how readiness moved after light, moderate and heavy days).
+  athlete's trends and notes. The **Group** tab is one day at a glance: check-ins with each swimmer's
+  readiness against yesterday and their usual, the watch list, and **yesterday's training** against the
+  same day last week and a usual week (practices, effort, weights, meets, each swimmer's load). **History**
+  (7, 14 or 28 days) adds **training vs next-morning readiness**: how readiness moved after light,
+  moderate and heavy days, by load and by load relative to each swimmer's own usual.
 - **Entries** tab: one row per athlete per day (readiness, status, flags, every answer, HR/HRV, notes),
   colour-coded. Editing a day updates its row. **Today** tab: today's check-ins, lowest readiness first.
 
