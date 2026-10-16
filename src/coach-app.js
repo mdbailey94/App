@@ -9,7 +9,7 @@ import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
   checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare,
-  trendSummary, watchList,
+  swimmerInsights, trendSummary, watchList,
 } from './group.js';
 import { assessDay, MEET_LEVELS, meetLevel, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
 import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
@@ -378,6 +378,9 @@ function renderSwimmer({ rows, arg }) {
   }
   const latest = a.entries.at(-1);
   const assessment = assessDay(a.entries, latest.date);
+  const ins = swimmerInsights(rows, arg);
+  const r = ins?.readiness;
+  const t = ins?.training;
   view.innerHTML = `
     <section class="card">
       <p><a href="#swimmers">‹ Swimmers</a></p>
@@ -388,8 +391,35 @@ function renderSwimmer({ rows, arg }) {
         <div>${statusBadge(assessment.status)}</div>
       </div>
       ${assessment.flags.length ? `<ul class="flags">${assessment.flags.map((f) => `<li>${statusBadge({ level: f.level, label: f.level === 'critical' ? 'Important' : 'Note' })} ${esc(theirs(f.text))}</li>`).join('')}</ul>` : ''}
+      ${r ? `<div class="stats small-stats" id="swimmer-change">
+        <div><span class="stat-num">${delta(r.vsPrev)}</span><span class="stat-label">vs ${r.prevDate === shiftDate(ins.date, -1) ? 'yesterday' : r.prevDate ? `last check-in (${esc(shortDate(r.prevDate))})` : 'yesterday'}${r.prevScore !== null ? `<br><span class="muted">${r.prevScore}</span>` : ''}</span></div>
+        <div><span class="stat-num">${delta(r.vsUsual)}</span><span class="stat-label">vs usual<br><span class="muted">${r.usualScore ?? 'needs 3 check-ins'}</span></span></div>
+      </div>` : ''}
       <div class="actions"><a class="btn secondary" href="#messages?to=${encodeURIComponent(a.key)}">Message ${esc(first(a.name))}</a></div>
     </section>
+
+    ${ins?.watch.length ? `<section class="card" id="swimmer-watch"><h3>On the watch list</h3>
+      <ul class="watch"><li><div class="watch-head">${statusBadge({ level: ins.watch[0].level, label: WATCH_LABEL[ins.watch[0].level] })}</div>
+        <ul>${ins.watch.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul></li></ul>
+      <p class="muted small">Based on their last 7 days.</p></section>` : ''}
+
+    ${t ? `<section class="card" id="swimmer-training">
+      <h3>Training the day before</h3>
+      <p class="muted small">${esc(prettyDate(shiftDate(ins.date, -1)))}, reported ${esc(shortDate(ins.date))}.</p>
+      <p>${practicesCell(t.training)} ${sessionTags(t.training)}</p>
+      <div class="stats small-stats">
+        <div><span class="stat-num">${t.load}</span><span class="stat-label">load</span></div>
+        <div><span class="stat-num">${delta(t.vsWeekAgo, { unit: '%', big: 25 })}</span><span class="stat-label">vs a week before<br><span class="muted">${t.weekAgoLoad ?? 'not reported'}</span></span></div>
+        <div><span class="stat-num">${delta(t.vsUsual, { unit: '%', big: 25 })}</span><span class="stat-label">vs their usual ${esc(new Date(`${shiftDate(ins.date, -1)}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))}<br><span class="muted">${t.usualLoad ?? 'needs 2 weeks'}</span></span></div>
+      </div>
+    </section>` : ''}
+
+    ${ins ? `<section class="card" id="swimmer-response">
+      <h3>Training vs next-morning readiness</h3>
+      <p class="muted small">Last 28 days: how ${esc(first(a.name))}’s readiness changed after their own lighter and heavier days.</p>
+      ${responseTable(ins.response, (x) => `${x[0]}–${x[1]}`, '')}
+      <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>
+    </section>` : ''}
     <div id="trends"></div>
     <section class="card"><h3>Recent days</h3>
       <div class="table-wrap"><table>

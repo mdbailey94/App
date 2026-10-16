@@ -402,11 +402,13 @@ export function trainingCompare(rows, date) {
 //     heavy day is heavy for them.
 // An association, not proof: other things (sleep, school, meets) move
 // readiness too. Each needs `minPairs` pairs.
-export function loadResponse(rows, date, { days = 28, minPairs = 15 } = {}) {
+// `only`: one athlete's key, for their own pattern.
+export function loadResponse(rows, date, { days = 28, minPairs = 15, only } = {}) {
   const from = shiftDate(date, -(days - 1));
   const usualFrom = shiftDate(date, -27);
   const pairs = [];
   for (const a of groupByAthlete(rows).values()) {
+    if (only && a.key !== only) continue;
     const loads = a.entries.filter((e) => e.training && e.date >= usualFrom && e.date <= date).map((e) => sessionLoad(e.training));
     const usual = loads.length >= 5 && avg(loads) > 0 ? avg(loads) : null;
     const checkIns = a.entries.filter(isCheckIn);
@@ -440,5 +442,25 @@ function thirds(pairs, key, minPairs) {
     light: bucket(sorted.slice(0, third)),
     moderate: bucket(sorted.slice(third, sorted.length - third)),
     heavy: bucket(sorted.slice(sorted.length - third)),
+  };
+}
+
+// One swimmer, for the coach's page about them, as of their latest
+// check-in: readiness against yesterday and their usual, the training they
+// reported that morning against the same day a week earlier and their usual
+// for that weekday, anything that puts them on the watch list, and how their
+// readiness has moved after their own light, moderate and heavy days (needs 9).
+export function swimmerInsights(rows, key, { days = 28 } = {}) {
+  const a = groupByAthlete(rows).get(key);
+  const last = a?.entries.filter(isCheckIn).at(-1);
+  if (!last) return null;
+  const date = last.date;
+  const me = (list) => list.find((x) => x.key === key) ?? null;
+  return {
+    date,
+    readiness: me(groupDay(rows, date).checkedIn),
+    training: me(trainingCompare(rows, date).swimmers),
+    watch: me(watchList(rows, date))?.reasons ?? [],
+    response: loadResponse(rows, date, { days, minPairs: 9, only: key }).absolute,
   };
 }

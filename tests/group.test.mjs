@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, swimmerInsights, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
   watchList,
 } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
@@ -278,4 +278,27 @@ test('loadResponse: readiness change after light, moderate and heavy days, absol
   assert.ok(out.absolute.heavy.change > out.relative.heavy.change);
   assert.deepEqual(loadResponse(r.slice(0, 5), D).absolute, { enough: false, pairs: 4, needed: 15 });
   assert.equal(loadResponse(r, D, { days: 7 }).absolute.pairs, 28);
+});
+
+test('swimmerInsights: one swimmer’s readiness change, training comparison, watch list and own pattern', () => {
+  const r = [];
+  for (let n = 27; n >= 0; n--) {
+    const heavy = n % 3 === 0;
+    r.push(day('Ana', n, {
+      wellness: W7(heavy ? 3 : 6),
+      training: heavy ? sessions([120, 9], [90, 9]) : sessions([60, 3], null),
+      pain: n === 0 ? { level: 3, location: 'knee' } : { level: 0 },
+    }));
+    r.push(day('Ben', n, { wellness: W7(5), training: sessions([60, 5], null) }));
+  }
+  const i = swimmerInsights(r, 'ana');
+  assert.equal(i.date, D);
+  assert.equal(i.readiness.prevDate, shiftDate(D, -1));
+  assert.ok(i.readiness.vsPrev < 0); // today followed a heavy day
+  assert.equal(i.training.load, 120 * 9 + 90 * 9);
+  assert.equal(i.training.vsWeekAgo, Math.round(((1890 - 180) / 180) * 100)); // a week ago was light
+  assert.equal(i.watch[0].level, 'critical');
+  assert.equal(i.response.enough, true);
+  assert.ok(i.response.heavy.change < 0 && i.response.light.change > 0);
+  assert.equal(swimmerInsights(r, 'nobody'), null);
 });
