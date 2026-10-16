@@ -8,9 +8,10 @@
 import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
-  checkinGrid, dayBefore, loadResponse, groupByAthlete, groupDay, recentNotes, reminderText, roster, teamTrend, trendSummary, watchList,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare, trainingReports,
+  trendSummary, watchList,
 } from './group.js';
-import { assessDay, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
+import { assessDay, MEET_LEVELS, meetLevel, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
 import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
 import { barChart, lineChart } from './charts.js';
 
@@ -40,7 +41,7 @@ function effortCell(t) {
   if (!t) return '–';
   const am = sessionRpe(t, 'am');
   if (am === undefined) return t.durationMin > 0 ? `<span title="Whole day">${t.rpe}</span>` : '–';
-  const tags = [t.weights && '<span class="tag">Wt</span>', t.meet && '<span class="tag tag-meet">Meet</span>'].filter(Boolean).join('');
+  const tags = sessionTags(t);
   return `${am ?? '–'} · ${sessionRpe(t, 'pm') ?? '–'}${tags ? `<br>${tags}` : ''}`;
 }
 
@@ -56,7 +57,20 @@ const shortTime = (min) => {
   return h ? `${h}${m === 30 ? '½' : m ? `:${String(m).padStart(2, '0')}` : ''}h` : `${m}m`;
 };
 const practiceCell = (p) => (p?.durationMin > 0 ? `${shortTime(p.durationMin)} · ${p.rpe}` : '–');
-const sessionTags = (t) => [t?.weights && '<span class="tag">Wt</span>', t?.meet && '<span class="tag tag-meet">Meet</span>'].filter(Boolean).join('');
+// Wt if they lifted; Meet with how hard it was (older reports count as moderate).
+const sessionTags = (t) => [
+  t?.weights && '<span class="tag">Wt</span>',
+  t?.meet && `<span class="tag tag-meet">Meet · ${MEET_LEVELS[meetLevel(t)].label.toLowerCase()}</span>`,
+].filter(Boolean).join('');
+// Both practices in one cell, a line each.
+const practicesCell = (t) => {
+  if (!t) return '–';
+  if (!('am' in t) && !('pm' in t)) return t.durationMin > 0 ? `<span title="Whole day">${shortTime(t.durationMin)} · ${t.rpe}</span>` : 'Rest';
+  const lines = [t.am?.durationMin > 0 && `AM ${practiceCell(t.am)}`, t.pm?.durationMin > 0 && `PM ${practiceCell(t.pm)}`].filter(Boolean);
+  return lines.length ? lines.join('<br>') : (t.weights || t.meet ? '' : 'Rest');
+};
+// 6, 6.5, or – (usuals are averages, so they can have a decimal).
+const num = (v) => (v === null || v === undefined ? '–' : typeof v !== 'number' || Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 const athleteLink = (key, name) => `<a href="#swimmers/${encodeURIComponent(key)}">${esc(name)}</a>`;
 
@@ -78,7 +92,8 @@ let cache = null; // { at, rows } – shared by every tab while the page is open
 async function loadRows(coach, force) {
   if (!force && cache && Date.now() - cache.at < 5 * 60000) return cache.rows;
   const res = await callSheet(coach.url, { action: 'dashboard', coachPassword: coach.password, days: 120 });
-  cache = { at: Date.now(), rows: res.rows };
+  // version: what the sheet's script can do (older copies don't say: 1).
+  cache = { at: Date.now(), rows: res.rows, version: res.version || 1 };
   return res.rows;
 }
 
@@ -131,12 +146,9 @@ function renderGroup({ rows, query }) {
   const date = query.get('d') || todayISO();
   const day = groupDay(rows, date);
   const watch = watchList(rows, date);
-  const before = dayBefore(rows, date);
-  const t = before.team;
-  const trained = before.swimmers.filter((s) => s.load !== null).sort((x, y) => y.load - x.load);
-  const moved = before.swimmers.filter((s) => s.score !== null)
-    .sort((x, y) => (x.vsUsual ?? x.vsPrev ?? 0) - (y.vsUsual ?? y.vsPrev ?? 0));
-  const ttl = (p) => (p.count ? `avg ${shortTime(p.avgMin)} · effort ${p.avgRpe}` : 'nobody reported it');
+  const tr = trainingCompare(rows, date);
+  const { now, weekAgo, usual } = tr.team;
+  const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
   const hrvCell = (c) => {
     const e = c.entry.hrv;
     if (!e) return '–';
@@ -144,70 +156,56 @@ function renderGroup({ rows, query }) {
     const arrow = z === null ? '' : z < -1 ? ' ▼' : z > 1 ? ' ▲' : '';
     return `${fmt(e.rmssd ?? Math.exp(e.lnRmssd))}${arrow}`;
   };
+  // One row of the team comparison: yesterday, a week ago, the usual.
+  const pctOf = (a, b) => (a !== null && b > 0 ? Math.round(((a - b) / b) * 100) : null);
+  const compareRow = (label, f, { load = false, sub = false } = {}) => {
+    const n = f(now);
+    const cell = (d) => {
+      if (!d) return '<td class="muted">–</td>';
+      const v = f(d);
+      return `<td>${num(v)}${load ? `<br>${delta(pctOf(n, v), { unit: '%', big: 25 })}` : ''}</td>`;
+    };
+    return `<tr${sub ? ' class="sub-row"' : ''}><th scope="row">${label}</th><td><b>${num(n)}</b></td>${cell(weekAgo.reported ? weekAgo : null)}${cell(usual)}</tr>`;
+  };
+  const weekday = new Date(`${tr.trainedOn}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
 
   view.innerHTML = `
-    <section class="card">
+    <section class="card" id="checkins">
       <div class="coach-head">
         <a class="btn secondary icon-btn" href="#group?d=${shiftDate(date, -1)}" aria-label="Previous day">‹</a>
         <h2>${esc(prettyDate(date))}</h2>
         <a class="btn secondary icon-btn" href="#group?d=${shiftDate(date, 1)}" aria-label="Next day" ${date >= todayISO() ? 'hidden' : ''}>›</a>
       </div>
-      <div class="stats">
+      <div class="stats four">
         <div><span class="stat-num">${day.checkedIn.length}/${day.total}</span><span class="stat-label">checked in</span></div>
-        <div><span class="stat-num">${day.needAttention}</span><span class="stat-label">need attention</span></div>
-        <div><span class="stat-num">${day.avgReadiness ?? '–'}</span><span class="stat-label">avg readiness ${t.readiness !== null && t.readinessYesterday !== null ? delta(t.readiness - t.readinessYesterday, { big: 5 }) : ''}</span></div>
+        <div><span class="stat-num">${day.avgReadiness ?? '–'}</span><span class="stat-label">avg readiness</span></div>
+        <div><span class="stat-num">${delta(vsDay(day.avgReadiness, day.readinessYesterday), { big: 5 })}</span><span class="stat-label">vs yesterday<br><span class="muted">${day.readinessYesterday ?? '–'}</span></span></div>
+        <div><span class="stat-num">${delta(vsDay(day.avgReadiness, day.readiness7), { big: 5 })}</span><span class="stat-label">vs usual<br><span class="muted">${day.readiness7 ?? '–'}</span></span></div>
       </div>
+      ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table checkin-table">
+        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th><th>HRV</th></tr></thead>
+        <tbody>${day.checkedIn.map((c) => `
+          <tr>
+            <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
+            <td><b>${c.assessment.score ?? '–'}</b></td>
+            <td>${delta(c.vsPrev)}${c.prevDate && c.prevDate !== shiftDate(date, -1) ? `<br><span class="muted small">since ${esc(shortDate(c.prevDate))}</span>` : ''}</td>
+            <td>${delta(c.vsUsual)}</td>
+            <td>${hrvCell(c)}</td>
+          </tr>
+          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="5">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
+        </tbody></table></div>
+        <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
+          over the 7 days before (needs 3 check-ins). HRV = RMSSD in ms; ▼/▲ = well below/above their normal range.</p>`
+    : '<p class="muted">No check-ins for this day yet.</p>'}
+      ${day.missing.length ? `<div class="not-in"><h4>Not checked in (${day.missing.length})</h4>
+        <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
+          <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
+        </ul>
+        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</div>` : ''}
       ${refreshLine(`#group?d=${date}`)}
     </section>
 
-    <section class="card" id="day-before">
-      <h3>Yesterday’s training</h3>
-      <p class="muted small">${esc(prettyDate(before.trainedOn))}, as reported in ${esc(date === todayISO() ? 'this morning’s' : `${prettyDate(date)}’s`)} check-ins
-        (${t.reported} swimmer${t.reported === 1 ? '' : 's'}).</p>
-      ${t.reported ? `<div class="stats small-stats">
-        <div><span class="stat-num">${t.am.count}</span><span class="stat-label">at morning practice<br><span class="muted">${ttl(t.am)}</span></span></div>
-        <div><span class="stat-num">${t.pm.count}</span><span class="stat-label">at afternoon practice<br><span class="muted">${ttl(t.pm)}</span></span></div>
-        <div><span class="stat-num">${t.avgLoad ?? '–'}</span><span class="stat-label">avg load ${delta(t.loadChange, { unit: '%', big: 25 })}<br><span class="muted">7-day avg ${t.avgLoad7 ?? '–'}</span></span></div>
-      </div>
-      <p class="small">${t.weights} lifted · ${t.meet} raced</p>
-      <div class="table-wrap"><table class="group-table day-table">
-        <thead><tr><th>Swimmer</th><th>AM<br><span class="th-sub">time · effort</span></th><th>PM<br><span class="th-sub">time · effort</span></th><th>Load</th><th>vs usual</th></tr></thead>
-        <tbody>${trained.map((s) => `
-          <tr>
-            <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
-            <td class="effort">${s.training && 'am' in s.training ? practiceCell(s.training.am) : '<span title="Whole day">?</span>'}</td>
-            <td class="effort">${s.training && 'pm' in s.training ? practiceCell(s.training.pm) : ''}</td>
-            <td><b>${s.load}</b></td>
-            <td>${delta(s.loadChange, { unit: '%', big: 25 })}</td>
-          </tr>`).join('')}
-        </tbody></table></div>
-      <p class="muted small">Heaviest first. Load = minutes × effort (weights count as 45 min at 5).
-        vs usual = against that swimmer’s average load over the 7 days before.</p>`
-    : '<p class="muted">No training reported yet.</p>'}
-    </section>
-
-    <section class="card" id="readiness-change">
-      <h3>Readiness change</h3>
-      <div class="stats small-stats">
-        <div><span class="stat-num">${t.readiness ?? '–'}</span><span class="stat-label">team average</span></div>
-        <div><span class="stat-num">${delta(t.readiness !== null && t.readinessYesterday !== null ? t.readiness - t.readinessYesterday : null, { big: 5 })}</span><span class="stat-label">vs yesterday (${t.readinessYesterday ?? '–'})</span></div>
-        <div><span class="stat-num">${delta(t.readiness !== null && t.readiness7 !== null ? t.readiness - t.readiness7 : null, { big: 5 })}</span><span class="stat-label">vs 7-day avg (${t.readiness7 ?? '–'})</span></div>
-      </div>
-      ${moved.length ? `<div class="table-wrap"><table class="group-table day-table">
-        <thead><tr><th>Swimmer</th><th>Today</th><th>vs last</th><th>vs usual</th></tr></thead>
-        <tbody>${moved.map((s) => `
-          <tr>
-            <td class="who">${athleteLink(s.key, s.name)}</td>
-            <td><b>${s.score}</b></td>
-            <td>${delta(s.vsPrev)}</td>
-            <td>${delta(s.vsUsual)}</td>
-          </tr>`).join('')}
-        </tbody></table></div>
-      <p class="muted small">Biggest drops first. vs last = since their previous check-in; vs usual = against their average
-        over the 7 days before (needs 3 check-ins).</p>` : '<p class="muted">No check-ins yet.</p>'}
-    </section>
-
-    <section class="card">
+    <section class="card" id="watch">
       <h3>Watch list</h3>
       ${watch.length ? `<p class="muted small">Swimmers worth a word, based on their last 7 days.</p>
         <ul class="watch">${watch.map((w) => `
@@ -218,43 +216,63 @@ function renderGroup({ rows, query }) {
     : '<p class="muted">Nobody stands out over the last 7 days.</p>'}
     </section>
 
-    <section class="card">
-      <h3>Check-ins</h3>
-      ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table">
-        <thead><tr><th>Athlete</th><th>Ready</th><th>Well</th><th>HRV</th><th>HR</th><th>Effort<br><span class="th-sub">AM · PM</span></th></tr></thead>
-        <tbody>${day.checkedIn.map((c) => `
-          <tr>
-            <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
-            <td><b>${c.assessment.score ?? '–'}</b></td>
-            <td>${c.wellness ?? '–'}</td>
-            <td>${hrvCell(c)}</td>
-            <td>${fmt(c.entry.hrv?.hr)}</td>
-            <td class="effort">${effortCell(c.entry.training)}</td>
-          </tr>
-          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="6">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
+    <section class="card" id="day-before">
+      <h3>Yesterday’s training</h3>
+      <p class="muted small">${esc(prettyDate(tr.trainedOn))} against the same day last week (${esc(shortDate(shiftDate(tr.trainedOn, -7)))})
+        and a usual ${esc(weekday)} (average of the 4 before${usual ? '' : '; needs 2'}).</p>
+      ${now.reported ? `<div class="table-wrap"><table class="group-table compare-table">
+        <thead><tr><th></th><th>Yesterday</th><th>Week ago</th><th>Usual</th></tr></thead>
+        <tbody>
+          ${compareRow('Reported', (d) => d.reported)}
+          ${compareRow('Morning practice', (d) => d.am.count)}
+          ${compareRow('time', (d) => (d.am.avgMin === null ? null : shortTime(Math.round(d.am.avgMin))), { sub: true })}
+          ${compareRow('effort', (d) => d.am.avgRpe, { sub: true })}
+          ${compareRow('Afternoon practice', (d) => d.pm.count)}
+          ${compareRow('time', (d) => (d.pm.avgMin === null ? null : shortTime(Math.round(d.pm.avgMin))), { sub: true })}
+          ${compareRow('effort', (d) => d.pm.avgRpe, { sub: true })}
+          ${compareRow('Lifted', (d) => d.weights)}
+          ${compareRow('Raced', (d) => d.meet)}
+          ${compareRow('Avg load', (d) => d.avgLoad, { load: true })}
         </tbody></table></div>
-        <p class="muted small">Worst first. HRV = RMSSD in ms; ▼/▲ = well below/above that athlete’s normal range. Effort (1–10) is for yesterday’s morning · afternoon practice; – = no practice. Wt = lifted, Meet = raced.</p>`
-    : '<p class="muted">No check-ins for this day yet.</p>'}
-    </section>
-
-    ${day.missing.length ? `<section class="card"><h3>Not checked in</h3><ul class="plain">
-      ${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
-        <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
-    </ul>
-    ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}
-    </section>` : ''}`;
+      <div class="table-wrap"><table class="group-table day-table">
+        <thead><tr><th>Swimmer</th><th>Practice<br><span class="th-sub">time · effort</span></th><th>Load</th><th>vs<br>wk ago</th><th>vs<br>usual</th></tr></thead>
+        <tbody>${tr.swimmers.map((s) => `
+          <tr>
+            <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
+            <td class="effort">${practicesCell(s.training)}</td>
+            <td><b>${s.load}</b></td>
+            <td>${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
+            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5, a meet as 1 h at
+        light 2 / moderate 3 / hard 5. Each swimmer is compared with their own load on those days.</p>`
+    : '<p class="muted">No training reported yet.</p>'}
+    </section>`;
 }
 
 // ----------------------------------------------------------------- history
 
+// Light / moderate / heavy days and the readiness change after each.
+function responseTable(b, range, note = '') {
+  if (!b.enough) {
+    return `<p class="muted small">${note}Shows once there are ${b.needed} check-ins with training and a previous check-in to compare (${b.pairs} so far).</p>`;
+  }
+  return `<table class="group-table response-table">
+        <thead><tr><th>Day before</th><th>Load</th><th>Readiness change</th></tr></thead>
+        <tbody>${[['Light', b.light], ['Moderate', b.moderate], ['Heavy', b.heavy]].map(([label, x]) => `
+          <tr><td><b>${label}</b></td><td class="muted">${range(x.range)}</td><td>${delta(x.change, { big: 5 })} <span class="muted small">avg of ${x.n}</span></td></tr>`).join('')}
+        </tbody></table>`;
+}
+
 function renderHistory({ rows, query }) {
   const date = todayISO();
-  const span = query.get('t') === '28' ? 28 : 7;
+  const span = [14, 28].includes(Number(query.get('t'))) ? Number(query.get('t')) : 7;
   const trend = teamTrend(rows, date, span);
   const now = trendSummary(trend);
   const prev = trendSummary(teamTrend(rows, shiftDate(date, -span), span));
   const grid = checkinGrid(rows, date, 14);
-  const resp = loadResponse(rows, date);
+  const resp = loadResponse(rows, date, { days: span });
   const change = (a, b, unit = '') => (a === null || b === null || a === b ? ''
     : ` <span class="muted small">${a > b ? '▲' : '▼'} ${+Math.abs(a - b).toFixed(1)}${unit}</span>`);
   const cell = (c) => {
@@ -266,7 +284,7 @@ function renderHistory({ rows, query }) {
   view.innerHTML = `
     <section class="card">
       <div class="card-head"><h3>Team trends</h3>
-        <span class="seg"><a href="#history?t=7" ${span === 7 ? 'aria-current="true"' : ''}>7 days</a><a href="#history?t=28" ${span === 28 ? 'aria-current="true"' : ''}>28 days</a></span></div>
+        <span class="seg">${[7, 14, 28].map((n) => `<a href="#history?t=${n}" ${span === n ? 'aria-current="true"' : ''}>${n} days</a>`).join('')}</span></div>
       <div class="stats small-stats">
         <div><span class="stat-num">${now.avgReadiness ?? '–'}${change(now.avgReadiness, prev.avgReadiness)}</span><span class="stat-label">avg readiness</span></div>
         <div><span class="stat-num">${now.rate ?? '–'}%${change(now.rate, prev.rate, '%')}</span><span class="stat-label">check-in rate</span></div>
@@ -294,15 +312,16 @@ function renderHistory({ rows, query }) {
 
     <section class="card" id="load-response">
       <h3>Training vs next-morning readiness</h3>
-      ${resp.enough ? `<p class="muted small">Last 28 days: each check-in’s training load (the day before) against how that
-        swimmer’s readiness changed since their previous check-in. ${resp.pairs} check-ins, split into thirds by load.</p>
-      <table class="group-table response-table">
-        <thead><tr><th>Day before</th><th>Load</th><th>Readiness change</th></tr></thead>
-        <tbody>${[['Light', resp.light], ['Moderate', resp.moderate], ['Heavy', resp.heavy]].map(([label, b]) => `
-          <tr><td><b>${label}</b></td><td class="muted">${b.loads[0]}–${b.loads[1]}</td><td>${delta(b.change, { big: 5 })} <span class="muted small">avg of ${b.n}</span></td></tr>`).join('')}
-        </tbody></table>
-      <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>`
-    : `<p class="muted">Shows once there are ${resp.needed} check-ins with training and a previous check-in to compare (${resp.pairs} so far).</p>`}
+      <p class="muted small">Last ${span} days: each check-in’s training load (the day before) against how that swimmer’s
+        readiness changed since their previous check-in, split into thirds two ways.</p>
+      <h4>By load</h4>
+      <p class="muted small">The same cut-offs for everyone.</p>
+      ${responseTable(resp.absolute, (r) => `${r[0]}–${r[1]}`)}
+      <h4>By load for each swimmer</h4>
+      <p class="muted small">Against that swimmer’s usual (their average load over the last 28 days), so a heavy day is
+        heavy for them.</p>
+      ${responseTable(resp.relative, (r) => `${r[0]}–${r[1]}% of usual`, 'Needs 5 training reports from a swimmer in the last 28 days. ')}
+      <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>
     </section>
 
     <section class="card">
@@ -452,7 +471,7 @@ function renderMessages({ coach, rows, query }) {
 
 // ---------------------------------------------------------------- settings
 
-function renderSettings(coach) {
+function renderSettings(coach, { fixed } = {}) {
   view.innerHTML = `
     <section class="card">
       <h2>Settings</h2>
@@ -465,6 +484,14 @@ function renderSettings(coach) {
         <p class="form-error" id="group-error" role="alert" hidden></p>
         <button class="btn secondary" type="submit">Save group code</button>
       </form>
+    </section>
+
+    <section class="card" id="fix-training">
+      <h3>Remove a session that didn’t happen</h3>
+      <p class="muted small">If swimmers reported a practice on a day there wasn’t one, take it out of their check-ins so it
+        doesn’t count in the load numbers.</p>
+      ${fixed ? `<p class="fix-done" role="status">${esc(fixed)}</p>` : ''}
+      <div id="fix-body"><p class="muted small">Loading…</p></div>
     </section>
 
     <section class="card">
@@ -501,6 +528,107 @@ function renderSettings(coach) {
     }
   });
   view.querySelector('#signout').onclick = signOut;
+  loadRows(coach)
+    .then((rows) => renderFix(coach, rows))
+    .catch((e) => { view.querySelector('#fix-body').innerHTML = `<p class="form-error">${esc(e.message)}</p>`; });
+}
+
+const PARTS = { am: 'Morning practice', pm: 'Afternoon practice', weights: 'Weights', meet: 'Meet' };
+
+// The group script with this coach's group code and password already in it.
+async function filledScript(coach) {
+  const text = await (await fetch('apps-script/Code.gs', { cache: 'no-store' })).text();
+  return text
+    .replace("const GROUP_CODE = 'CHANGE-ME';", coach.group ? `const GROUP_CODE = ${JSON.stringify(coach.group)};` : "const GROUP_CODE = 'CHANGE-ME';")
+    .replace("const COACH_PASSWORD = 'change-me-too';", `const COACH_PASSWORD = ${JSON.stringify(coach.password)};`);
+}
+
+function renderFix(coach, rows) {
+  const body = view.querySelector('#fix-body');
+  if (!body) return;
+  if ((cache?.version || 1) < 2) {
+    body.innerHTML = `
+      <p><b>Your sheet’s script needs a one-time update first.</b></p>
+      <ol class="steps">
+        <li><button class="btn secondary small-btn" id="copy-filled" type="button">Copy updated script</button>
+          <span class="muted small">(your password${coach.group ? ' and group code are' : ' is'} already filled in${coach.group ? '' : '; set GROUP_CODE yourself'})</span></li>
+        <li>Open your group Google Sheet → <b>Extensions → Apps Script</b>. Select everything in the code, paste over it, and click <b>Save</b>.</li>
+        <li><b>Deploy → Manage deployments</b> → ✏️ <b>Edit</b> → Version: <b>New version</b> → <b>Deploy</b>.
+          (Not “New deployment”: that changes the link and swimmers’ check-ins would stop arriving.)</li>
+      </ol>
+      <div class="actions"><button class="btn secondary" id="recheck" type="button">I’ve updated it – check again</button></div>`;
+    body.querySelector('#copy-filled').onclick = async (ev) => {
+      const btn = ev.target;
+      try {
+        await navigator.clipboard.writeText(await filledScript(coach));
+        btn.textContent = 'Copied';
+      } catch {
+        window.open('apps-script/Code.gs', '_blank');
+      }
+    };
+    body.querySelector('#recheck').onclick = () => { cache = null; renderSettings(coach); };
+    return;
+  }
+
+  const days = trainingReports(rows, todayISO(), 28);
+  if (!days.length) { body.innerHTML = '<p class="muted">No training reported in the last 4 weeks.</p>'; return; }
+  const count = (d) => [['am', 'morning'], ['pm', 'afternoon'], ['weights', 'weights'], ['meet', 'meet']]
+    .filter(([k]) => d[k].length).map(([k, l]) => `${d[k].length} ${l}`).join(' · ');
+  body.innerHTML = `
+    <form id="fix-form" class="stack">
+      <label class="field">Day the session was on
+        <select name="day">${days.map((d) => `<option value="${d.date}">${esc(prettyDate(d.trainedOn))}: ${count(d)}</option>`).join('')}</select></label>
+      <label class="field">Session
+        <select name="part">${Object.entries(PARTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+      <fieldset class="fix-who"><legend>Remove it for</legend><div id="fix-names"></div></fieldset>
+      <p class="form-error" id="fix-error" role="alert" hidden></p>
+      <button class="btn secondary danger block" type="submit" id="fix-go"></button>
+      <p class="muted small">Swimmers report training the next morning, so this changes the check-ins from the day after.
+        It stays removed even if a swimmer edits that day later.</p>
+    </form>`;
+  const form = body.querySelector('#fix-form');
+  const go = form.querySelector('#fix-go');
+  const day = () => days.find((d) => d.date === form.day.value);
+  const picked = () => [...form.querySelectorAll('[name="who"]:checked')].map((i) => i.value);
+  const label = () => {
+    const n = picked().length;
+    go.disabled = !n;
+    go.dataset.confirm = '';
+    go.textContent = n ? `Remove ${PARTS[form.part.value].toLowerCase()} for ${n} swimmer${n === 1 ? '' : 's'}` : 'Nobody to remove it for';
+  };
+  const names = () => {
+    const who = day()[form.part.value];
+    form.querySelector('#fix-names').innerHTML = who.length
+      ? who.map((w) => `<label class="check"><input type="checkbox" name="who" value="${esc(w.name)}" checked> ${esc(w.name)}</label>`).join('')
+      : `<p class="muted small">Nobody reported ${PARTS[form.part.value].toLowerCase()} that day.</p>`;
+    label();
+  };
+  form.addEventListener('change', (ev) => { if (ev.target.name === 'who') label(); else names(); });
+  names();
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = form.querySelector('#fix-error');
+    err.hidden = true;
+    // Two taps: the first asks to confirm.
+    if (!go.dataset.confirm) {
+      go.dataset.confirm = '1';
+      go.textContent = 'Tap again to confirm';
+      return;
+    }
+    go.disabled = true;
+    go.textContent = 'Removing…';
+    const d = day();
+    const part = form.part.value;
+    try {
+      const res = await callSheet(coach.url, { action: 'removeTraining', coachPassword: coach.password, date: d.date, part, athletes: picked() });
+      cache = null;
+      renderSettings(coach, { fixed: `Removed ${PARTS[part].toLowerCase()} on ${prettyDate(d.trainedOn)} for ${res.changed.length} swimmer${res.changed.length === 1 ? '' : 's'}.` });
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+      label();
+    }
+  });
 }
 
 // ------------------------------------------------------------------- login

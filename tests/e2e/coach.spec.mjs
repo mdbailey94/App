@@ -88,43 +88,56 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(watch.first()).toContainText('Talk today');
   await expect(watch.first()).toContainText('Injury stopping certain strokes or movements (right shoulder), reported today.');
   await expect(watch.nth(1)).toContainText('Training load spike');
-  await expect(page.locator('.plain li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
-  // Effort per session: Maya's split check-in, and an older whole-day one.
-  const maya = page.locator('.group-table:not(.day-table) tr', { hasText: 'Maya Torres' }).locator('td.effort');
-  await expect(maya).toContainText('4 · 8');
-  await expect(maya.locator('.tag')).toHaveText(['Wt', 'Meet']);
-  await expect(page.locator('.group-table:not(.day-table) tr', { hasText: 'Sam Lee' }).locator('td.effort')).toHaveText('6');
+  await expect(page.locator('#checkins .not-in li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
 
-  // Yesterday's training: the five who checked in today, heaviest load first.
-  const trainedRows = page.locator('#day-before tbody tr');
+  // Check-ins: readiness, and its change since yesterday and against their usual.
+  await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual', 'HRV']);
+  await expect(page.locator('.checkin-table tbody tr:not(.flag-row)')).toHaveCount(5);
+  // Sam gave the same answers as yesterday.
+  const sam = page.locator('.checkin-table tr', { hasText: 'Sam Lee' });
+  await expect(sam.locator('td').nth(2)).toHaveText('0');
+  await expect(page.locator('#checkins .stats .stat-label')).toHaveText([/checked in/, /avg readiness/, /vs yesterday/, /vs usual/]);
+
+  // Yesterday's training against the same day last week and the usual.
+  const compare = page.locator('#day-before .compare-table');
+  await expect(compare.locator('tbody th')).toHaveText(['Reported', 'Morning practice', 'time', 'effort', 'Afternoon practice', 'time', 'effort', 'Lifted', 'Raced', 'Avg load']);
+  await expect(compare.locator('tr', { hasText: 'Raced' }).locator('td')).toHaveText(['1', '0', '0']);
+  // The five who checked in today, heaviest load first.
+  const trainedRows = page.locator('#day-before .day-table tbody tr');
   await expect(trainedRows).toHaveCount(5);
-  await expect(trainedRows.first()).toContainText('Ana Ruiz');
-  const mayaDay = page.locator('#day-before tr', { hasText: 'Maya Torres' });
-  await expect(mayaDay.locator('td').nth(1)).toHaveText('1½h · 4');
-  await expect(mayaDay.locator('td').nth(2)).toHaveText('2h · 8');
-  await expect(mayaDay.locator('.tag')).toHaveText(['Wt', 'Meet']);
-  await expect(page.locator('#day-before .stat-label').first()).toContainText('at morning practice');
-  // Readiness change: everyone who checked in today, with the team against yesterday and the week.
-  await expect(page.locator('#readiness-change tbody tr')).toHaveCount(5);
-  await expect(page.locator('#readiness-change .stat-label').nth(1)).toContainText('vs yesterday');
-  await expect(page.locator('#readiness-change .stat-label').nth(2)).toContainText('vs 7-day avg');
+  const ana = trainedRows.first();
+  await expect(ana).toContainText('Ana Ruiz');
+  // 4 h at 8 yesterday against 1½ h at 5 on the same day last week and the 3 weeks before.
+  await expect(ana.locator('td').nth(3)).toHaveText('▲+327%');
+  await expect(ana.locator('td').nth(4)).toHaveText('▲+327%');
+  const mayaDay = trainedRows.filter({ hasText: 'Maya Torres' });
+  await expect(mayaDay.locator('td.effort')).toContainText('AM 1½h · 4');
+  await expect(mayaDay.locator('td.effort')).toContainText('PM 2h · 8');
+  await expect(mayaDay.locator('.tag')).toHaveText(['Wt', 'Meet · moderate']); // meets from before the question count as moderate
 
   await page.click('a:has-text("Send a reminder")');
   await expect(page).toHaveURL(/#messages/);
 });
 
-test('History tab: 7/28-day trends and the check-in record', async ({ page }, testInfo) => {
+test('History tab: 7/14/28-day trends and the check-in record', async ({ page }, testInfo) => {
   await page.goto('/coach.html');
   await signIn(page, testInfo);
   await page.goto('/coach.html#history');
 
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(7);
+  await page.click('.seg a:has-text("14 days")');
+  await expect(page).toHaveURL(/t=14/);
+  await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(14);
   await page.click('.seg a:has-text("28 days")');
   await expect(page).toHaveURL(/t=28/);
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(28);
 
-  // Training vs next-morning readiness: light / moderate / heavy thirds.
-  await expect(page.locator('#load-response tbody tr')).toHaveText([/^Light/, /^Moderate/, /^Heavy/]);
+  // Training vs next-morning readiness: light / moderate / heavy thirds, by
+  // load and by load against each swimmer's usual.
+  const tables = page.locator('#load-response table');
+  await expect(tables).toHaveCount(2);
+  for (const i of [0, 1]) await expect(tables.nth(i).locator('tbody tr')).toHaveText([/^Light/, /^Moderate/, /^Heavy/]);
+  await expect(tables.nth(1).locator('tbody tr').last()).toContainText('% of usual');
 
   const grid = page.locator('.checkin-grid tbody tr');
   await expect(grid).toHaveCount(7);
@@ -138,6 +151,7 @@ test('History tab: 7/28-day trends and the check-in record', async ({ page }, te
   await expect(effort.nth(0)).toHaveText(/^4/);
   await expect(effort.nth(1)).toHaveText(/^8/);
   await expect(page.locator('#lift-meet')).toHaveText('28 weights sessions · 1 meet day reported');
+  await expect(page.locator('#load-response')).toContainText('Last 28 days');
   await expect(page.locator('[data-t="rpePm"] svg')).toBeVisible();
 });
 
@@ -201,4 +215,57 @@ test('Settings tab: group code and sign out', async ({ page }, testInfo) => {
   await page.click('#signout');
   await expect(page.locator('#coach-login')).toBeVisible();
   await expect(page.locator('#coach-tabs')).toBeHidden();
+});
+
+test('Settings: remove a morning practice that didn’t happen, and it stays removed', async ({ page, request }, testInfo) => {
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  await page.goto('/coach.html#settings');
+  const form = page.locator('#fix-form');
+  // Yesterday's training is in today's check-ins; only Maya reports practices separately.
+  await form.locator('select[name=day]').selectOption(dayISO(0));
+  await form.locator('select[name=part]').selectOption('am');
+  await expect(form.locator('#fix-names label')).toHaveText(['Maya Torres']);
+  await form.locator('select[name=part]').selectOption('meet');
+  await expect(form.locator('#fix-names label')).toHaveText(['Maya Torres']);
+  await form.locator('select[name=part]').selectOption('am');
+  await page.click('#fix-go');
+  await expect(page.locator('#fix-go')).toHaveText('Tap again to confirm');
+  await page.click('#fix-go');
+  await expect(page.locator('.fix-done')).toContainText('Removed morning practice on');
+  await expect(page.locator('.fix-done')).toContainText('for 1 swimmer.');
+
+  await page.goto('/coach.html#group');
+  const maya = page.locator('#day-before .day-table tr', { hasText: 'Maya Torres' });
+  await expect(maya.locator('td.effort')).toHaveText('PM 2h · 8');
+
+  // Maya resends the day from her phone: the morning practice stays out.
+  const entry = { date: dayISO(0), ...SWIMMERS['Maya Torres'](0), notes: 'resent' };
+  await request.post(sheetFor(testInfo).url, {
+    headers: { 'Content-Type': 'text/plain' },
+    data: JSON.stringify({ action: 'submit', group: GROUP_CODE, athlete: 'Maya Torres', items: buildItems([entry], [entry]) }),
+  });
+  await page.goto(`/coach.html#group?refresh=${Date.now()}`);
+  await expect(page.locator('#day-before .day-table tr', { hasText: 'Maya Torres' }).locator('td.effort')).toHaveText('PM 2h · 8');
+});
+
+test('Settings: an older sheet script gets update steps, with the password filled in', async ({ page }, testInfo) => {
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  // Answer like a sheet still running the previous script (no version).
+  await page.route('**/exec/**', async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    delete body.version;
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.goto('/coach.html#settings');
+  await expect(page.locator('#fix-body')).toContainText('needs a one-time update');
+  await expect(page.locator('#fix-form')).toHaveCount(0);
+  await page.click('#copy-filled');
+  await expect(page.locator('#copy-filled')).toHaveText('Copied');
+  const script = await page.evaluate(() => navigator.clipboard.readText());
+  expect(script).toContain(`const COACH_PASSWORD = "${COACH_PASSWORD}";`);
+  expect(script).toContain(`const GROUP_CODE = "${GROUP_CODE}";`);
+  expect(script).toContain('const SCRIPT_VERSION = 2;');
 });

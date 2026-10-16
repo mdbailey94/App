@@ -2,7 +2,7 @@
 // markup, live behaviour, and reading the answers back. A new day starts
 // blank: every answer is the athlete's own for that day.
 
-import { SCALE_MAX, sessionLoad, trainingFrom, WELLNESS_ITEMS } from './readiness.js';
+import { MEET_LEVELS, meetLevel, SCALE_MAX, sessionLoad, trainingFrom, WELLNESS_ITEMS } from './readiness.js';
 import { esc } from './ui.js';
 
 // Effort, 1–10 (session RPE).
@@ -15,7 +15,8 @@ const hoursLabel = (min) => {
 
 // Training questions. Each practice: how long (a drop-down that starts at
 // the usual length, so most days it's untouched) and how hard (ten small
-// buttons, nothing picked). Then two yes/no questions: weights, and a meet.
+// buttons, nothing picked). Then two yes/no questions: weights, and a meet
+// (a Yes asks how hard it was: light, moderate or hard).
 // Afternoon practice is a yes/no first (many days have none); a Yes brings
 // up its time and effort. Morning practice asks time and effort straight away.
 const PRACTICES = [
@@ -81,6 +82,10 @@ export function trainingSection(t, { title = 'Yesterday’s training', prefix = 
         </fieldset>`)).join('')}
         ${YES_NO.map((q) => `
         <div class="field inline-q yes-no"><span class="q">${q.title}</span>${yesNoButtons(`${prefix}${q.key}`, yesNo(q.key))}</div>`).join('')}
+        <div class="field inline-q" data-details="${prefix}meet" ${yesNo('meet') ? '' : 'hidden'}><span class="q">How hard?</span>
+          <div class="chips meet-level">${Object.entries(MEET_LEVELS).map(([k, l]) => `
+            <label><input type="radio" name="${prefix}meetLevel" value="${k}" ${checked(split && meetLevel(t) === k)}><span>${l.label}</span></label>`).join('')}
+          </div></div>
         <p class="muted small" data-load-preview="${prefix}"></p>
       </section>`;
 }
@@ -160,7 +165,7 @@ export function wireCheckin(form) {
     const fd = new FormData(form);
     form.querySelectorAll('[data-load-preview]').forEach((el) => {
       const load = sessionLoad(readTraining(fd, el.dataset.loadPreview));
-      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, hard)` : '';
+      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, hard; a meet as 1 h)` : '';
     });
   };
   form.addEventListener('input', (ev) => {
@@ -171,6 +176,8 @@ export function wireCheckin(form) {
     if (practice) form.querySelector(`[data-effort="${practice}"]`).hidden = !(Number(ev.target.value) > 0);
     const asked = /^(.*pm)Did$/.exec(ev.target.name)?.[1];
     if (asked) form.querySelector(`[data-details="${asked}"]`).hidden = ev.target.value !== 'yes';
+    const meet = /^(.*)meet$/.exec(ev.target.name)?.[1];
+    if (meet !== undefined) form.querySelector(`[data-details="${meet}meet"]`).hidden = ev.target.value !== 'yes';
     loadPreview();
   });
   loadPreview();
@@ -216,6 +223,7 @@ function trainingMissing(fd, prefix = '') {
     }
   }
   for (const q of YES_NO) if (fd.get(`${prefix}${q.key}`) === null) out.push({ key: `${prefix}${q.key}`, label: q.title });
+  if (fd.get(`${prefix}meet`) === 'yes' && fd.get(`${prefix}meetLevel`) === null) out.push({ key: `${prefix}meetLevel`, label: 'How hard the meet was' });
   return out;
 }
 
@@ -226,6 +234,7 @@ function readTraining(fd, prefix = '') {
   return trainingFrom({
     am: practice(PRACTICES[0]), pm: practice(PRACTICES[1]),
     weights: fd.get(`${prefix}weights`) === 'yes', meet: fd.get(`${prefix}meet`) === 'yes',
+    meetLevel: fd.get(`${prefix}meetLevel`),
   });
 }
 

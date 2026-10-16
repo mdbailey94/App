@@ -24,29 +24,41 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 //   { am: { durationMin, rpe } | null,   morning practice (null = none)
 //     pm: { durationMin, rpe } | null,   afternoon practice
 //     weights: boolean, meet: boolean,   did they lift / race
+//     meetLevel: 'light' | 'moderate' | 'hard'   (only with meet: true)
 //     durationMin, rpe }                 totals: minutes, and the
 //                                        time-weighted average effort
-// A weights session isn't timed or rated: for load it counts as WEIGHTS
-// (45 minutes at hard effort, 5 on the 1–10 scale).
+// Weights and meets aren't timed or rated, so for load they count as fixed
+// sessions: weights as WEIGHTS (45 minutes at hard effort, 5 on the 1–10
+// scale), a meet as 60 minutes at the effort of how hard it was. Meets
+// reported before that was asked count as moderate.
 // Older check-ins have only { durationMin, rpe } for the whole day.
 export const PRACTICE_KEYS = ['am', 'pm'];
 const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
 const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
 export const WEIGHTS = { durationMin: 45, rpe: 5 };
+export const MEET_LEVELS = { light: { label: 'Light', rpe: 2 }, moderate: { label: 'Moderate', rpe: 3 }, hard: { label: 'Hard', rpe: 5 } };
+export const MEET_MIN = 60;
+export const meetLevel = (t) => (t?.meet ? (MEET_LEVELS[t.meetLevel] ? t.meetLevel : 'moderate') : null);
+const meetSession = (t) => (t?.meet ? { durationMin: MEET_MIN, rpe: MEET_LEVELS[meetLevel(t)].rpe } : null);
 
-// Load = minutes × effort (session RPE), summed over the practices and weights.
+// Load = minutes × effort (session RPE), summed over the practices, weights and meet.
 export function sessionLoad(training) {
   if (!training) return 0;
-  if (isSplit(training)) return practiceLoad(training.am) + practiceLoad(training.pm) + (training.weights ? practiceLoad(WEIGHTS) : 0);
+  if (isSplit(training)) {
+    return practiceLoad(training.am) + practiceLoad(training.pm)
+      + (training.weights ? practiceLoad(WEIGHTS) : 0) + practiceLoad(meetSession(training));
+  }
   return practiceLoad(training);
 }
 
 // Build the stored training from the answers (null practice = didn't go).
-export function trainingFrom({ am, pm, weights = false, meet = false }) {
-  const practices = [am, pm, weights && WEIGHTS].filter((s) => s?.durationMin > 0);
+export function trainingFrom({ am, pm, weights = false, meet = false, meetLevel: level }) {
+  const t = { am: am || null, pm: pm || null, weights: Boolean(weights), meet: Boolean(meet) };
+  if (t.meet) t.meetLevel = MEET_LEVELS[level] ? level : 'moderate';
+  const practices = [t.am, t.pm, t.weights && WEIGHTS, meetSession(t)].filter((s) => s?.durationMin > 0);
   const durationMin = practices.reduce((n, s) => n + s.durationMin, 0);
   const rpe = durationMin ? Math.round(practices.reduce((n, s) => n + s.durationMin * s.rpe, 0) / durationMin) : 0;
-  return { am: am || null, pm: pm || null, weights: Boolean(weights), meet: Boolean(meet), durationMin, rpe };
+  return { ...t, durationMin, rpe };
 }
 
 // Effort (1–10) for one practice: a number, null if they didn't go, or
