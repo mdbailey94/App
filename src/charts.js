@@ -192,3 +192,79 @@ export function drawWaveform(canvas, values, peaks = []) {
     ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
   }
 }
+
+// Two panels on one shared day axis, for reading one against the other
+// without two scales on one plot: a line on top (e.g. readiness, 0–100) and
+// bars below (e.g. load), each day's bar directly under its point. One
+// crosshair and tooltip cover both.
+// data: [{ x, label, line: number|NaN, bar: number|null }]
+export function stackedChart(container, data, opts = {}) {
+  const o = {
+    topHeight: 130, bottomHeight: 90, gap: 30, lineMin: 0, lineMax: 100,
+    lineTitle: '', barTitle: '', tip: (d) => d.label, ...opts,
+  };
+  container.innerHTML = '';
+  container.classList.add('chart');
+  if (!data.length || !data.some((d) => Number.isFinite(d.line) || d.bar > 0)) {
+    container.innerHTML = '<p class="muted small">Not enough data yet.</p>';
+    return;
+  }
+  const width = Math.max(260, container.clientWidth || 320);
+  const lineTicks = niceTicks(o.lineMin, o.lineMax);
+  const barHi = Math.max(1, ...data.map((d) => d.bar || 0));
+  const barTicks = niceTicks(0, barHi, 3);
+  const widest = Math.max(...[...lineTicks, ...barTicks].map((t) => String(t).length));
+  const pad = { top: 16, right: 12, bottom: 22, left: Math.max(28, Math.ceil(widest * 6.5) + 10) };
+  const height = pad.top + o.topHeight + o.gap + o.bottomHeight + pad.bottom;
+  const iw = width - pad.left - pad.right;
+  const inset = 13;
+  const xs = data.map((d) => d.x);
+  const xLo = Math.min(...xs);
+  const xHi = Math.max(...xs);
+  const sx = (x) => pad.left + inset + (xHi === xLo ? (iw - 2 * inset) / 2 : ((x - xLo) / (xHi - xLo)) * (iw - 2 * inset));
+  const topY0 = pad.top;
+  const botY0 = pad.top + o.topHeight + o.gap;
+  // Tick steps can stop short of the tallest bar: the axis then runs to it.
+  const lLo = lineTicks[0], lHi = lineTicks.at(-1), bHi = Math.max(barTicks.at(-1), barHi);
+  const syLine = (v) => topY0 + o.topHeight - ((v - lLo) / (lHi - lLo)) * o.topHeight;
+  const syBar = (v) => botY0 + o.bottomHeight - (v / bHi) * o.bottomHeight;
+
+  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': `${o.lineTitle} and ${o.barTitle}` }, container);
+  const axis = (ticks, sy) => {
+    for (const t of ticks) {
+      el('line', { x1: pad.left, x2: width - pad.right, y1: sy(t), y2: sy(t), class: 'grid' }, svg);
+      el('text', { x: pad.left - 6, y: sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, svg).textContent = String(t);
+    }
+  };
+  axis(lineTicks, syLine);
+  axis(barTicks, syBar);
+  el('text', { x: pad.left, y: topY0 - 5, class: 'panel-title' }, svg).textContent = o.lineTitle;
+  el('text', { x: pad.left, y: botY0 - 5, class: 'panel-title' }, svg).textContent = o.barTitle;
+  el('text', { x: pad.left, y: height - 6, class: 'tick' }, svg).textContent = data[0].label;
+  if (data.length > 1) el('text', { x: width - pad.right, y: height - 6, class: 'tick', 'text-anchor': 'end' }, svg).textContent = data.at(-1).label;
+
+  // Bars: rounded tops, square base.
+  const span = Math.max(1, xHi - xLo + 1);
+  const bw = Math.max(2, Math.min(24, iw / span - 2));
+  const base = syBar(0);
+  for (const d of data) {
+    const top = syBar(d.bar || 0);
+    const h = base - top;
+    if (!(h > 0)) continue;
+    const r = Math.min(4, bw / 2, h);
+    const x0 = sx(d.x) - bw / 2;
+    el('path', { d: `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${base}Z`, class: 'series-bar muted-bar' }, svg);
+  }
+  // Line, broken where a day has no value.
+  const pts = data.map((d) => [sx(d.x), Number.isFinite(d.line) ? syLine(d.line) : NaN]);
+  let path = '';
+  let pen = false;
+  for (const [x, y] of pts) {
+    if (!Number.isFinite(y)) { pen = false; continue; }
+    path += `${pen ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+    pen = true;
+  }
+  el('path', { d: path, class: 'series-line' }, svg);
+  if (data.length <= 60) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: 'series-dot' }, svg);
+  addTooltip(container, svg, data, pts, o.tip, topY0, base);
+}

@@ -119,6 +119,8 @@ test('teamTrend: daily average readiness (with 3+ scores), check-in rate and loa
   assert.equal(t[0].avgLoad, 240);
   assert.equal(typeof t[0].avgReadiness, 'number');
   assert.equal(t[1].avgReadiness, null); // only one swimmer scored: no team average
+  assert.equal(t[0].loadReported, 240); // what they reported that morning for the day before
+  assert.equal(t[1].loadReported, null); // A reported no training
   assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 67, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
 });
 

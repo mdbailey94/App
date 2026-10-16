@@ -13,7 +13,7 @@ import {
 } from './group.js';
 import { assessDay, MEET_LEVELS, meetLevel, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
 import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
-import { barChart, lineChart } from './charts.js';
+import { barChart, stackedChart } from './charts.js';
 
 const view = document.getElementById('view');
 const tabs = document.getElementById('coach-tabs');
@@ -283,9 +283,11 @@ function renderHistory({ rows, query }) {
         <div><span class="stat-num">${now.avgLoad ?? '–'}${change(now.avgLoad, prev.avgLoad)}</span><span class="stat-label">avg daily load</span></div>
       </div>
       <p class="muted small">Last ${span} days; arrows compare with the ${span} days before.</p>
-      <div class="trend-block"><h4>Average readiness <span class="muted small">(days with 3+ check-ins)</span></h4><div data-t="ready"></div></div>
+      <div class="trend-block" id="ready-load"><h4>Readiness and the day before’s training</h4>
+        <p class="muted small">Each morning’s average readiness (days with 3+ check-ins), and under it the average load
+          swimmers reported that morning for the day before (rest days count as 0).</p>
+        <div data-t="readyLoad"></div></div>
       <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
-      <div class="trend-block"><h4>Average training load</h4><div data-t="load"></div></div>
       ${refreshLine(`#history?t=${span}`)}
     </section>
 
@@ -328,9 +330,22 @@ function renderHistory({ rows, query }) {
   const series = (k, none = NaN) => trend.map((d) => ({ x: dayIndex(d.date), y: d[k] ?? none, label: shortDate(d.date) }));
   const $t = (k) => view.querySelector(`[data-t="${k}"]`);
   requestAnimationFrame(() => {
-    lineChart($t('ready'), series('avgReadiness'), { yMin: 0, yMax: 100 });
+    // Readiness axis from a round number below the lowest day, so changes show.
+    const lows = trend.map((d) => d.avgReadiness).filter(Number.isFinite);
+    const lineMin = lows.length ? Math.max(0, Math.floor((Math.min(...lows) - 10) / 25) * 25) : 0;
+    stackedChart($t('readyLoad'), trend.map((d) => ({
+      x: dayIndex(d.date),
+      label: shortDate(d.date),
+      before: shortDate(shiftDate(d.date, -1)),
+      line: d.avgReadiness ?? NaN,
+      bar: d.loadReported,
+    })), {
+      lineMin,
+      lineTitle: 'Readiness',
+      barTitle: 'Load the day before',
+      tip: (d) => `${d.label}: readiness <b>${Number.isFinite(d.line) ? d.line : '–'}</b><br>${d.before} load <b>${d.bar ?? '–'}</b>`,
+    });
     barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
-    barChart($t('load'), series('avgLoad'), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
     // Effort is reported the morning after, so each bar sits on the day the
     // session happened. No bar = nobody reported that session.
     const trained = (k) => trend.map((d) => {

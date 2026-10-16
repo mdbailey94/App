@@ -210,6 +210,8 @@ summary { cursor: pointer; color: var(--accent); min-height: 32px; }
 .chart .series-line { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .series-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
 .chart .series-bar { fill: var(--series-1); }
+.chart .muted-bar { fill: color-mix(in srgb, var(--series-1) 45%, var(--surface)); }
+.chart .panel-title { fill: var(--text-2); font-size: 12px; font-weight: 600; }
 .chart .guide { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .hover-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
 .chart-tip {
