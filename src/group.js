@@ -392,30 +392,6 @@ export function trainingCompare(rows, date) {
   };
 }
 
-// Recent days with training reported, newest first: for each, the day the
-// training happened and who reported each session. For the coach's
-// "remove a practice that didn't happen" correction.
-export function trainingReports(rows, date, days = 28) {
-  const athletes = [...groupByAthlete(rows).values()];
-  const out = [];
-  for (let i = 0; i < days; i++) {
-    const d = shiftDate(date, -i);
-    const who = { am: [], pm: [], weights: [], meet: [] };
-    for (const a of athletes) {
-      const t = trainingOn(a, d);
-      if (!isSplitTraining(t)) continue;
-      const me = { key: a.key, name: a.name };
-      if (t.am?.durationMin > 0) who.am.push(me);
-      if (t.pm?.durationMin > 0) who.pm.push(me);
-      if (t.weights) who.weights.push(me);
-      if (t.meet) who.meet.push(me);
-    }
-    for (const l of Object.values(who)) l.sort((x, y) => x.name.localeCompare(y.name));
-    if (Object.values(who).some((l) => l.length)) out.push({ date: d, trainedOn: shiftDate(d, -1), ...who });
-  }
-  return out;
-}
-
 // Does training show up in the next morning's readiness? Over the last `days`
 // days, pair each check-in's reported training load with how that swimmer's
 // readiness changed from their previous check-in, then group the pairs into

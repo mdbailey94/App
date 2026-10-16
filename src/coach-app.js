@@ -8,7 +8,7 @@
 import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare, trainingReports,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare,
   trendSummary, watchList,
 } from './group.js';
 import { assessDay, MEET_LEVELS, meetLevel, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
@@ -92,8 +92,7 @@ let cache = null; // { at, rows } – shared by every tab while the page is open
 async function loadRows(coach, force) {
   if (!force && cache && Date.now() - cache.at < 5 * 60000) return cache.rows;
   const res = await callSheet(coach.url, { action: 'dashboard', coachPassword: coach.password, days: 120 });
-  // version: what the sheet's script can do (older copies don't say: 1).
-  cache = { at: Date.now(), rows: res.rows, version: res.version || 1 };
+  cache = { at: Date.now(), rows: res.rows };
   return res.rows;
 }
 
@@ -197,11 +196,6 @@ function renderGroup({ rows, query }) {
         <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
           over the 7 days before (needs 3 check-ins). HRV = RMSSD in ms; ▼/▲ = well below/above their normal range.</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
-      ${day.missing.length ? `<div class="not-in"><h4>Not checked in (${day.missing.length})</h4>
-        <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
-          <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
-        </ul>
-        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</div>` : ''}
       ${refreshLine(`#group?d=${date}`)}
     </section>
 
@@ -245,10 +239,16 @@ function renderGroup({ rows, query }) {
             <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
           </tr>`).join('')}
         </tbody></table></div>
-      <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5, a meet as 1 h at
-        light 2 / moderate 3 / hard 5. Each swimmer is compared with their own load on those days.</p>`
+      <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5 (meets aren’t counted).
+        Each swimmer is compared with their own load on those days.</p>`
     : '<p class="muted">No training reported yet.</p>'}
-    </section>`;
+    </section>
+
+    ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
+        <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
+          <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
+        </ul>
+        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
 }
 
 // ----------------------------------------------------------------- history
@@ -471,7 +471,7 @@ function renderMessages({ coach, rows, query }) {
 
 // ---------------------------------------------------------------- settings
 
-function renderSettings(coach, { fixed } = {}) {
+function renderSettings(coach) {
   view.innerHTML = `
     <section class="card">
       <h2>Settings</h2>
@@ -484,14 +484,6 @@ function renderSettings(coach, { fixed } = {}) {
         <p class="form-error" id="group-error" role="alert" hidden></p>
         <button class="btn secondary" type="submit">Save group code</button>
       </form>
-    </section>
-
-    <section class="card" id="fix-training">
-      <h3>Remove a session that didn’t happen</h3>
-      <p class="muted small">If swimmers reported a practice on a day there wasn’t one, take it out of their check-ins so it
-        doesn’t count in the load numbers.</p>
-      ${fixed ? `<p class="fix-done" role="status">${esc(fixed)}</p>` : ''}
-      <div id="fix-body"><p class="muted small">Loading…</p></div>
     </section>
 
     <section class="card">
@@ -528,107 +520,6 @@ function renderSettings(coach, { fixed } = {}) {
     }
   });
   view.querySelector('#signout').onclick = signOut;
-  loadRows(coach)
-    .then((rows) => renderFix(coach, rows))
-    .catch((e) => { view.querySelector('#fix-body').innerHTML = `<p class="form-error">${esc(e.message)}</p>`; });
-}
-
-const PARTS = { am: 'Morning practice', pm: 'Afternoon practice', weights: 'Weights', meet: 'Meet' };
-
-// The group script with this coach's group code and password already in it.
-async function filledScript(coach) {
-  const text = await (await fetch('apps-script/Code.gs', { cache: 'no-store' })).text();
-  return text
-    .replace("const GROUP_CODE = 'CHANGE-ME';", coach.group ? `const GROUP_CODE = ${JSON.stringify(coach.group)};` : "const GROUP_CODE = 'CHANGE-ME';")
-    .replace("const COACH_PASSWORD = 'change-me-too';", `const COACH_PASSWORD = ${JSON.stringify(coach.password)};`);
-}
-
-function renderFix(coach, rows) {
-  const body = view.querySelector('#fix-body');
-  if (!body) return;
-  if ((cache?.version || 1) < 2) {
-    body.innerHTML = `
-      <p><b>Your sheet’s script needs a one-time update first.</b></p>
-      <ol class="steps">
-        <li><button class="btn secondary small-btn" id="copy-filled" type="button">Copy updated script</button>
-          <span class="muted small">(your password${coach.group ? ' and group code are' : ' is'} already filled in${coach.group ? '' : '; set GROUP_CODE yourself'})</span></li>
-        <li>Open your group Google Sheet → <b>Extensions → Apps Script</b>. Select everything in the code, paste over it, and click <b>Save</b>.</li>
-        <li><b>Deploy → Manage deployments</b> → ✏️ <b>Edit</b> → Version: <b>New version</b> → <b>Deploy</b>.
-          (Not “New deployment”: that changes the link and swimmers’ check-ins would stop arriving.)</li>
-      </ol>
-      <div class="actions"><button class="btn secondary" id="recheck" type="button">I’ve updated it – check again</button></div>`;
-    body.querySelector('#copy-filled').onclick = async (ev) => {
-      const btn = ev.target;
-      try {
-        await navigator.clipboard.writeText(await filledScript(coach));
-        btn.textContent = 'Copied';
-      } catch {
-        window.open('apps-script/Code.gs', '_blank');
-      }
-    };
-    body.querySelector('#recheck').onclick = () => { cache = null; renderSettings(coach); };
-    return;
-  }
-
-  const days = trainingReports(rows, todayISO(), 28);
-  if (!days.length) { body.innerHTML = '<p class="muted">No training reported in the last 4 weeks.</p>'; return; }
-  const count = (d) => [['am', 'morning'], ['pm', 'afternoon'], ['weights', 'weights'], ['meet', 'meet']]
-    .filter(([k]) => d[k].length).map(([k, l]) => `${d[k].length} ${l}`).join(' · ');
-  body.innerHTML = `
-    <form id="fix-form" class="stack">
-      <label class="field">Day the session was on
-        <select name="day">${days.map((d) => `<option value="${d.date}">${esc(prettyDate(d.trainedOn))}: ${count(d)}</option>`).join('')}</select></label>
-      <label class="field">Session
-        <select name="part">${Object.entries(PARTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
-      <fieldset class="fix-who"><legend>Remove it for</legend><div id="fix-names"></div></fieldset>
-      <p class="form-error" id="fix-error" role="alert" hidden></p>
-      <button class="btn secondary danger block" type="submit" id="fix-go"></button>
-      <p class="muted small">Swimmers report training the next morning, so this changes the check-ins from the day after.
-        It stays removed even if a swimmer edits that day later.</p>
-    </form>`;
-  const form = body.querySelector('#fix-form');
-  const go = form.querySelector('#fix-go');
-  const day = () => days.find((d) => d.date === form.day.value);
-  const picked = () => [...form.querySelectorAll('[name="who"]:checked')].map((i) => i.value);
-  const label = () => {
-    const n = picked().length;
-    go.disabled = !n;
-    go.dataset.confirm = '';
-    go.textContent = n ? `Remove ${PARTS[form.part.value].toLowerCase()} for ${n} swimmer${n === 1 ? '' : 's'}` : 'Nobody to remove it for';
-  };
-  const names = () => {
-    const who = day()[form.part.value];
-    form.querySelector('#fix-names').innerHTML = who.length
-      ? who.map((w) => `<label class="check"><input type="checkbox" name="who" value="${esc(w.name)}" checked> ${esc(w.name)}</label>`).join('')
-      : `<p class="muted small">Nobody reported ${PARTS[form.part.value].toLowerCase()} that day.</p>`;
-    label();
-  };
-  form.addEventListener('change', (ev) => { if (ev.target.name === 'who') label(); else names(); });
-  names();
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const err = form.querySelector('#fix-error');
-    err.hidden = true;
-    // Two taps: the first asks to confirm.
-    if (!go.dataset.confirm) {
-      go.dataset.confirm = '1';
-      go.textContent = 'Tap again to confirm';
-      return;
-    }
-    go.disabled = true;
-    go.textContent = 'Removing…';
-    const d = day();
-    const part = form.part.value;
-    try {
-      const res = await callSheet(coach.url, { action: 'removeTraining', coachPassword: coach.password, date: d.date, part, athletes: picked() });
-      cache = null;
-      renderSettings(coach, { fixed: `Removed ${PARTS[part].toLowerCase()} on ${prettyDate(d.trainedOn)} for ${res.changed.length} swimmer${res.changed.length === 1 ? '' : 's'}.` });
-    } catch (e) {
-      err.textContent = e.message;
-      err.hidden = false;
-      label();
-    }
-  });
 }
 
 // ------------------------------------------------------------------- login

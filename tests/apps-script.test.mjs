@@ -111,36 +111,3 @@ test('dashboard needs the coach password and returns recent entries', () => {
   assert.deepEqual(d.rows.map((r) => [r.athlete, r.date]), [['Sam', today]]);
   assert.equal(d.rows[0].entry.hrv.rmssd, 88.123);
 });
-
-test('removeTraining takes a session out for the named swimmers, and it stays out when they resend', () => {
-  const app = loadAppsScript();
-  const split = { am: { durationMin: 120, rpe: 5 }, pm: null, weights: true, meet: false, durationMin: 165, rpe: 5 };
-  const send = (athlete, extra = {}) => app.post({ action: 'submit', group: 'EAGLES', athlete, items: [
-    { entry: entry('2026-10-11', { training: split, ...extra }), summary: { ...summary, load: 825 } },
-  ] });
-  send('Sam'); send('Ana'); send('Leo');
-  assert.equal(app.post({ action: 'ping', coachPassword: 'secret' }).version, 2);
-  assert.equal(app.post({ action: 'removeTraining', coachPassword: 'nope', date: '2026-10-11', part: 'am', athletes: ['Sam'] }).ok, false);
-  assert.equal(app.post({ action: 'removeTraining', coachPassword: 'secret', date: '2026-10-11', part: 'lunch', athletes: ['Sam'] }).ok, false);
-
-  const r = app.post({ action: 'removeTraining', coachPassword: 'secret', date: '2026-10-11', part: 'am', athletes: ['sam', 'Ana'] });
-  assert.deepEqual(r, { ok: true, changed: ['Sam', 'Ana'] });
-  const d = app.post({ action: 'dashboard', coachPassword: 'secret', days: 400 });
-  assert.equal(d.version, 2);
-  const t = (name) => d.rows.find((x) => x.athlete === name).entry.training;
-  assert.equal(t('Sam').am, null);
-  assert.equal(t('Sam').durationMin, 45); // just weights left
-  assert.deepEqual(t('Sam').weights, true);
-  assert.notEqual(t('Leo').am, null); // not named, untouched
-  const sh = app.sheets.get('Entries');
-  const col = (name, athlete) => sh.rows.find((row) => row[2] === athlete)[sh.rows[0].indexOf(name)];
-  assert.equal(col('Load', 'Sam'), 225);
-  assert.equal(col('Training min', 'Sam'), 45);
-
-  // Sam edits the day on their phone (still with the morning practice): it stays removed.
-  send('Sam', { notes: 'edited' });
-  const again = app.post({ action: 'dashboard', coachPassword: 'secret', days: 400 }).rows.find((x) => x.athlete === 'Sam').entry;
-  assert.equal(again.notes, 'edited');
-  assert.equal(again.training.am, null);
-  assert.equal(col('Load', 'Sam'), 225);
-});

@@ -4,7 +4,7 @@ A phone web app that tracks an athlete's daily state from two sources:
 
 1. **A short daily questionnaire** (~1 minute) — sleep, fatigue, soreness, stress, mood,
    motivation, injury (kept separate from normal training soreness), and yesterday’s training: morning and afternoon practice (time and effort 1–10), weights, and a meet
-   (light, moderate or hard). Load = minutes × effort; weights count as 45 min at 5, a meet as 1 h at 2 / 3 / 5.
+   (light, moderate or hard). Load = minutes × effort; weights count as 45 min at 5; meets aren't counted in load.
 2. **Camera heart rate & HRV** — the rear camera and flashlight read the pulse through a fingertip
    (photoplethysmography, the same principle as a pulse oximeter), giving resting HR, RMSSD,
    ln RMSSD, SDNN and pNN50.
@@ -100,10 +100,6 @@ What the coach gets:
   same day last week and a usual week (practices, effort, weights, meets, each swimmer's load). **History**
   (7, 14 or 28 days) adds **training vs next-morning readiness**: how readiness moved after light,
   moderate and heavy days, by load and by load relative to each swimmer's own usual.
-- **Corrections**: Settings → *Remove a session that didn't happen* takes a practice (or weights/meet)
-  swimmers reported by mistake out of their check-ins; it stays out if they resend that day. Needs the
-  current sheet script (the dashboard walks you through updating it: paste, then *Manage deployments →
-  Edit → New version*, which keeps the same link).
 - **Entries** tab: one row per athlete per day (readiness, status, flags, every answer, HR/HRV, notes),
   colour-coded. Editing a day updates its row. **Today** tab: today's check-ins, lowest readiness first.
 

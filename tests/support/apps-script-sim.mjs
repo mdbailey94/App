@@ -67,7 +67,7 @@ export function loadAppsScript({ groupCode = 'EAGLES', coachPassword = 'secret' 
   const source = CODE
     .replace("const GROUP_CODE = 'CHANGE-ME';", `const GROUP_CODE = ${JSON.stringify(groupCode)};`)
     .replace("const COACH_PASSWORD = 'change-me-too';", `const COACH_PASSWORD = ${JSON.stringify(coachPassword)};`);
-  const ctx = vm.createContext({ ...globals, JSON, Date, Map, Set, Math, Number, String, Array, Object, isFinite });
+  const ctx = vm.createContext({ ...globals, JSON, Date, Map, Math, Number, String, Array, Object, isFinite });
   vm.runInContext(source, ctx);
   return {
     sheets,

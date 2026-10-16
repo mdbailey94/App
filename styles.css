@@ -285,8 +285,6 @@ code { font-size: 13px; background: var(--bg); padding: 1px 4px; border-radius: 
 .compare-table td { white-space: nowrap; }
 .compare-table .sub-row th { font-weight: 400; padding-left: 14px; color: var(--muted); }
 .compare-table td, .compare-table thead th { text-align: right; }
-.not-in { margin-top: 12px; }
-.not-in h4 { margin: 0 0 4px; }
 .checkin-table td:nth-child(n+2) { white-space: nowrap; }
 .actions > .btn { white-space: nowrap; padding: 0 12px; }
 .qr { max-width: 280px; margin: 12px auto; border-radius: 12px; overflow: hidden; }
@@ -415,7 +413,3 @@ fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 .day-table td.who { white-space: normal; }
 .day-table td, .day-table th, .compare-table td, .compare-table th { padding-left: 4px; padding-right: 4px; }
 .response-table { width: 100%; }
-.fix-who { border: 0; padding: 0; margin: 0; }
-.fix-who legend { margin-bottom: 4px; font-weight: 600; }
-.fix-who .check { display: inline-flex; align-items: center; gap: 6px; margin: 0 14px 6px 0; }
-.fix-done { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--good) 15%, transparent); }

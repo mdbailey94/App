@@ -140,7 +140,7 @@ test('training: morning and afternoon practice, weights and meet, each on its ow
   // No words describing the rating, just the numbers.
   await expect(page.locator('section.training')).not.toContainText(/easy|max|Somewhat|Very hard/i);
   // Weights count as 45 minutes at hard effort (5): 90×4 + 120×8 + 45×5.
-  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1545 AU (minutes × effort; weights count as 45 min, hard; a meet as 1 h)');
+  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1545 AU (minutes × effort; weights count as 45 min, hard)');
   for (const q of ['Weights?', 'Meet?']) {
     const row = page.locator('.yes-no', { hasText: q });
     // The question and both buttons share a row: the question's middle is
@@ -175,10 +175,9 @@ test('a meet asks how hard it was: light, moderate or hard', async ({ page }) =>
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('How hard the meet was');
   await pick(page, 'input[name=meetLevel][value=light]');
-  await expect(page.locator('[data-load-preview=""]')).toContainText('Training load: 120 AU');
   await page.click('button[type=submit]');
   await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toMatchObject({ meet: true, meetLevel: 'light', durationMin: 60, rpe: 2 });
+  expect((await todayEntry(page)).training).toMatchObject({ meet: true, meetLevel: 'light', durationMin: 0, rpe: 0 });
 
   // Editing shows the answer; a No hides the question again.
   await page.goto('/#checkin');
@@ -208,8 +207,7 @@ test.describe('on a Monday', () => {
 
     const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), 'athlete-readiness/entries/v1');
     const sunday = saved.find((e) => e.date === SUNDAY);
-    // The meet counts as 1 h at hard (5): 180 + 60 min, (180×7 + 60×5) / 240 ≈ 7.
-    expect(sunday.training).toEqual({ am: { durationMin: 180, rpe: 7 }, pm: null, weights: false, meet: true, meetLevel: 'hard', durationMin: 240, rpe: 7 });
+    expect(sunday.training).toEqual({ am: { durationMin: 180, rpe: 7 }, pm: null, weights: false, meet: true, meetLevel: 'hard', durationMin: 180, rpe: 7 });
     expect(sunday.wellness).toBeUndefined(); // training only: not a Sunday check-in
     expect(saved.find((e) => e.date === MONDAY).wellness.energy).toBe(5);
     // Making up Saturday keeps the streak going through Sunday: Sat, Sun, Mon.

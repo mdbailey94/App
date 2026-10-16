@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, trainingCompare, trainingReports, recentNotes, reminderText, roster, teamTrend, trendSummary,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
   watchList,
 } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
@@ -217,7 +217,7 @@ test('trainingCompare: yesterday against the same day last week and the usual fo
   // Four previous Mondays-to-be: same session each week; this week Ana goes harder and lifts.
   for (const w of [4, 3, 2, 1]) {
     r.push(day('Ana', 7 * w, { wellness: W7(5), training: sessions([120, 4], [90, 5]) }));
-    r.push(day('Ben', 7 * w, { wellness: W7(5), training: sessions([120, 4], null, { meet: w === 1, meetLevel: 'hard' }) }));
+    r.push(day('Ben', 7 * w, { wellness: W7(5), training: sessions([120, 4], null, { meet: w === 1, meetLevel: 'hard' }) })); // meets don't add load
   }
   r.push(day('Ana', 1, { wellness: W7(5), training: sessions([60, 2], null) })); // a different weekday: ignored
   r.push(day('Ana', 0, { wellness: W7(3), training: sessions([120, 8], [90, 9], { weights: true }) }));
@@ -243,25 +243,10 @@ test('trainingCompare: yesterday against the same day last week and the usual fo
   assert.equal(ana.usualLoad, usual);
   assert.equal(ana.vsWeekAgo, Math.round(((ana.load - usual) / usual) * 100));
   const ben = c.swimmers.find((s) => s.name === 'Ben');
-  assert.equal(ben.weekAgoLoad, 480 + 300); // last week's hard meet: 60 min at 5
-  assert.equal(ben.usualLoad, Math.round((480 * 3 + 780) / 4));
+  assert.equal(ben.weekAgoLoad, 480);
+  assert.equal(ben.usualLoad, 480);
   const cal = c.swimmers.find((s) => s.name === 'Cal');
   assert.deepEqual([cal.weekAgoLoad, cal.usualLoad, cal.vsWeekAgo, cal.vsUsual], [null, null, null, null]);
-});
-
-test('trainingReports: who reported each session, by day, for corrections', () => {
-  const r = [
-    day('Ana', 0, { wellness: W7(5), training: sessions([120, 4], null, { weights: true }) }),
-    day('Ben', 0, { wellness: W7(5), training: sessions([120, 4], [90, 5]) }),
-    day('Ben', 1, { wellness: W7(5), training: sessions(null, null) }), // rest day: nothing to remove
-  ];
-  const out = trainingReports(r, D, 7);
-  assert.equal(out.length, 1);
-  assert.equal(out[0].date, D);
-  assert.equal(out[0].trainedOn, shiftDate(D, -1));
-  assert.deepEqual(out[0].am.map((s) => s.name), ['Ana', 'Ben']);
-  assert.deepEqual(out[0].pm.map((s) => s.name), ['Ben']);
-  assert.deepEqual(out[0].weights.map((s) => s.name), ['Ana']);
 });
 
 test('loadResponse: readiness change after light, moderate and heavy days, absolute and per swimmer', () => {

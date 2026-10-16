@@ -165,7 +165,7 @@ export function wireCheckin(form) {
     const fd = new FormData(form);
     form.querySelectorAll('[data-load-preview]').forEach((el) => {
       const load = sessionLoad(readTraining(fd, el.dataset.loadPreview));
-      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, hard; a meet as 1 h)` : '';
+      el.textContent = load ? `Training load: ${load} AU (minutes × effort; weights count as 45 min, hard)` : '';
     });
   };
   form.addEventListener('input', (ev) => {

@@ -159,7 +159,7 @@ test('compareToUsual: thanks only until 5 earlier check-ins, then today against 
   assert.equal(compareToUsual([...swingy, day(0, 3)], '2026-10-02').level, 'same');
 });
 
-test('training split into practices; weights count as 45 min at hard (5); a meet counts by how hard it was', () => {
+test('training split into practices; weights count as 45 min at hard (5); a meet records how hard it was', () => {
   const t = trainingFrom({ am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false });
   assert.equal(t.durationMin, 255); // 90 + 120 + 45 for weights
   assert.equal(t.rpe, 6); // (90×4 + 120×8 + 45×5) / 255 = 6.1
@@ -174,13 +174,13 @@ test('training split into practices; weights count as 45 min at hard (5); a meet
   assert.equal(sessionLoad(restDay), 0);
   assert.equal(sessionRpe(restDay, 'am'), null);
 
-  // A meet counts as 60 min at light (2), moderate (3) or hard (5); meets
-  // reported before the question was asked count as moderate.
+  // How hard a meet was is kept (earlier meets count as moderate), but meets
+  // aren't counted in load.
   const meet = (level) => trainingFrom({ am: null, pm: null, meet: true, meetLevel: level });
-  assert.deepEqual(['light', 'moderate', 'hard'].map((l) => sessionLoad(meet(l))), [120, 180, 300]);
+  assert.deepEqual(['light', 'moderate', 'hard'].map((l) => sessionLoad(meet(l))), [0, 0, 0]);
   assert.equal(meet('hard').meetLevel, 'hard');
   assert.equal(meet(undefined).meetLevel, 'moderate');
-  assert.equal(sessionLoad({ am: { durationMin: 60, rpe: 4 }, pm: null, weights: false, meet: true }), 240 + 180);
+  assert.equal(meet('hard').durationMin, 0);
   assert.equal('meetLevel' in trainingFrom({ am: null, pm: null, meet: false, meetLevel: 'hard' }), false);
 
   // Older check-ins: one number for the whole day, no per-session effort.

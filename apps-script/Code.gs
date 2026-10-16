@@ -12,10 +12,6 @@ const GROUP_CODE = 'CHANGE-ME';
 // The coach dashboard needs this password to read the group's data.
 const COACH_PASSWORD = 'change-me-too';
 
-// Bumped when the script gains features the dashboard needs; it asks the
-// coach to update when the sheet runs an older copy.
-const SCRIPT_VERSION = 2;
-
 const ENTRIES = 'Entries';
 const TODAY = 'Today';
 const HEADERS = [
@@ -40,7 +36,6 @@ function doPost(e) {
     if (req.action === 'ping') return json_(ping_(req));
     if (req.action === 'submit') return json_(submit_(req));
     if (req.action === 'dashboard') return json_(dashboard_(req));
-    if (req.action === 'removeTraining') return json_(removeTraining_(req));
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
@@ -65,7 +60,7 @@ function sameCode_(a, b) {
 
 function ping_(req) {
   if (req.coachPassword !== undefined) {
-    return req.coachPassword === COACH_PASSWORD ? { ok: true, role: 'coach', version: SCRIPT_VERSION } : { ok: false, error: 'Wrong coach password.' };
+    return req.coachPassword === COACH_PASSWORD ? { ok: true, role: 'coach' } : { ok: false, error: 'Wrong coach password.' };
   }
   return sameCode_(req.group, GROUP_CODE) ? { ok: true, role: 'athlete' } : { ok: false, error: 'Wrong group code.' };
 }
@@ -99,7 +94,7 @@ function toRow_(athlete, entry, summary) {
     num_(w.stress), num_(w.mood), num_(w.motivation),
     num_(entry.pain && entry.pain.level), text_(entry.pain && entry.pain.location),
     text_((entry.illness || []).join(', ')),
-    num_(t.durationMin), num_(t.rpe), num_(entry.coachEdits ? load_(t) : s.load),
+    num_(t.durationMin), num_(t.rpe), num_(s.load),
     num_(h.hr, 1), num_(h.rmssd, 1), num_(h.lnRmssd, 3), text_(h.quality),
     text_(entry.notes),
     JSON.stringify(entry),
@@ -172,12 +167,7 @@ function submit_(req) {
     for (const it of valid) {
       const row = toRow_(athlete, it.entry, it.summary);
       const at = rowOf.get(athlete.toLowerCase() + '|' + it.entry.date);
-      if (at) {
-        // Corrections the coach made to this day stay made when the swimmer resends it.
-        const edits = storedEntry_(sh, at).coachEdits;
-        const entry = edits ? applyEdits_(it.entry, edits) : it.entry;
-        sh.getRange(at, 1, 1, row.length).setValues([edits ? toRow_(athlete, entry, it.summary) : row]);
-      }
+      if (at) sh.getRange(at, 1, 1, row.length).setValues([row]);
       else appended.push(row);
     }
     if (appended.length) {
@@ -195,7 +185,7 @@ function dashboard_(req) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const sh = entriesSheet_();
   const last = sh.getLastRow();
-  if (last < 2) return { ok: true, rows: [], version: SCRIPT_VERSION };
+  if (last < 2) return { ok: true, rows: [] };
   const values = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
   const rows = [];
   for (const v of values) {
@@ -205,79 +195,5 @@ function dashboard_(req) {
     try { entry = JSON.parse(v[COL.Data - 1]); } catch (err) { continue; }
     rows.push({ athlete: String(v[COL.Athlete - 1]).replace(/^'/, ''), date, entry });
   }
-  return { ok: true, rows, version: SCRIPT_VERSION };
-}
-
-function storedEntry_(sh, row) {
-  try { return JSON.parse(sh.getRange(row, COL.Data, 1, 1).getValues()[0][0]) || {}; } catch (err) { return {}; }
-}
-
-// Training load as the app counts it (src/readiness.js): minutes × effort for
-// each practice; weights as 45 min at 5; a meet as 60 min at 2 / 3 / 5.
-const WEIGHTS = { durationMin: 45, rpe: 5 };
-const MEET_RPE = { light: 2, moderate: 3, hard: 5 };
-const PARTS = ['am', 'pm', 'weights', 'meet'];
-function sessions_(t) {
-  if (!t) return [];
-  if (!('am' in t) && !('pm' in t)) return [t];
-  return [t.am, t.pm, t.weights && WEIGHTS, t.meet && { durationMin: 60, rpe: MEET_RPE[t.meetLevel] || MEET_RPE.moderate }]
-    .filter((p) => p && p.durationMin > 0 && p.rpe >= 0);
-}
-function load_(t) {
-  return sessions_(t).reduce((n, p) => n + Math.round(p.durationMin * p.rpe), 0);
-}
-
-// Takes a session out of an entry's training ('am', 'pm', 'weights', 'meet')
-// and recomputes the day's totals. Entries from before practices were split
-// are left alone.
-function applyEdits_(entry, edits) {
-  const t = entry.training;
-  const out = Object.assign({}, entry, { coachEdits: edits.slice() });
-  if (!t || (!('am' in t) && !('pm' in t))) return out;
-  const nt = Object.assign({}, t);
-  edits.forEach((part) => {
-    if (part === 'am' || part === 'pm') nt[part] = null;
-    if (part === 'weights') nt.weights = false;
-    if (part === 'meet') { nt.meet = false; delete nt.meetLevel; }
-  });
-  const list = sessions_(nt);
-  nt.durationMin = list.reduce((n, p) => n + p.durationMin, 0);
-  nt.rpe = nt.durationMin ? Math.round(list.reduce((n, p) => n + p.durationMin * p.rpe, 0) / nt.durationMin) : 0;
-  out.training = nt;
-  return out;
-}
-
-// Coach correction: remove a session that didn't happen (e.g. a morning
-// practice swimmers reported on a day off) from the check-ins dated `date`,
-// for the named athletes.
-function removeTraining_(req) {
-  if (req.coachPassword !== COACH_PASSWORD) return { ok: false, error: 'Wrong coach password.' };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(req.date))) return { ok: false, error: 'Bad date.' };
-  if (PARTS.indexOf(req.part) < 0) return { ok: false, error: 'Bad session.' };
-  const names = (Array.isArray(req.athletes) ? req.athletes : []).map((n) => String(n).trim().toLowerCase());
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  const changed = [];
-  try {
-    const sh = entriesSheet_();
-    const last = sh.getLastRow();
-    if (last < 2) return { ok: true, changed };
-    const values = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
-    values.forEach((v, i) => {
-      const athlete = String(v[COL.Athlete - 1]).replace(/^'/, '');
-      if (String(v[COL.Date - 1]) !== req.date || names.indexOf(athlete.toLowerCase()) < 0) return;
-      let entry;
-      try { entry = JSON.parse(v[COL.Data - 1]); } catch (err) { return; }
-      const edits = (entry.coachEdits || []).filter((p) => p !== req.part).concat(req.part);
-      const fixed = applyEdits_(entry, edits);
-      const t = fixed.training || {};
-      const row = i + 2;
-      sh.getRange(row, COL['Training min'], 1, 3).setValues([[num_(t.durationMin), num_(t.rpe), num_(load_(t))]]);
-      sh.getRange(row, COL.Data, 1, 1).setValues([[JSON.stringify(fixed)]]);
-      changed.push(athlete);
-    });
-  } finally {
-    lock.releaseLock();
-  }
-  return { ok: true, changed };
+  return { ok: true, rows };
 }
