@@ -91,7 +91,7 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(page.locator('#not-in li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
 
   // Check-ins: readiness, and its change since yesterday and against their usual.
-  await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual', 'HRV']);
+  await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual']);
   await expect(page.locator('.checkin-table tbody tr:not(.flag-row)')).toHaveCount(5);
   // Sam gave the same answers as yesterday.
   const sam = page.locator('.checkin-table tr', { hasText: 'Sam Lee' });
