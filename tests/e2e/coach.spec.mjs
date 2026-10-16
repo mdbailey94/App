@@ -125,9 +125,10 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await page.goto('/coach.html#history');
 
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(7);
-  // Readiness with the day before's load under it, one bar per day.
+  // Readiness with the day before's load under it, one bar per day with 6+
+  // swimmers (only 5 checked in today, so today has none).
   await expect(page.locator('[data-t="readyLoad"] .series-line')).toHaveCount(1);
-  await expect(page.locator('[data-t="readyLoad"] .series-bar')).toHaveCount(7);
+  await expect(page.locator('[data-t="readyLoad"] .series-bar')).toHaveCount(6);
   await expect(page.locator('[data-t="readyLoad"] .panel-title')).toHaveText(['Readiness', 'Load the day before']);
   await page.click('.seg a:has-text("14 days")');
   await expect(page).toHaveURL(/t=14/);

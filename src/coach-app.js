@@ -284,8 +284,8 @@ function renderHistory({ rows, query }) {
       </div>
       <p class="muted small">Last ${span} days; arrows compare with the ${span} days before.</p>
       <div class="trend-block" id="ready-load"><h4>Readiness and the day before’s training</h4>
-        <p class="muted small">Each morning’s average readiness (days with 3+ check-ins), and under it the average load
-          swimmers reported that morning for the day before (rest days count as 0).</p>
+        <p class="muted small">Each morning’s average readiness, and under it the average load swimmers reported that
+          morning for the day before (rest days count as 0). Days with fewer than 6 swimmers are left out.</p>
         <div data-t="readyLoad"></div></div>
       <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
       ${refreshLine(`#history?t=${span}`)}
