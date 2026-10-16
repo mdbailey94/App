@@ -265,3 +265,123 @@ export function roster(rows, date, { activeDays = 21 } = {}) {
     .filter(Boolean)
     .sort((x, y) => x.name.localeCompare(y.name));
 }
+
+// ---- the day before: training, and readiness on the morning after
+
+const isSplitTraining = (t) => Boolean(t) && ('am' in t || 'pm' in t);
+const round1 = (v) => (v === null ? null : +v.toFixed(1));
+const scoreOn = (entries, date) => assessDay(entries, date).score;
+
+// Training reported on `date` (so done the day before) and how each swimmer's
+// readiness moved. Per swimmer:
+//   training, load, usualLoad (their average load reported over the 7 days
+//   before), loadChange (% vs usual), score (readiness on `date`),
+//   prevScore (their previous check-in), usualScore (average of their
+//   check-ins in the 7 days before; needs 3), vsPrev, vsUsual.
+// Team: how many swam each practice, average time and effort, weights and
+// meet counts, average load against the 7 days before, and average readiness
+// against yesterday and the 7 days before.
+export function dayBefore(rows, date) {
+  const athletes = groupByAthlete(rows);
+  const weekFrom = shiftDate(date, -7);
+  const swimmers = [];
+  for (const a of athletes.values()) {
+    const upTo = a.entries.filter((e) => e.date <= date);
+    const today = upTo.find((e) => e.date === date);
+    const before = upTo.filter((e) => e.date >= weekFrom && e.date < date);
+    const loadsBefore = before.filter((e) => e.training).map((e) => sessionLoad(e.training));
+    const scoresBefore = before.filter(isCheckIn).map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
+    const prev = upTo.filter((e) => e.date < date && isCheckIn(e)).at(-1);
+    const score = today && isCheckIn(today) ? scoreOn(upTo, date) : null;
+    const prevScore = prev ? scoreOn(upTo, prev.date) : null;
+    const usualScore = scoresBefore.length >= 3 ? avg(scoresBefore) : null;
+    const load = today?.training ? sessionLoad(today.training) : null;
+    const usualLoad = loadsBefore.length >= 3 ? avg(loadsBefore) : null;
+    if (!today && !before.length) continue; // not active this week
+    swimmers.push({
+      key: a.key,
+      name: a.name,
+      training: today?.training ?? null,
+      load,
+      usualLoad: usualLoad === null ? null : Math.round(usualLoad),
+      loadChange: load !== null && usualLoad > 0 ? Math.round(((load - usualLoad) / usualLoad) * 100) : null,
+      score,
+      prevScore,
+      usualScore: usualScore === null ? null : Math.round(usualScore),
+      vsPrev: score !== null && prevScore !== null ? score - prevScore : null,
+      vsUsual: score !== null && usualScore !== null ? Math.round(score - usualScore) : null,
+    });
+  }
+  swimmers.sort((x, y) => x.name.localeCompare(y.name));
+
+  const trainings = swimmers.map((s) => s.training).filter(isSplitTraining);
+  const practice = (k) => {
+    const went = trainings.map((t) => t[k]).filter((p) => p?.durationMin > 0);
+    return {
+      count: went.length,
+      avgMin: went.length ? Math.round(avg(went.map((p) => p.durationMin))) : null,
+      avgRpe: went.length ? round1(avg(went.map((p) => p.rpe))) : null,
+    };
+  };
+  const loads = swimmers.map((s) => s.load).filter((v) => v !== null);
+  // The team's average load on each of the 7 days before, then averaged.
+  const prevDays = Array.from({ length: 7 }, (_, i) => shiftDate(date, -(i + 1)));
+  const dailyLoad = prevDays.map((d) => {
+    const vals = [...athletes.values()].map((a) => a.entries.find((e) => e.date === d)?.training).filter(Boolean).map(sessionLoad);
+    return vals.length ? avg(vals) : null;
+  }).filter((v) => v !== null);
+  const teamScore = (d) => dayOf(athletes, d).avgReadiness;
+  const dailyScore = prevDays.map(teamScore).filter((v) => v !== null);
+  const avgLoad = loads.length ? Math.round(avg(loads)) : null;
+  const avgLoad7 = dailyLoad.length ? Math.round(avg(dailyLoad)) : null;
+  const team = {
+    reported: loads.length,
+    am: practice('am'),
+    pm: practice('pm'),
+    weights: trainings.filter((t) => t.weights).length,
+    meet: trainings.filter((t) => t.meet).length,
+    avgLoad,
+    avgLoad7,
+    loadChange: avgLoad !== null && avgLoad7 > 0 ? Math.round(((avgLoad - avgLoad7) / avgLoad7) * 100) : null,
+    readiness: teamScore(date),
+    readinessYesterday: teamScore(shiftDate(date, -1)),
+    readiness7: dailyScore.length ? Math.round(avg(dailyScore)) : null,
+  };
+  return { date, trainedOn: shiftDate(date, -1), team, swimmers };
+}
+
+// Does training show up in the next morning's readiness? Over the last `days`
+// days, pair each check-in's reported training load with how that swimmer's
+// readiness changed from their previous check-in, then group the loads into
+// light / moderate / heavy thirds. An association, not proof: other things
+// (sleep, school, meets) move readiness too. Needs `minPairs` pairs.
+export function loadResponse(rows, date, { days = 28, minPairs = 15 } = {}) {
+  const from = shiftDate(date, -(days - 1));
+  const pairs = [];
+  for (const a of groupByAthlete(rows).values()) {
+    const checkIns = a.entries.filter(isCheckIn);
+    for (let i = 1; i < checkIns.length; i++) {
+      const e = checkIns[i];
+      if (e.date < from || e.date > date || !e.training) continue;
+      const now = scoreOn(a.entries, e.date);
+      const prev = scoreOn(a.entries, checkIns[i - 1].date);
+      if (Number.isFinite(now) && Number.isFinite(prev)) pairs.push({ load: sessionLoad(e.training), change: now - prev });
+    }
+  }
+  if (pairs.length < minPairs) return { enough: false, pairs: pairs.length, needed: minPairs };
+  // Equal thirds by load (by rank, so days with the same load can't empty a group).
+  pairs.sort((x, y) => x.load - y.load);
+  const third = Math.round(pairs.length / 3);
+  const bucket = (b) => ({
+    n: b.length,
+    change: round1(avg(b.map((p) => p.change))),
+    loads: [b[0].load, b.at(-1).load],
+  });
+  return {
+    enough: true,
+    pairs: pairs.length,
+    light: bucket(pairs.slice(0, third)),
+    moderate: bucket(pairs.slice(third, pairs.length - third)),
+    heavy: bucket(pairs.slice(pairs.length - third)),
+  };
+}

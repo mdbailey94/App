@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkinGrid, groupByAthlete, groupDay, recentNotes, reminderText, roster, teamTrend, trendSummary, watchList,
+  checkinGrid, dayBefore, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trendSummary,
+  watchList,
 } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
 import { shiftDate, trainingFrom } from '../src/readiness.js';
@@ -185,4 +186,59 @@ test('teamTrend: average effort per practice over those who went, and weights / 
   // Training-only entries are not check-ins.
   assert.equal(t.checkedIn, 3);
   assert.deepEqual(groupDay(r, D).checkedIn.map((c) => c.name).sort(), ['A', 'B', 'C']);
+});
+
+const W7 = (v) => ({ sleepHours: 8, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
+const sessions = (am, pm, extra = {}) => trainingFrom({ am: am && { durationMin: am[0], rpe: am[1] }, pm: pm && { durationMin: pm[0], rpe: pm[1] }, ...extra });
+
+test('dayBefore: what the team did yesterday, each swimmer against their usual', () => {
+  const usualWeek = (name, v = 5) => [7, 6, 5, 4, 3, 2, 1].map((n) => day(name, n, { wellness: W7(v), training: sessions([120, 4], [90, 5]) }));
+  const r = [
+    ...usualWeek('Ana'), day('Ana', 0, { wellness: W7(3), training: sessions([120, 8], [90, 9], { weights: true }) }),
+    ...usualWeek('Ben'), day('Ben', 0, { wellness: W7(5), training: sessions([120, 4], null, { meet: true }) }),
+    ...usualWeek('Cal'), // didn't check in today
+  ];
+  const d = dayBefore(r, D);
+  assert.equal(d.trainedOn, shiftDate(D, -1));
+  assert.deepEqual(d.team.am, { count: 2, avgMin: 120, avgRpe: 6 });
+  assert.deepEqual(d.team.pm, { count: 1, avgMin: 90, avgRpe: 9 });
+  assert.equal(d.team.weights, 1);
+  assert.equal(d.team.meet, 1);
+  assert.equal(d.team.reported, 2);
+  const usual = 120 * 4 + 90 * 5;
+  assert.equal(d.team.avgLoad7, usual);
+
+  const ana = d.swimmers.find((s) => s.name === 'Ana');
+  assert.equal(ana.load, 120 * 8 + 90 * 9 + 45 * 5);
+  assert.equal(ana.usualLoad, usual);
+  assert.equal(ana.loadChange, Math.round(((ana.load - usual) / usual) * 100));
+  assert.ok(ana.vsPrev < 0 && ana.vsUsual < 0); // readiness down after the hard day
+  assert.equal(ana.vsPrev, ana.score - ana.prevScore);
+
+  const cal = d.swimmers.find((s) => s.name === 'Cal');
+  assert.equal(cal.load, null);
+  assert.equal(cal.score, null);
+  // Team readiness against yesterday: Ana's drop pulls the average down.
+  assert.ok(d.team.readiness < d.team.readinessYesterday);
+});
+
+test('loadResponse: readiness change after light, moderate and heavy days', () => {
+  const r = [];
+  for (const name of ['A', 'B', 'C', 'D']) {
+    for (let n = 20; n >= 0; n--) {
+      const heavy = n % 3 === 0;
+      const light = n % 3 === 1;
+      r.push(day(name, n, {
+        wellness: W7(heavy ? 3 : light ? 6 : 5),
+        training: heavy ? sessions([180, 9], [120, 9]) : light ? sessions([60, 2], null) : sessions([120, 5], null),
+      }));
+    }
+  }
+  const out = loadResponse(r, D);
+  assert.equal(out.enough, true);
+  assert.ok(out.heavy.change < 0, 'readiness drops after heavy days');
+  assert.ok(out.light.change > 0, 'and rises after light ones');
+  assert.ok(out.light.loads[1] <= out.moderate.loads[0] && out.moderate.loads[1] <= out.heavy.loads[0]);
+  assert.equal(out.light.n + out.moderate.n + out.heavy.n, out.pairs);
+  assert.deepEqual(loadResponse(r.slice(0, 5), D), { enough: false, pairs: 4, needed: 15 });
 });

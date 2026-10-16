@@ -8,12 +8,11 @@
 import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
-  checkinGrid, groupByAthlete, groupDay, recentNotes, reminderText, roster, teamTrend, trendSummary, watchList,
+  checkinGrid, dayBefore, loadResponse, groupByAthlete, groupDay, recentNotes, reminderText, roster, teamTrend, trendSummary, watchList,
 } from './group.js';
 import { assessDay, sessionLoad, sessionRpe, shiftDate, wellnessScore } from './readiness.js';
-import { dayIndex, esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
+import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
 import { barChart, lineChart } from './charts.js';
-import qrcode from './vendor/qrcode.js';
 
 const view = document.getElementById('view');
 const tabs = document.getElementById('coach-tabs');
@@ -21,13 +20,12 @@ const tabs = document.getElementById('coach-tabs');
 // Links for swimmers point at the swimmer app, next to this page.
 const appUrl = () => new URL('./', location.href).href;
 
-// Invite link as a QR code (SVG, dark on white so it scans in dark mode too).
-function qrSvg(text) {
-  const qr = qrcode(0, 'M'); // smallest size that fits, medium error correction
-  qr.addData(text);
-  qr.make();
-  return qr.createSvgTag({ cellSize: 4, margin: 16, scalable: true, alt: 'QR code: invite link to join the group' });
-}
+// The invite: QR code, the link itself, and a share/copy button.
+const inviteBlock = (link) => `<p class="muted small">Swimmers scan this with their phone camera, or you send them the link.
+        It fills in the group details; they just add their name.</p>
+        <div class="qr">${qrSvg(link)}</div>
+        <input class="copy-field" id="invite" readonly value="${esc(link)}">
+        <div class="actions"><button class="btn secondary" id="copy-invite">${navigator.share ? 'Share link' : 'Copy link'}</button></div>`;
 
 // Flags are worded for the athlete ("your baseline"); reword for the coach.
 const theirs = (text) => text.replace(/\byour\b/g, 'their');
@@ -45,6 +43,20 @@ function effortCell(t) {
   const tags = [t.weights && '<span class="tag">Wt</span>', t.meet && '<span class="tag tag-meet">Meet</span>'].filter(Boolean).join('');
   return `${am ?? '–'} · ${sessionRpe(t, 'pm') ?? '–'}${tags ? `<br>${tags}` : ''}`;
 }
+
+// +5 / −3 / 0, with an arrow; bold when it's a big move.
+function delta(v, { unit = '', big = 10 } = {}) {
+  if (v === null || v === undefined) return '<span class="muted">–</span>';
+  const arrow = v > 0 ? '▲' : v < 0 ? '▼' : '';
+  const text = `${arrow}${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}${unit}`;
+  return `<span class="delta ${v < 0 ? 'down' : v > 0 ? 'up' : ''} ${Math.abs(v) >= big ? 'big' : ''}">${text}</span>`;
+}
+const shortTime = (min) => {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}${m === 30 ? '½' : m ? `:${String(m).padStart(2, '0')}` : ''}h` : `${m}m`;
+};
+const practiceCell = (p) => (p?.durationMin > 0 ? `${shortTime(p.durationMin)} · ${p.rpe}` : '–');
+const sessionTags = (t) => [t?.weights && '<span class="tag">Wt</span>', t?.meet && '<span class="tag tag-meet">Meet</span>'].filter(Boolean).join('');
 
 const athleteLink = (key, name) => `<a href="#swimmers/${encodeURIComponent(key)}">${esc(name)}</a>`;
 
@@ -119,6 +131,12 @@ function renderGroup({ rows, query }) {
   const date = query.get('d') || todayISO();
   const day = groupDay(rows, date);
   const watch = watchList(rows, date);
+  const before = dayBefore(rows, date);
+  const t = before.team;
+  const trained = before.swimmers.filter((s) => s.load !== null).sort((x, y) => y.load - x.load);
+  const moved = before.swimmers.filter((s) => s.score !== null)
+    .sort((x, y) => (x.vsUsual ?? x.vsPrev ?? 0) - (y.vsUsual ?? y.vsPrev ?? 0));
+  const ttl = (p) => (p.count ? `avg ${shortTime(p.avgMin)} · effort ${p.avgRpe}` : 'nobody reported it');
   const hrvCell = (c) => {
     const e = c.entry.hrv;
     if (!e) return '–';
@@ -137,9 +155,56 @@ function renderGroup({ rows, query }) {
       <div class="stats">
         <div><span class="stat-num">${day.checkedIn.length}/${day.total}</span><span class="stat-label">checked in</span></div>
         <div><span class="stat-num">${day.needAttention}</span><span class="stat-label">need attention</span></div>
-        <div><span class="stat-num">${day.avgReadiness ?? '–'}</span><span class="stat-label">avg readiness</span></div>
+        <div><span class="stat-num">${day.avgReadiness ?? '–'}</span><span class="stat-label">avg readiness ${t.readiness !== null && t.readinessYesterday !== null ? delta(t.readiness - t.readinessYesterday, { big: 5 }) : ''}</span></div>
       </div>
       ${refreshLine(`#group?d=${date}`)}
+    </section>
+
+    <section class="card" id="day-before">
+      <h3>Yesterday’s training</h3>
+      <p class="muted small">${esc(prettyDate(before.trainedOn))}, as reported in ${esc(date === todayISO() ? 'this morning’s' : `${prettyDate(date)}’s`)} check-ins
+        (${t.reported} swimmer${t.reported === 1 ? '' : 's'}).</p>
+      ${t.reported ? `<div class="stats small-stats">
+        <div><span class="stat-num">${t.am.count}</span><span class="stat-label">at morning practice<br><span class="muted">${ttl(t.am)}</span></span></div>
+        <div><span class="stat-num">${t.pm.count}</span><span class="stat-label">at afternoon practice<br><span class="muted">${ttl(t.pm)}</span></span></div>
+        <div><span class="stat-num">${t.avgLoad ?? '–'}</span><span class="stat-label">avg load ${delta(t.loadChange, { unit: '%', big: 25 })}<br><span class="muted">7-day avg ${t.avgLoad7 ?? '–'}</span></span></div>
+      </div>
+      <p class="small">${t.weights} lifted · ${t.meet} raced</p>
+      <div class="table-wrap"><table class="group-table day-table">
+        <thead><tr><th>Swimmer</th><th>AM<br><span class="th-sub">time · effort</span></th><th>PM<br><span class="th-sub">time · effort</span></th><th>Load</th><th>vs usual</th></tr></thead>
+        <tbody>${trained.map((s) => `
+          <tr>
+            <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
+            <td class="effort">${s.training && 'am' in s.training ? practiceCell(s.training.am) : '<span title="Whole day">?</span>'}</td>
+            <td class="effort">${s.training && 'pm' in s.training ? practiceCell(s.training.pm) : ''}</td>
+            <td><b>${s.load}</b></td>
+            <td>${delta(s.loadChange, { unit: '%', big: 25 })}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      <p class="muted small">Heaviest first. Load = minutes × effort (weights count as 45 min at 5).
+        vs usual = against that swimmer’s average load over the 7 days before.</p>`
+    : '<p class="muted">No training reported yet.</p>'}
+    </section>
+
+    <section class="card" id="readiness-change">
+      <h3>Readiness change</h3>
+      <div class="stats small-stats">
+        <div><span class="stat-num">${t.readiness ?? '–'}</span><span class="stat-label">team average</span></div>
+        <div><span class="stat-num">${delta(t.readiness !== null && t.readinessYesterday !== null ? t.readiness - t.readinessYesterday : null, { big: 5 })}</span><span class="stat-label">vs yesterday (${t.readinessYesterday ?? '–'})</span></div>
+        <div><span class="stat-num">${delta(t.readiness !== null && t.readiness7 !== null ? t.readiness - t.readiness7 : null, { big: 5 })}</span><span class="stat-label">vs 7-day avg (${t.readiness7 ?? '–'})</span></div>
+      </div>
+      ${moved.length ? `<div class="table-wrap"><table class="group-table day-table">
+        <thead><tr><th>Swimmer</th><th>Today</th><th>vs last</th><th>vs usual</th></tr></thead>
+        <tbody>${moved.map((s) => `
+          <tr>
+            <td class="who">${athleteLink(s.key, s.name)}</td>
+            <td><b>${s.score}</b></td>
+            <td>${delta(s.vsPrev)}</td>
+            <td>${delta(s.vsUsual)}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      <p class="muted small">Biggest drops first. vs last = since their previous check-in; vs usual = against their average
+        over the 7 days before (needs 3 check-ins).</p>` : '<p class="muted">No check-ins yet.</p>'}
     </section>
 
     <section class="card">
@@ -189,6 +254,7 @@ function renderHistory({ rows, query }) {
   const now = trendSummary(trend);
   const prev = trendSummary(teamTrend(rows, shiftDate(date, -span), span));
   const grid = checkinGrid(rows, date, 14);
+  const resp = loadResponse(rows, date);
   const change = (a, b, unit = '') => (a === null || b === null || a === b ? ''
     : ` <span class="muted small">${a > b ? '▲' : '▼'} ${+Math.abs(a - b).toFixed(1)}${unit}</span>`);
   const cell = (c) => {
@@ -224,6 +290,19 @@ function renderHistory({ rows, query }) {
       <div class="trend-block"><h4>Morning practice</h4><div data-t="rpeAm"></div></div>
       <div class="trend-block"><h4>Afternoon practice</h4><div data-t="rpePm"></div></div>
       <p class="muted small">Each bar is the day the session happened (swimmers report it the next morning).</p>
+    </section>
+
+    <section class="card" id="load-response">
+      <h3>Training vs next-morning readiness</h3>
+      ${resp.enough ? `<p class="muted small">Last 28 days: each check-in’s training load (the day before) against how that
+        swimmer’s readiness changed since their previous check-in. ${resp.pairs} check-ins, split into thirds by load.</p>
+      <table class="group-table response-table">
+        <thead><tr><th>Day before</th><th>Load</th><th>Readiness change</th></tr></thead>
+        <tbody>${[['Light', resp.light], ['Moderate', resp.moderate], ['Heavy', resp.heavy]].map(([label, b]) => `
+          <tr><td><b>${label}</b></td><td class="muted">${b.loads[0]}–${b.loads[1]}</td><td>${delta(b.change, { big: 5 })} <span class="muted small">avg of ${b.n}</span></td></tr>`).join('')}
+        </tbody></table>
+      <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>`
+    : `<p class="muted">Shows once there are ${resp.needed} check-ins with training and a previous check-in to compare (${resp.pairs} so far).</p>`}
     </section>
 
     <section class="card">
@@ -362,12 +441,7 @@ function renderMessages({ coach, rows, query }) {
 
     <section class="card">
       <h3>Invite swimmers</h3>
-      ${link ? `<p class="muted small">Swimmers scan this with their phone camera, or you send them the link.
-        It fills in the group details; they just add their name.</p>
-        <div class="qr">${qrSvg(link)}</div>
-        <input class="copy-field" id="invite" readonly value="${esc(link)}">
-        <div class="actions"><button class="btn secondary" id="copy-invite">${navigator.share ? 'Share link' : 'Copy link'}</button></div>`
-    : '<p class="muted small">Add your group code in Settings to get an invite link and QR code.</p>'}
+      ${link ? inviteBlock(link) : '<p class="muted small">Add your group code in Settings to get an invite link and QR code.</p>'}
     </section>`;
 
   wireShare(view, '#send-direct', '#direct-text', 'Copied – paste it in a message');
@@ -461,7 +535,48 @@ function renderLogin() {
       </form>
       <p class="muted small">Your password is remembered on this device only. Use Sign out on shared devices.</p>
       <p class="small"><a href="./">‹ Back to the swimmer app</a></p>
+    </section>
+
+    <section class="card" id="qr-only">
+      <h3>Just need the invite QR code?</h3>
+      <p class="muted small">No password needed: the web app URL and your group code are enough to make the code
+        swimmers scan to join. (Your group code is the <code>GROUP_CODE</code> line in the sheet’s Apps Script.)</p>
+      <form id="qr-form" class="stack">
+        <label class="field">Web app URL <input name="url" type="url" required placeholder="https://script.google.com/macros/s/…/exec"></label>
+        <label class="field">Group code <input name="group" required autocomplete="off"></label>
+        <p class="form-error" id="qr-error" role="alert" hidden></p>
+        <button class="btn secondary block" type="submit">Make QR code</button>
+      </form>
+      <div id="qr-result" hidden></div>
     </section>`;
+  view.querySelector('#qr-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const err = view.querySelector('#qr-error');
+    const out = view.querySelector('#qr-result');
+    const url = f.url.value.trim();
+    const group = f.group.value.trim();
+    err.hidden = true;
+    if (!isValidSheetUrl(url)) {
+      err.textContent = 'The web app URL should start with https://script.google.com/';
+      err.hidden = false;
+      return;
+    }
+    const btn = f.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      await callSheet(url, { action: 'ping', group }); // the sheet confirms the group code
+      out.innerHTML = inviteBlock(inviteLink(appUrl(), url, group));
+      out.hidden = false;
+      wireShare(out, '#copy-invite', '#invite');
+      out.scrollIntoView({ block: 'start' });
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Make QR code';
+    }
+  });
   view.querySelector('#copy-script').onclick = async (ev) => {
     const btn = ev.target;
     try {

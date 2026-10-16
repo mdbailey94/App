@@ -86,13 +86,18 @@ The group's data lives in a Google Sheet the coach owns, via a small Apps Script
 2. Set `GROUP_CODE` (athletes type it) and `COACH_PASSWORD` (dashboard access) at the top. Save.
 3. **Deploy → New deployment → Web app**, *Execute as: Me*, *Who has access: Anyone*. Authorize.
 4. In the app, open Team → coach dashboard, paste the web app URL, password and group code.
-5. Athletes scan the **QR code** on the dashboard (or you send them the invite link).
+5. Athletes scan the **QR code** on the dashboard (or you send them the invite link). The coach sign-in
+   screen can also make the QR code from just the web app URL and group code (no password), and swimmers
+   already in the group can show teammates an invite QR on their Team tab.
 
 What the coach gets:
 
 - **Coach dashboard**: per day, who checked in (worst readiness first, with flags for injury,
   short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
-  athlete's trends and notes.
+  athlete's trends and notes. **Yesterday's training** (who did morning/afternoon practice, weights,
+  meets, each swimmer's load against their usual), **Readiness change** (team and per swimmer, vs
+  their last check-in and their 7-day average) and, on History, **training vs next-morning readiness**
+  (how readiness moved after light, moderate and heavy days).
 - **Entries** tab: one row per athlete per day (readiness, status, flags, every answer, HR/HRV, notes),
   colour-coded. Editing a day updates its row. **Today** tab: today's check-ins, lowest readiness first.
 
