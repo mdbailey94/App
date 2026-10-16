@@ -2,8 +2,8 @@
 // The coach dashboard itself is a separate page (coach.html, src/coach-app.js).
 
 import { loadTeam, resetSync, saveTeam } from './storage.js';
-import { addressDetails, callSheet, isValidSheetUrl, memberAddress, syncPending, syncStatus } from './team.js';
-import { esc, statusBadge } from './ui.js';
+import { addressDetails, callSheet, inviteLink, isValidSheetUrl, memberAddress, syncPending, syncStatus } from './team.js';
+import { esc, qrSvg, shareOrCopy, statusBadge } from './ui.js';
 
 const since = (iso) => {
   if (!iso) return 'never';
@@ -81,6 +81,7 @@ export function renderTeam(view, query, rerender) {
     return;
   }
 
+  const invite = inviteLink(location.href, status.url, status.group);
   view.innerHTML = `
     <section class="card">
       <h2>Your group</h2>
@@ -92,9 +93,20 @@ export function renderTeam(view, query, rerender) {
       </div>
     </section>
     <section class="card">
+      <h3>Invite a teammate</h3>
+      <p class="muted small">They scan this with their phone camera to join ${esc(status.group)}.</p>
+      <div class="qr">${qrSvg(invite)}</div>
+      <input class="copy-field" id="invite" readonly value="${esc(invite)}">
+      <div class="actions"><button class="btn secondary" id="copy-invite">${navigator.share ? 'Share link' : 'Copy link'}</button></div>
+    </section>
+    <section class="card">
       <h3>Are you the coach?</h3>
       <a class="btn secondary block" href="coach.html">Open coach dashboard</a>
     </section>`;
+  $('#copy-invite').onclick = async () => {
+    const field = $('#invite');
+    if (await shareOrCopy(field.value, { share: true, field }) === 'copied') $('#copy-invite').textContent = 'Copied';
+  };
   $('#send').onclick = async () => {
     $('#send').disabled = true;
     await syncPending();

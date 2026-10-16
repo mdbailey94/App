@@ -47,6 +47,22 @@ test('the dashboard is its own page; the swimmer app links to it and #coach redi
   await expect(page).toHaveURL(/coach\.html/);
 });
 
+test('invite QR code without the password: just the sheet link and group code', async ({ page }, testInfo) => {
+  await page.goto('/coach.html');
+  const form = page.locator('#qr-form');
+  await form.locator('input[name=url]').fill(sheetFor(testInfo).url);
+  await form.locator('input[name=group]').fill('WRONG');
+  await form.locator('button').click();
+  await expect(page.locator('#qr-error')).toBeVisible();
+  await expect(page.locator('#qr-result')).toBeHidden();
+
+  await form.locator('input[name=group]').fill(GROUP_CODE);
+  await form.locator('button').click();
+  await expect(page.locator('#qr-result .qr svg')).toBeVisible();
+  await expect(page.locator('#qr-result #invite')).toHaveValue(new RegExp(`/\\?u=.*&g=${GROUP_CODE}#team$`));
+  expect(await page.inputValue('#qr-result #invite')).not.toContain('coach.html');
+});
+
 test('coach sign-in checks the password, then shows the Group tab', async ({ page }, testInfo) => {
   await page.goto('/coach.html');
   await page.fill('input[name=url]', sheetFor(testInfo).url);
@@ -74,10 +90,24 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(watch.nth(1)).toContainText('Training load spike');
   await expect(page.locator('.plain li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
   // Effort per session: Maya's split check-in, and an older whole-day one.
-  const maya = page.locator('.group-table tr', { hasText: 'Maya Torres' }).locator('td.effort');
+  const maya = page.locator('.group-table:not(.day-table) tr', { hasText: 'Maya Torres' }).locator('td.effort');
   await expect(maya).toContainText('4 · 8');
   await expect(maya.locator('.tag')).toHaveText(['Wt', 'Meet']);
-  await expect(page.locator('.group-table tr', { hasText: 'Sam Lee' }).locator('td.effort')).toHaveText('6');
+  await expect(page.locator('.group-table:not(.day-table) tr', { hasText: 'Sam Lee' }).locator('td.effort')).toHaveText('6');
+
+  // Yesterday's training: the five who checked in today, heaviest load first.
+  const trainedRows = page.locator('#day-before tbody tr');
+  await expect(trainedRows).toHaveCount(5);
+  await expect(trainedRows.first()).toContainText('Ana Ruiz');
+  const mayaDay = page.locator('#day-before tr', { hasText: 'Maya Torres' });
+  await expect(mayaDay.locator('td').nth(1)).toHaveText('1½h · 4');
+  await expect(mayaDay.locator('td').nth(2)).toHaveText('2h · 8');
+  await expect(mayaDay.locator('.tag')).toHaveText(['Wt', 'Meet']);
+  await expect(page.locator('#day-before .stat-label').first()).toContainText('at morning practice');
+  // Readiness change: everyone who checked in today, with the team against yesterday and the week.
+  await expect(page.locator('#readiness-change tbody tr')).toHaveCount(5);
+  await expect(page.locator('#readiness-change .stat-label').nth(1)).toContainText('vs yesterday');
+  await expect(page.locator('#readiness-change .stat-label').nth(2)).toContainText('vs 7-day avg');
 
   await page.click('a:has-text("Send a reminder")');
   await expect(page).toHaveURL(/#messages/);
@@ -92,6 +122,9 @@ test('History tab: 7/28-day trends and the check-in record', async ({ page }, te
   await page.click('.seg a:has-text("28 days")');
   await expect(page).toHaveURL(/t=28/);
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(28);
+
+  // Training vs next-morning readiness: light / moderate / heavy thirds.
+  await expect(page.locator('#load-response tbody tr')).toHaveText([/^Light/, /^Moderate/, /^Heavy/]);
 
   const grid = page.locator('.checkin-grid tbody tr');
   await expect(grid).toHaveCount(7);

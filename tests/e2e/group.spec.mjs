@@ -54,6 +54,17 @@ test('a fresh Home Screen copy of the app reconnects in one tap', async ({ page,
   await homeScreen.context().close();
 });
 
+test('a swimmer in the group can show teammates a QR code to join', async ({ page, baseURL }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await join(page, sheet, baseURL);
+  await page.click('.tabs a[data-tab=team]');
+  await expect(page.locator('h3', { hasText: 'Invite a teammate' })).toBeVisible();
+  await expect(page.locator('.qr svg')).toBeVisible();
+  const invite = await page.inputValue('#invite');
+  expect(invite).toBe(inviteLink(baseURL, sheet.url, GROUP_CODE));
+  expect(invite).not.toContain('n=Maya'); // the teammate adds their own name
+});
+
 test('leaving the group clears the details from the address', async ({ page, baseURL }, testInfo) => {
   await join(page, sheetFor(testInfo), baseURL);
   await page.click('.tabs a[data-tab=team]');

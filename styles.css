@@ -390,3 +390,11 @@ fieldset.session legend { font-weight: 600; padding: 0; margin-bottom: 2px; }
 .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; margin: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tag-meet { background: color-mix(in srgb, var(--warning) 25%, transparent); }
 .asked-first [data-details] { margin-top: 4px; }
+
+.delta { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.9em; }
+.delta.down { color: var(--serious); }
+.delta.up { color: var(--good); }
+.delta.big { font-weight: 700; }
+.stat-num .delta { font-size: inherit; }
+.day-table td, .day-table th { white-space: nowrap; }
+.response-table { width: 100%; }

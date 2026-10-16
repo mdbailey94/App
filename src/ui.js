@@ -2,6 +2,7 @@
 
 import { assessDay, baseline, rollingMean, sessionLoad, wellnessScore } from './readiness.js';
 import { barChart, lineChart } from './charts.js';
+import qrcode from './vendor/qrcode.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -73,4 +74,12 @@ export async function shareOrCopy(text, { share = false, field } = {}) {
     field?.select();
     return 'selected';
   }
+}
+
+// Invite link as a QR code (SVG, dark on white so it scans in dark mode too).
+export function qrSvg(text) {
+  const qr = qrcode(0, 'M'); // smallest size that fits, medium error correction
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 4, margin: 16, scalable: true, alt: 'QR code: invite link to join the group' });
 }
