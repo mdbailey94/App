@@ -148,13 +148,6 @@ function renderGroup({ rows, query }) {
   const tr = trainingCompare(rows, date);
   const { now, weekAgo, usual } = tr.team;
   const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
-  const hrvCell = (c) => {
-    const e = c.entry.hrv;
-    if (!e) return '–';
-    const z = c.assessment.hrvZ;
-    const arrow = z === null ? '' : z < -1 ? ' ▼' : z > 1 ? ' ▲' : '';
-    return `${fmt(e.rmssd ?? Math.exp(e.lnRmssd))}${arrow}`;
-  };
   // One row of the team comparison: yesterday, a week ago, the usual.
   const pctOf = (a, b) => (a !== null && b > 0 ? Math.round(((a - b) / b) * 100) : null);
   const compareRow = (label, f, { load = false, sub = false } = {}) => {
@@ -182,19 +175,18 @@ function renderGroup({ rows, query }) {
         <div><span class="stat-num">${delta(vsDay(day.avgReadiness, day.readiness7), { big: 5 })}</span><span class="stat-label">vs usual<br><span class="muted">${day.readiness7 ?? '–'}</span></span></div>
       </div>
       ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table checkin-table">
-        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th><th>HRV</th></tr></thead>
+        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th></tr></thead>
         <tbody>${day.checkedIn.map((c) => `
           <tr>
             <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
             <td><b>${c.assessment.score ?? '–'}</b></td>
             <td>${delta(c.vsPrev)}${c.prevDate && c.prevDate !== shiftDate(date, -1) ? `<br><span class="muted small">since ${esc(shortDate(c.prevDate))}</span>` : ''}</td>
             <td>${delta(c.vsUsual)}</td>
-            <td>${hrvCell(c)}</td>
           </tr>
-          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="5">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
+          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="4">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
         <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
-          over the 7 days before (needs 3 check-ins). HRV = RMSSD in ms; ▼/▲ = well below/above their normal range.</p>`
+          over the 7 days before (needs 3 check-ins).</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
       ${refreshLine(`#group?d=${date}`)}
     </section>
