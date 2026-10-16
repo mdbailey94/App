@@ -95,7 +95,8 @@ What the coach gets:
 
 - **Coach dashboard**: per day, who checked in (worst readiness first, with flags for injury,
   short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
-  athlete's trends and notes. The **Group** tab is one day at a glance: check-ins with each swimmer's
+  athlete's trends and notes (with their readiness change, the day before's training against a week before
+  and their usual, watch-list reasons and their own training-vs-readiness pattern). The **Group** tab is one day at a glance: check-ins with each swimmer's
   readiness against yesterday and their usual, the watch list, and **yesterday's training** against the
   same day last week and a usual week (practices, effort, weights, meets, each swimmer's load). **History**
   (7, 14 or 28 days) adds **training vs next-morning readiness**: how readiness moved after light,

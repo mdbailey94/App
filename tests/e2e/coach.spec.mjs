@@ -171,6 +171,12 @@ test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, 
   await expect(page.locator('.flags')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
   await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Swimmers');
   await expect(page.locator('#trends')).toContainText('HRV (ms)');
+  // Coach-only insights: change in readiness, the day before's training, watch list, own pattern.
+  await expect(page.locator('#swimmer-change .stat-label')).toHaveText([/vs yesterday/, /vs usual/]);
+  await expect(page.locator('#swimmer-watch')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
+  await expect(page.locator('#swimmer-training')).toContainText('2h · 6');
+  await expect(page.locator('#swimmer-training .stat-num').first()).toHaveText('720');
+  await expect(page.locator('#swimmer-response tbody tr')).toHaveText([/^Light/, /^Moderate/, /^Heavy/]);
 
   await page.click('a:has-text("Message Kai")');
   await expect(page.locator('#direct-text')).toHaveValue(/^Hi Kai, just checking in\./);
