@@ -283,7 +283,7 @@ function renderHistory({ rows, query }) {
         <div><span class="stat-num">${now.avgLoad ?? '–'}${change(now.avgLoad, prev.avgLoad)}</span><span class="stat-label">avg daily load</span></div>
       </div>
       <p class="muted small">Last ${span} days; arrows compare with the ${span} days before.</p>
-      <div class="trend-block"><h4>Average readiness</h4><div data-t="ready"></div></div>
+      <div class="trend-block"><h4>Average readiness <span class="muted small">(days with 3+ check-ins)</span></h4><div data-t="ready"></div></div>
       <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
       <div class="trend-block"><h4>Average training load</h4><div data-t="load"></div></div>
       ${refreshLine(`#history?t=${span}`)}
