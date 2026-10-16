@@ -7,6 +7,12 @@ import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDa
 // as a check-in.
 const isCheckIn = (e) => Boolean(e.wellness);
 
+// A team readiness average for a past day (charts, the team's "usual" and
+// yesterday) counts only when at least this many swimmers had a score: one
+// or two check-ins on a quiet day would swing it.
+export const MIN_TEAM_SCORES = 3;
+const teamAvg = (day) => (day.scored >= MIN_TEAM_SCORES ? day.avgReadiness : null);
+
 // rows: [{ athlete, date, entry }] → Map(key → { name, entries[] }).
 // Names match case-insensitively; the most recent spelling is displayed.
 export function groupByAthlete(rows) {
@@ -38,8 +44,8 @@ export function groupDay(rows, date, opts) {
   const day = dayOf(athletes, date, opts);
   for (const c of day.checkedIn) Object.assign(c, readinessMove(athletes.get(c.key).entries, date, c.assessment.score));
   const prevDays = Array.from({ length: 7 }, (_, i) => shiftDate(date, -(i + 1)));
-  const daily = prevDays.map((d) => dayOf(athletes, d).avgReadiness).filter((v) => v !== null);
-  day.readinessYesterday = dayOf(athletes, prevDays[0]).avgReadiness;
+  const daily = prevDays.map((d) => teamAvg(dayOf(athletes, d))).filter((v) => v !== null);
+  day.readinessYesterday = teamAvg(dayOf(athletes, prevDays[0]));
   day.readiness7 = daily.length ? Math.round(avg(daily)) : null;
   return day;
 }
@@ -100,6 +106,7 @@ function dayOf(athletes, date, { activeDays = 21 } = {}) {
     total: checkedIn.length + missing.length,
     needAttention: checkedIn.filter((c) => c.assessment.status && c.assessment.status.level !== 'good').length,
     avgReadiness: scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null,
+    scored: scores.length,
   };
 }
 
@@ -128,7 +135,7 @@ export function teamTrend(rows, endDate, days = 7) {
       weights: trainings.filter((t) => t.weights === true).length,
       meet: trainings.filter((t) => t.meet === true).length,
       date,
-      avgReadiness: day.avgReadiness,
+      avgReadiness: teamAvg(day),
       checkedIn: day.checkedIn.length,
       total: day.total,
       rate: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null,

@@ -106,17 +106,20 @@ test('watchList: readiness well down on their usual, and old injuries drop off',
   assert.match(list[0].reasons[0].text, /Readiness down \d+ points/);
 });
 
-test('teamTrend: daily average readiness, check-in rate and load', () => {
+test('teamTrend: daily average readiness (with 3+ scores), check-in rate and load', () => {
   const r = [
     day('A', 1, { wellness: good, training: { durationMin: 60, rpe: 5 } }),
     day('B', 1, { wellness: poor, training: { durationMin: 60, rpe: 3 } }),
+    day('C', 1, { wellness: good, training: { durationMin: 60, rpe: 4 } }),
     day('A', 0, { wellness: good }),
   ];
   const t = teamTrend(r, D, 2);
   assert.deepEqual(t.map((d) => d.date), [shiftDate(D, -1), D]);
-  assert.deepEqual(t.map((d) => d.rate), [100, 50]);
+  assert.deepEqual(t.map((d) => d.rate), [100, 33]);
   assert.equal(t[0].avgLoad, 240);
-  assert.deepEqual(trendSummary(t), { avgReadiness: Math.round((t[0].avgReadiness + 100) / 2), rate: 75, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
+  assert.equal(typeof t[0].avgReadiness, 'number');
+  assert.equal(t[1].avgReadiness, null); // only one swimmer scored: no team average
+  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 67, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
 });
 
 test('reminderText lists who is missing', () => {
@@ -196,6 +199,7 @@ test('groupDay: each check-in against yesterday and their usual; team averages',
   const r = [
     ...usualWeek('Ana'), day('Ana', 0, { wellness: W7(3) }),
     ...usualWeek('Ben'), day('Ben', 0, { wellness: W7(5) }),
+    ...usualWeek('Dee'), day('Dee', 0, { wellness: W7(5) }),
     day('Cy', 2, { wellness: W7(4) }), day('Cy', 0, { wellness: W7(6) }), // no usual yet
   ];
   const g = groupDay(r, D);
