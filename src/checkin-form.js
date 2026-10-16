@@ -161,6 +161,14 @@ ${trainingSection(e.training)}
 }
 
 export function wireCheckin(form) {
+  // "N questions left" next to the Save button: how far along they are.
+  const progress = form.querySelector('[data-progress]');
+  const updateProgress = () => {
+    if (!progress) return;
+    const left = readCheckin(form).missing?.length ?? 0;
+    progress.textContent = left ? `${left} question${left === 1 ? '' : 's'} left` : 'All answered ✓';
+    progress.classList.toggle('done', !left);
+  };
   const loadPreview = () => {
     const fd = new FormData(form);
     form.querySelectorAll('[data-load-preview]').forEach((el) => {
@@ -179,8 +187,10 @@ export function wireCheckin(form) {
     const meet = /^(.*)meet$/.exec(ev.target.name)?.[1];
     if (meet !== undefined) form.querySelector(`[data-details="${meet}meet"]`).hidden = ev.target.value !== 'yes';
     loadPreview();
+    updateProgress();
   });
   loadPreview();
+  updateProgress();
 }
 
 // Read the answers: { missing: [labels] } or { patch } ready to save.
