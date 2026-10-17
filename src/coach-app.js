@@ -52,6 +52,9 @@ function delta(v, { unit = '', big = 10 } = {}) {
   const text = `${arrow}${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}${unit}`;
   return `<span class="delta ${v < 0 ? 'down' : v > 0 ? 'up' : ''} ${Math.abs(v) >= big ? 'big' : ''}">${text}</span>`;
 }
+// "−1.8 SD": how far from their own usual, in units of their own day-to-day
+// swing; beyond ±2 is unusual for that swimmer.
+const sdLine = (z) => (z === null || z === undefined ? '' : `<span class="sd${Math.abs(z) >= 2 ? ' far' : ''}">${z > 0 ? '+' : z < 0 ? '−' : ''}${Math.abs(z).toFixed(1)} SD</span>`);
 const shortTime = (min) => {
   const h = Math.floor(min / 60), m = min % 60;
   return h ? `${h}${m === 30 ? '½' : m ? `:${String(m).padStart(2, '0')}` : ''}h` : `${m}m`;
@@ -181,12 +184,13 @@ function renderGroup({ rows, query }) {
             <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
             <td><b>${c.assessment.score ?? '–'}</b></td>
             <td>${delta(c.vsPrev)}${c.prevDate && c.prevDate !== shiftDate(date, -1) ? `<br><span class="muted small">since ${esc(shortDate(c.prevDate))}</span>` : ''}</td>
-            <td>${delta(c.vsUsual)}</td>
+            <td>${delta(c.vsUsual)}${c.sdUsual === null ? '' : `<br>${sdLine(c.sdUsual)}`}</td>
           </tr>
           ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="4">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
         <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
-          over the 7 days before (needs 3 check-ins).</p>`
+          over the 7 days before (needs 3 check-ins). SD = how far that is in units of the swimmer’s own day-to-day swing
+          (needs 7 check-ins in the last 4 weeks): about ±1 is ordinary, beyond ±2 is unusual for them.</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
       ${refreshLine(`#group?d=${date}`)}
     </section>
@@ -228,11 +232,12 @@ function renderGroup({ rows, query }) {
             <td class="effort">${practicesCell(s.training)}</td>
             <td><b>${s.load}</b></td>
             <td>${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
-            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
+            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}${s.sdUsual === null ? '' : `<br>${sdLine(s.sdUsual)}`}</td>
           </tr>`).join('')}
         </tbody></table></div>
       <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5 (meets aren’t counted).
-        Each swimmer is compared with their own load on those days.</p>`
+        Each swimmer is compared with their own load on those days; SD is the same measure as on check-ins, against their
+        daily load over the last 4 weeks.</p>`
     : '<p class="muted">No training reported yet.</p>'}
     </section>
 
@@ -400,7 +405,7 @@ function renderSwimmer({ rows, arg }) {
       ${assessment.flags.length ? `<ul class="flags">${assessment.flags.map((f) => `<li>${statusBadge({ level: f.level, label: f.level === 'critical' ? 'Important' : 'Note' })} ${esc(theirs(f.text))}</li>`).join('')}</ul>` : ''}
       ${r ? `<div class="stats small-stats" id="swimmer-change">
         <div><span class="stat-num">${delta(r.vsPrev)}</span><span class="stat-label">vs ${r.prevDate === shiftDate(ins.date, -1) ? 'yesterday' : r.prevDate ? `last check-in (${esc(shortDate(r.prevDate))})` : 'yesterday'}${r.prevScore !== null ? `<br><span class="muted">${r.prevScore}</span>` : ''}</span></div>
-        <div><span class="stat-num">${delta(r.vsUsual)}</span><span class="stat-label">vs usual<br><span class="muted">${r.usualScore ?? 'needs 3 check-ins'}</span></span></div>
+        <div><span class="stat-num">${delta(r.vsUsual)}</span><span class="stat-label">vs usual<br><span class="muted">${r.usualScore ?? 'needs 3 check-ins'}</span>${r.sdUsual === null ? '' : `<br>${sdLine(r.sdUsual)}`}</span></div>
       </div>` : ''}
       <div class="actions"><a class="btn secondary" href="#messages?to=${encodeURIComponent(a.key)}">Message ${esc(first(a.name))}</a></div>
     </section>
@@ -417,7 +422,7 @@ function renderSwimmer({ rows, arg }) {
       <div class="stats small-stats">
         <div><span class="stat-num">${t.load}</span><span class="stat-label">load</span></div>
         <div><span class="stat-num">${delta(t.vsWeekAgo, { unit: '%', big: 25 })}</span><span class="stat-label">vs a week before<br><span class="muted">${t.weekAgoLoad ?? 'not reported'}</span></span></div>
-        <div><span class="stat-num">${delta(t.vsUsual, { unit: '%', big: 25 })}</span><span class="stat-label">vs their usual ${esc(new Date(`${shiftDate(ins.date, -1)}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))}<br><span class="muted">${t.usualLoad ?? 'needs 2 weeks'}</span></span></div>
+        <div><span class="stat-num">${delta(t.vsUsual, { unit: '%', big: 25 })}</span><span class="stat-label">vs their usual ${esc(new Date(`${shiftDate(ins.date, -1)}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))}<br><span class="muted">${t.usualLoad ?? 'needs 2 weeks'}</span>${t.sdUsual === null ? '' : `<br>${sdLine(t.sdUsual)}`}</span></div>
       </div>
     </section>` : ''}
 
