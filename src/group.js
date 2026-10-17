@@ -124,6 +124,13 @@ export function teamTrend(rows, endDate, days = 7) {
     // The day before's work as the team reported it this morning, rest days
     // (0) included, so it sits fairly next to the morning's readiness.
     const reported = day.checkedIn.filter((c) => c.entry.training).map((c) => c.load);
+    // How far the team is from its own usual: each swimmer's readiness minus
+    // their usual (their average over the 7 days before), averaged. Unlike
+    // the plain average, this doesn't move just because different swimmers
+    // checked in.
+    const moves = day.checkedIn
+      .map((c) => readinessMove(athletes.get(c.key).entries, date, c.assessment.score).vsUsual)
+      .filter((v) => v !== null);
     // Average effort per practice, over those who went (training is reported
     // the next morning, so this is the previous day's sessions; a Monday
     // answer about Saturday counts too), and how many lifted or raced.
@@ -144,6 +151,7 @@ export function teamTrend(rows, endDate, days = 7) {
       rate: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null,
       avgLoad: loads.length >= MIN_TEAM ? Math.round(avg(loads)) : 0,
       loadReported: reported.length >= MIN_TEAM ? Math.round(avg(reported)) : null,
+      vsUsual: moves.length >= MIN_TEAM ? +avg(moves).toFixed(1) : null,
     });
   }
   return out;

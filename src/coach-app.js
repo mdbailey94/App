@@ -287,6 +287,11 @@ function renderHistory({ rows, query }) {
         <p class="muted small">Each morning’s average readiness, and under it the average load swimmers reported that
           morning for the day before (rest days count as 0). Days with fewer than 6 swimmers are left out.</p>
         <div data-t="readyLoad"></div></div>
+      <div class="trend-block" id="vs-usual"><h4>Readiness vs usual</h4>
+        <p class="muted small">Each morning, every swimmer’s readiness minus their own usual (their average over the 7 days
+          before), averaged over the team. Above 0 = the team is fresher than normal for them, below 0 = more tired.
+          Days with fewer than 6 swimmers are left out.</p>
+        <div data-t="vsUsual"></div></div>
       <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
       ${refreshLine(`#history?t=${span}`)}
     </section>
@@ -344,6 +349,15 @@ function renderHistory({ rows, query }) {
       lineTitle: 'Readiness',
       barTitle: 'Load the day before',
       tip: (d) => `${d.label}: readiness <b>${Number.isFinite(d.line) ? d.line : '–'}</b><br>${d.before} load <b>${d.bar ?? '–'}</b>`,
+    });
+    // Symmetric around 0 in whole tens (at least ±10) so up and down read at the same scale.
+    const reach = Math.max(10, Math.ceil(Math.max(...trend.map((d) => Math.abs(d.vsUsual ?? 0))) / 10) * 10);
+    barChart($t('vsUsual'), series('vsUsual'), {
+      signed: true,
+      yMin: -reach,
+      yMax: reach,
+      yFormat: (v) => (v > 0 ? `+${v}` : String(v)),
+      tip: (d) => `${d.label}: <b>${Number.isFinite(d.y) ? `${d.y > 0 ? '+' : ''}${d.y} points` : 'fewer than 6 swimmers'}</b>`,
     });
     barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
     // Effort is reported the morning after, so each bar sits on the day the

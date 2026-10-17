@@ -306,3 +306,18 @@ test('swimmerInsights: one swimmer’s readiness change, training comparison, wa
   assert.ok(i.response.heavy.change < 0 && i.response.light.change > 0);
   assert.equal(swimmerInsights(r, 'nobody'), null);
 });
+
+test('teamTrend: the team’s average readiness against each swimmer’s own usual', () => {
+  const names = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const r = [];
+  for (const n of names) for (let k = 7; k >= 1; k--) r.push(day(n, k, { wellness: W7(5) }));
+  names.forEach((n, i) => r.push(day(n, 0, { wellness: W7(i < 3 ? 3 : 5) }))); // half the team dips today
+  const t = teamTrend(r, D, 2);
+  const g = groupDay(r, D);
+  const expected = +(g.checkedIn.reduce((s, c) => s + c.vsUsual, 0) / 6).toFixed(1);
+  assert.ok(expected < 0);
+  assert.equal(t[1].vsUsual, expected);
+  assert.equal(t[0].vsUsual, 0); // yesterday everyone was at their usual
+  // Fewer than 6 swimmers with a usual: no team number for the day.
+  assert.equal(teamTrend(r.filter((x) => x.athlete !== 'F'), D, 1)[0].vsUsual, null);
+});

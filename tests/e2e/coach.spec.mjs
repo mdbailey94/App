@@ -130,6 +130,9 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await expect(page.locator('[data-t="readyLoad"] .series-line')).toHaveCount(1);
   await expect(page.locator('[data-t="readyLoad"] .series-bar')).toHaveCount(6);
   await expect(page.locator('[data-t="readyLoad"] .panel-title')).toHaveText(['Readiness', 'Load the day before']);
+  // The team against its own usual: bars either side of a zero line.
+  await expect(page.locator('[data-t="vsUsual"] .zero')).toHaveCount(1);
+  expect(await page.locator('[data-t="vsUsual"] .series-bar').count()).toBeGreaterThan(0);
   await page.click('.seg a:has-text("14 days")');
   await expect(page).toHaveURL(/t=14/);
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(14);
