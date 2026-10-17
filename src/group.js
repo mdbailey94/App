@@ -1,7 +1,6 @@
 // Coach-side analysis of the group's rows from the sheet. Pure functions.
 
 import { std } from './signal.js';
-
 import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
 
 // A check-in has answers. An entry can also hold training only: a Monday
@@ -71,8 +70,7 @@ function readinessMove(entries, date, score) {
   const before = upTo.filter((e) => e.date >= shiftDate(date, -7) && e.date < date && isCheckIn(e))
     .map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
   const prevScore = prev ? scoreOn(upTo, prev.date) : null;
-  const usualRaw = before.length >= 3 ? avg(before) : null;
-  const usualScore = usualRaw === null ? null : Math.round(usualRaw);
+  const usualScore = before.length >= 3 ? Math.round(avg(before)) : null;
   const history = upTo.filter((e) => e.date >= shiftDate(date, -28) && e.date < date && isCheckIn(e))
     .map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
   const ok = (v) => Number.isFinite(score) && Number.isFinite(v);
@@ -82,7 +80,7 @@ function readinessMove(entries, date, score) {
     usualScore,
     vsPrev: ok(prevScore) ? score - prevScore : null,
     vsUsual: ok(usualScore) ? score - usualScore : null,
-    sdUsual: deviation(score, usualRaw, history, () => 3), // in SD of their readiness; swing at least 3 points
+    sdUsual: deviation(score, usualScore, history, () => 3), // in SD of their readiness; swing at least 3 points
   };
 }
 
