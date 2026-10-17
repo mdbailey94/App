@@ -484,8 +484,3 @@ h3 { font-size: 16px; letter-spacing: -0.005em; }
 .save-bar .btn.block { margin-top: 6px; }
 .save-progress { display: block; text-align: center; font-size: 13px; color: var(--muted); }
 .save-progress.done { color: var(--good); font-weight: 600; }
-
-/* Deviation from a swimmer's own usual, in SD */
-.sd { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.sd.far { color: var(--text); font-weight: 700; }
-.stat-label .sd { display: inline-block; margin-top: 1px; }
