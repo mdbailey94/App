@@ -1,25 +1,11 @@
 // Coach-side analysis of the group's rows from the sheet. Pure functions.
 
-import { std } from './signal.js';
 import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
 
 // A check-in has answers. An entry can also hold training only: a Monday
 // answer about Saturday, filed under Sunday. That counts for training, not
 // as a check-in.
 const isCheckIn = (e) => Boolean(e.wellness);
-
-// How far a value is from a swimmer's usual, in units of their own
-// day-to-day swing (standard deviations, "SD"): a 10-point readiness drop
-// means more for someone who steadily scores 80 ± 3 than for someone who
-// swings ± 10. The swing is their SD over the 28 days before, which needs
-// MIN_SD_DAYS days, and is never less than `floor` (so a very steady swimmer
-// doesn't turn a tiny change into a huge SD).
-const MIN_SD_DAYS = 7;
-const deviation = (value, usual, history, floor) => {
-  if (!Number.isFinite(value) || !Number.isFinite(usual) || history.length < MIN_SD_DAYS) return null;
-  const swing = Math.max(std(history), floor(avg(history)));
-  return swing > 0 ? +((value - usual) / swing).toFixed(1) : null;
-};
 
 // A team average of readiness or load for a past day (charts, the team's
 // "usual", yesterday, a week ago) counts only when at least this many
@@ -71,8 +57,6 @@ function readinessMove(entries, date, score) {
     .map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
   const prevScore = prev ? scoreOn(upTo, prev.date) : null;
   const usualScore = before.length >= 3 ? Math.round(avg(before)) : null;
-  const history = upTo.filter((e) => e.date >= shiftDate(date, -28) && e.date < date && isCheckIn(e))
-    .map((e) => scoreOn(upTo, e.date)).filter(Number.isFinite);
   const ok = (v) => Number.isFinite(score) && Number.isFinite(v);
   return {
     prevDate: prev?.date ?? null,
@@ -80,7 +64,6 @@ function readinessMove(entries, date, score) {
     usualScore,
     vsPrev: ok(prevScore) ? score - prevScore : null,
     vsUsual: ok(usualScore) ? score - usualScore : null,
-    sdUsual: deviation(score, usualScore, history, () => 3), // in SD of their readiness; swing at least 3 points
   };
 }
 
@@ -141,6 +124,13 @@ export function teamTrend(rows, endDate, days = 7) {
     // The day before's work as the team reported it this morning, rest days
     // (0) included, so it sits fairly next to the morning's readiness.
     const reported = day.checkedIn.filter((c) => c.entry.training).map((c) => c.load);
+    // How far the team is from its own usual: each swimmer's readiness minus
+    // their usual (their average over the 7 days before), averaged. Unlike
+    // the plain average, this doesn't move just because different swimmers
+    // checked in.
+    const moves = day.checkedIn
+      .map((c) => readinessMove(athletes.get(c.key).entries, date, c.assessment.score).vsUsual)
+      .filter((v) => v !== null);
     // Average effort per practice, over those who went (training is reported
     // the next morning, so this is the previous day's sessions; a Monday
     // answer about Saturday counts too), and how many lifted or raced.
@@ -161,6 +151,7 @@ export function teamTrend(rows, endDate, days = 7) {
       rate: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null,
       avgLoad: loads.length >= MIN_TEAM ? Math.round(avg(loads)) : 0,
       loadReported: reported.length >= MIN_TEAM ? Math.round(avg(reported)) : null,
+      vsUsual: moves.length >= MIN_TEAM ? +avg(moves).toFixed(1) : null,
     });
   }
   return out;
@@ -396,7 +387,6 @@ export function trainingCompare(rows, date) {
     const weekAgoLoad = past[0];
     const reported = past.filter((v) => v !== null);
     const usualLoad = reported.length >= 2 ? Math.round(avg(reported)) : null;
-    const history = a.entries.filter((e) => e.training && e.date >= shiftDate(date, -28) && e.date < date).map((e) => sessionLoad(e.training));
     swimmers.push({
       key: a.key,
       name: a.name,
@@ -406,7 +396,6 @@ export function trainingCompare(rows, date) {
       usualLoad,
       vsWeekAgo: pctChange(load, weekAgoLoad),
       vsUsual: pctChange(load, usualLoad),
-      sdUsual: deviation(load, usualLoad, history, (m) => m * 0.1), // in SD of their daily load; swing at least 10% of it
     });
   }
   swimmers.sort((x, y) => y.load - x.load || x.name.localeCompare(y.name));

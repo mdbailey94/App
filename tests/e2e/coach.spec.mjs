@@ -96,9 +96,6 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   // Sam gave the same answers as yesterday.
   const sam = page.locator('.checkin-table tr', { hasText: 'Sam Lee' });
   await expect(sam.locator('td').nth(2)).toHaveText('0');
-  // Against their usual, in SD of their own swing: Eli's recent dip stands out from a steady run of 7s.
-  const eli = page.locator('.checkin-table tr', { hasText: 'Eli Brooks' });
-  await expect(eli.locator('td').nth(3).locator('.sd')).toHaveText(/^[−+]?\d\.\d SD$/);
   await expect(page.locator('#checkins .stats .stat-label')).toHaveText([/checked in/, /avg readiness/, /vs yesterday/, /vs usual/]);
 
   // Yesterday's training against the same day last week and the usual.
@@ -112,8 +109,7 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(ana).toContainText('Ana Ruiz');
   // 4 h at 8 yesterday against 1½ h at 5 on the same day last week and the 3 weeks before.
   await expect(ana.locator('td').nth(3)).toHaveText('▲+327%');
-  await expect(ana.locator('td').nth(4)).toContainText('▲+327%');
-  await expect(ana.locator('td').nth(4).locator('.sd')).toContainText('SD'); // and in SD of her own daily load
+  await expect(ana.locator('td').nth(4)).toHaveText('▲+327%');
   const mayaDay = trainedRows.filter({ hasText: 'Maya Torres' });
   await expect(mayaDay.locator('td.effort')).toContainText('AM 1½h · 4');
   await expect(mayaDay.locator('td.effort')).toContainText('PM 2h · 8');
@@ -134,6 +130,9 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await expect(page.locator('[data-t="readyLoad"] .series-line')).toHaveCount(1);
   await expect(page.locator('[data-t="readyLoad"] .series-bar')).toHaveCount(6);
   await expect(page.locator('[data-t="readyLoad"] .panel-title')).toHaveText(['Readiness', 'Load the day before']);
+  // The team against its own usual: bars either side of a zero line.
+  await expect(page.locator('[data-t="vsUsual"] .zero')).toHaveCount(1);
+  expect(await page.locator('[data-t="vsUsual"] .series-bar').count()).toBeGreaterThan(0);
   await page.click('.seg a:has-text("14 days")');
   await expect(page).toHaveURL(/t=14/);
   await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(14);
@@ -182,7 +181,6 @@ test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, 
   await expect(page.locator('#trends')).toContainText('HRV (ms)');
   // Coach-only insights: change in readiness, the day before's training, watch list, own pattern.
   await expect(page.locator('#swimmer-change .stat-label')).toHaveText([/vs yesterday/, /vs usual/]);
-  await expect(page.locator('#swimmer-change .sd')).toContainText('SD');
   await expect(page.locator('#swimmer-watch')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
   await expect(page.locator('#swimmer-training')).toContainText('2h · 6');
   await expect(page.locator('#swimmer-training .stat-num').first()).toHaveText('720');

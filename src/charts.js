@@ -32,7 +32,7 @@ function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zer
   if (band) ys.push(band.lo, band.hi);
   let lo = yMin ?? Math.min(...ys);
   let hi = yMax ?? Math.max(...ys);
-  if (zeroBased) lo = Math.min(0, lo);
+  if (zeroBased) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
   const ticks = niceTicks(lo, hi);
   lo = Math.min(lo, ticks[0]);
   hi = Math.max(hi, ticks[ticks.length - 1]);
@@ -142,21 +142,26 @@ export function barChart(container, data, opts = {}) {
   const span = Math.max(1, data[data.length - 1].x - data[0].x + 1);
   const bw = Math.max(2, Math.min(24, iw / span - 2));
   const base = sy(0);
+  // `signed`: values either side of zero (e.g. above/below usual), with a
+  // zero line and up / down colours.
+  if (o.signed) el('line', { x1: PAD.left, x2: sx(data[data.length - 1].x) + 13, y1: base, y2: base, class: 'zero' }, svg);
   const pts = [];
   for (const d of data) {
     const cx = sx(d.x);
-    const top = sy(d.y || 0);
-    const h = Math.max(0, base - top);
+    const end = sy(Number.isFinite(d.y) ? d.y : 0);
+    const h = Math.abs(base - end);
     if (h > 0) {
-      // Rounded top, square base.
+      // Rounded at the value end, square at zero: up from the baseline for
+      // positive values, down from it for negative ones.
       const r = Math.min(4, bw / 2, h);
       const x0 = cx - bw / 2;
+      const dir = end < base ? 1 : -1; // 1 = bar goes up
       el('path', {
-        d: `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${base}Z`,
-        class: 'series-bar',
+        d: `M${x0},${base}V${end + dir * r}Q${x0},${end} ${x0 + r},${end}H${x0 + bw - r}Q${x0 + bw},${end} ${x0 + bw},${end + dir * r}V${base}Z`,
+        class: `series-bar${o.signed ? (dir > 0 ? ' pos' : ' neg') : ''}`,
       }, svg);
     }
-    pts.push([cx, top]);
+    pts.push([cx, end]);
   }
   addTooltip(container, svg, data, pts, o.tip, PAD.top, base);
 }
