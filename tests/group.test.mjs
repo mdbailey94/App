@@ -306,3 +306,35 @@ test('swimmerInsights: one swimmer’s readiness change, training comparison, wa
   assert.ok(i.response.heavy.change < 0 && i.response.light.change > 0);
   assert.equal(swimmerInsights(r, 'nobody'), null);
 });
+
+test('deviation from their own usual, in SD: scaled by each swimmer’s day-to-day swing', () => {
+  const week = (name, level) => [28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    .map((n) => day(name, n, { wellness: W7(typeof level === 'function' ? level(n) : level) }));
+  const r = [
+    ...week('Steady', 5), day('Steady', 0, { wellness: W7(3) }),
+    ...week('Noisy', (n) => (n % 2 ? 2 : 7)), day('Noisy', 0, { wellness: W7(2) }),
+    ...week('Same', 5), day('Same', 0, { wellness: W7(5) }),
+    day('New', 2, { wellness: W7(5) }), day('New', 1, { wellness: W7(5) }), day('New', 0, { wellness: W7(3) }),
+  ];
+  const g = groupDay(r, D);
+  const by = (n) => g.checkedIn.find((c) => c.name === n);
+  // Steady: a constant history, so the swing is the 3-point floor: SD = points / 3.
+  assert.ok(by('Steady').vsUsual < 0);
+  assert.equal(by('Steady').sdUsual, +(by('Steady').vsUsual / 3).toFixed(1));
+  // Noisy: the same sort of drop is ordinary for someone who swings a lot.
+  assert.ok(Math.abs(by('Noisy').sdUsual) < Math.abs(by('Noisy').vsUsual) / 3);
+  assert.equal(by('Same').sdUsual, 0);
+  assert.equal(by('New').sdUsual, null); // fewer than 7 check-ins before: no SD yet
+});
+
+test('trainingCompare: a swimmer’s load against their usual, in SD of their daily load', () => {
+  const r = [];
+  for (let n = 28; n >= 1; n--) r.push(day('Ana', n, { wellness: W7(5), training: sessions([60, 10], null) })); // 600 a day
+  r.push(day('Ana', 0, { wellness: W7(5), training: sessions([84, 10], null) })); // 840
+  r.push(day('Ben', 0, { wellness: W7(5), training: sessions([60, 5], null) })); // nothing to compare
+  const c = trainingCompare(r, D);
+  const ana = c.swimmers.find((s) => s.name === 'Ana');
+  assert.equal(ana.usualLoad, 600);
+  assert.equal(ana.sdUsual, 4); // a constant history: swing is the 10% floor (60), so +240 = +4 SD
+  assert.equal(c.swimmers.find((s) => s.name === 'Ben').sdUsual, null);
+});
