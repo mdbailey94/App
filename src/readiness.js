@@ -22,7 +22,7 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 
 // Yesterday's training, as asked since sessions were split:
 //   { am: { durationMin, rpe } | null,   morning practice (null = none)
-//     pm: { durationMin, rpe } | null,   afternoon practice
+//     pm: { durationMin, rpe } | null,   doubles (afternoon practice)
 //     weights: boolean, meet: boolean,   did they lift / race
 //     meetLevel: 'light' | 'moderate' | 'hard'   (only with meet: true)
 //     durationMin, rpe }                 totals: minutes, and the
@@ -58,6 +58,45 @@ export function trainingFrom({ am, pm, weights = false, meet = false, meetLevel:
   return { ...t, durationMin, rpe };
 }
 
+// Workouts the swimmer logs on the Workouts tab, stored on the day they
+// trained (`entry.workouts`; a day can hold workouts without a check-in):
+//   { am: Practice | Skipped, pm: Practice | Skipped,
+//     weights: boolean, meet: boolean, meetLevel }
+//   Practice = { durationMin, rpe, perf }   effort and "how well it went", 1–10
+//   Skipped  = { none: 'off' | 'sick' (sick or injured) | 'missed' | 'other', note }
+// Before the Workouts tab, training was reported in the next morning's
+// check-in (`entry.training` on the day after). The analysis still reads it
+// there, so `withWorkouts` puts each logged day's training on the next
+// morning; a logged workout wins over an older check-in report of that day.
+export const SKIP_REASONS = { off: 'Off day', sick: 'Sick/injured', missed: 'Missed', other: 'Other' };
+const practiced = (p) => (p?.durationMin > 0 ? { durationMin: p.durationMin, rpe: p.rpe, perf: p.perf } : null);
+
+export function trainingFromWorkouts(w) {
+  const t = trainingFrom({ am: practiced(w.am), pm: practiced(w.pm), weights: w.weights, meet: w.meet, meetLevel: w.meetLevel });
+  for (const k of PRACTICE_KEYS) if (w[k]?.none) t[`${k}None`] = w[k].none;
+  return { ...t, logged: true };
+}
+
+// Never saved: for analysis only. Idempotent, so it is safe to apply twice.
+export function withWorkouts(entries) {
+  if (!entries.some((e) => e.workouts)) return entries;
+  const byDate = new Map(entries.map((e) => [e.date, e]));
+  for (const e of entries) {
+    if (!e.workouts) continue;
+    const next = shiftDate(e.date, 1);
+    byDate.set(next, { ...(byDate.get(next) || { date: next }), training: trainingFromWorkouts(e.workouts) });
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Training done on `date`: what was logged that day, or (older reports) what
+// the next morning's check-in said. null if neither.
+export function trainingOnDay(entries, date) {
+  const w = entries.find((e) => e.date === date)?.workouts;
+  if (w) return trainingFromWorkouts(w);
+  return entries.find((e) => e.date === shiftDate(date, 1))?.training ?? null;
+}
+
 // Effort (1–10) for one practice: a number, null if they didn't go, or
 // undefined for an older check-in that wasn't split into practices.
 export function sessionRpe(training, which) {
@@ -88,6 +127,7 @@ export function baseline(values, { minCount = 5, window = 30 } = {}) {
 
 // Acute:chronic workload ratio from daily loads keyed by YYYY-MM-DD.
 export function workload(entries, today) {
+  entries = withWorkouts(entries);
   const byDate = new Map(entries.map((e) => [e.date, sessionLoad(e.training)]));
   const sumDays = (n) => {
     let s = 0;
@@ -116,7 +156,7 @@ export function daysBetween(a, b) {
 // `heart: false` leaves HRV and resting HR out of the score and flags: the
 // athlete's own view, so one noisy morning reading can't colour their day.
 export function assessDay(entries, date, { heart = true } = {}) {
-  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...withWorkouts(entries)].sort((a, b) => a.date.localeCompare(b.date));
   const today = sorted.find((e) => e.date === date);
   const prior = sorted.filter((e) => e.date < date);
   const flags = [];
@@ -215,11 +255,12 @@ export function nextReadingDay(days, date) {
 // Check-ins in a row up to today. A streak is still alive until today is
 // over, so it counts back from yesterday if today isn't done yet.
 // Swimmers don't usually check in on Sundays: a Sunday counts if they
-// checked in, or made it up on Monday by reporting Saturday's training
-// (filed under Sunday, training only). Until Monday's check-in is done,
+// checked in, or logged Saturday's training (which the analysis files under
+// Sunday morning; older app versions asked about it on Monday). Until Monday's check-in is done,
 // Sunday can still be made up, so it doesn't break the streak yet.
 // `nudge`: whether to say "check in today" (not on Sundays).
 export function checkInStreak(entries, today) {
+  entries = withWorkouts(entries);
   const done = new Set(entries.filter((e) => e.wellness).map((e) => e.date));
   const madeUp = new Set(entries.filter((e) => !e.wellness && e.training).map((e) => e.date));
   const isSunday = (d) => weekday(d) === 0;

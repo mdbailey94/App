@@ -3,14 +3,17 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, compareToUsual, isReadingDay, nextReadingDay, sessionLoad, shiftDate, WEEKDAYS, wellnessScore,
+  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, WEEKDAYS, wellnessScore, withWorkouts,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
 import { startReading } from './reading.js';
 import {
-  checkinSections, readCheckin, readTrainingOnly, showFormError, showMissing, trainingSection, wireCheckin,
+  checkinSections, readCheckin, showFormError, showMissing, wireCheckin,
 } from './checkin-form.js';
+import {
+  asksDoubles, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary,
+} from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
 import { stuck, syncPending, syncStatus } from './team.js';
@@ -24,7 +27,8 @@ const routes = {
   checkin: renderCheckin,
   morning: (arg, query) => renderMorning(query),
   measure: (arg, query) => renderMeasure(query),
-  saturday: (arg, query) => renderSaturday(query),
+  workouts: (arg, query) => renderWorkouts(arg, query),
+  saturday: () => location.replace('#workouts'), // older links: the Monday question about Saturday
   history: renderHistory,
   team: (arg, query) => renderTeam(view, query, route),
 };
@@ -35,7 +39,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || 'today').split('?');
   const [name, arg] = path.split('/');
   const render = routes[name] || renderToday;
-  const tab = !routes[name] ? 'today' : { morning: 'checkin', saturday: 'checkin' }[name] || name;
+  const tab = !routes[name] ? 'today' : { morning: 'checkin', saturday: 'workouts' }[name] || name;
   document.querySelectorAll('.tabs a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
   view.innerHTML = '';
   render(arg, new URLSearchParams(qs || ''));
@@ -89,8 +93,9 @@ function renderToday() {
   const answered = Boolean(entry?.wellness);
   const first = loadTeam()?.athlete?.split(' ')[0];
   const heartDone = Boolean(entry?.hrv);
-  const { hrvDays, solo } = loadSettings();
-  const readingDay = isReadingDay(hrvDays, date);
+  const { solo } = loadSettings();
+  const yesterday = shiftDate(date, -1);
+  const trainedYesterday = trainingOnDay(entries, yesterday);
   const status = syncStatus();
   const streak = checkInStreak(entries, date);
   const streakLine = streak.days >= 2
@@ -106,17 +111,19 @@ function renderToday() {
         ${injuryNote(entry.pain)}
         <ul class="done-list">
           <li>✓ Questions answered</li>
-          <li>${heartDone ? '✓ Heart reading saved' : readingDay ? '<span class="muted">– No heart reading today</span>'
-    : `<span class="muted">– No heart reading needed today (next: ${esc(nextReadingDay(hrvDays, date))})</span>`}</li>
+          <li id="yesterday-line">${trainedYesterday ? '✓ Yesterday’s training logged'
+    : `<span class="muted">– Yesterday’s training not logged</span> <a href="#workouts/${yesterday}">Log it</a>`}</li>
+          ${heartDone ? '<li>✓ Heart reading saved</li>' : ''}
         </ul>
         ${streakLine}
         <div class="actions">
           <a class="btn secondary" href="#checkin">Edit answers</a>
-          <a class="btn secondary" href="#measure">${heartDone ? 'Redo reading' : 'Add reading'}</a>
+          <a class="btn secondary" href="#workouts">Workouts</a>
         </div>
+        <p class="small heart-link"><a href="#measure">${heartDone ? 'Redo heart reading' : 'Add a heart reading'}</a> <span class="muted">(optional)</span></p>
         ${status.joined ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}` : `
         <h2>Good morning</h2>
-        <p class="muted">${readingDay ? 'About two minutes: a few questions and a 1-minute heart reading.' : 'About a minute: a few quick questions. No heart reading needed today.'}</p>
+        <p class="muted">About a minute: a few quick questions.</p>
         ${streakLine}
         <a class="btn block" href="#morning">Start my morning check-in</a>`}
       ${a.baselineReadingsNeeded && heartDone ? `<p class="muted small">Keep taking morning readings – after ${a.baselineReadingsNeeded} more, the app knows your normal range.</p>` : ''}
@@ -159,51 +166,11 @@ async function sendAndWait(btn) {
   await Promise.race([sync(), new Promise((r) => setTimeout(r, 10000))]);
 }
 
-// ------------------------------------------------- Monday: Saturday's training
-// Each check-in reports the day before, so Saturday's sessions arrive with
-// Sunday's check-in. On a Monday with no Sunday check-in, ask about Saturday
-// once, right after today's check-in. The answer is filed under Sunday (the
-// day it would normally have been reported), with training only.
-
-function askAboutSaturday(today = todayISO()) {
-  if (new Date(`${today}T12:00:00`).getDay() !== 1) return false;
-  if (loadSettings().askedSaturday === today) return false;
-  return !getEntry(shiftDate(today, -1))?.training;
-}
-
-// Where to go once today's check-in is saved: Saturday's question first if needed.
-function afterCheckin(next) {
-  location.hash = askAboutSaturday() ? `#saturday?next=${encodeURIComponent(next)}` : next;
-}
-
-function renderSaturday(query) {
-  const today = todayISO();
-  const next = query.get('next') || '#today';
-  if (!askAboutSaturday(today)) { location.replace(next); return; }
-  const saturday = shiftDate(today, -2);
-  view.innerHTML = `
-    <form id="saturday" class="stack" novalidate>
-      <section class="card welcome">
-        <p><b>✓ Today’s check-in is saved.</b> One more: you didn’t check in yesterday, so how was
-          <b>${esc(prettyDate(saturday))}</b>’s training?</p>
-      </section>
-      ${trainingSection(null, { title: 'Saturday’s training', prefix: 'sat' })}
-      <p class="form-error" id="form-error" role="alert" hidden></p>
-      <button class="btn block" type="submit" id="save">${saveLabel()}</button>
-      <a class="btn secondary block" href="${esc(next)}" id="skip-saturday">Skip – I don’t remember</a>
-    </form>`;
-  const form = view.querySelector('#saturday');
-  wireCheckin(form);
-  const done = () => saveSettings({ askedSaturday: today });
-  view.querySelector('#skip-saturday').addEventListener('click', done);
-  form.addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    const answers = readTrainingOnly(form, 'sat');
-    if (answers.missing) { showMissing(form, answers); return; }
-    upsertEntry(shiftDate(today, -1), { training: answers.training });
-    done();
-    sendAndWait(form.querySelector('#save')).then(() => { location.hash = next; });
-  });
+// After today's check-in: on to logging yesterday's training, if it isn't
+// logged yet (in the Workouts tab, or by an older check-in that asked).
+function afterCheckin() {
+  const yesterday = shiftDate(todayISO(), -1);
+  location.hash = trainingOnDay(loadEntries(), yesterday) ? '#today' : `#workouts/${yesterday}?after=checkin`;
 }
 
 function renderCheckin(dateArg) {
@@ -233,69 +200,26 @@ function renderCheckin(dateArg) {
     const { patch } = answers;
     upsertEntry(form.date.value, patch);
     sendAndWait(form.querySelector('button[type=submit]')).then(() => {
-      if (form.date.value === todayISO()) afterCheckin('#today');
+      if (form.date.value === todayISO()) afterCheckin();
       else location.hash = '#history';
     });
   });
-}
-
-// Has this athlete done a camera reading the normal way yet? Doing the reading
-// during the check-in is only offered after that.
-const hasCameraReading = () => loadEntries().some((x) => x.hrv?.source === 'camera');
-
-// Offer to switch the combined mode on or off. `onChange` re-renders.
-function combinedToggle(on, onChange) {
-  const html = on
-    ? `<p class="muted small toggle-line">Heart reading during check-in: <b>on</b> ·
-         <button class="link" type="button" id="combined-toggle">Turn off</button></p>`
-    : `<section class="card offer">
-         <p><b>Save time:</b> take your heart reading while you answer the questions.</p>
-         <button class="btn secondary" type="button" id="combined-toggle">Turn on</button>
-       </section>`;
-  const wire = (root) => root.querySelector('#combined-toggle')?.addEventListener('click', () => {
-    saveSettings({ hrvDuringCheckin: !on });
-    onChange();
-  });
-  return [html, wire];
 }
 
 // Running as a Home Screen app rather than in a browser tab?
 const isStandalone = () => navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
 
 // ------------------------------------------------------ morning check-in
-// Questions and the heart reading at the same time: the reading runs in a
-// bar pinned at the top while the athlete answers with their other hand.
+// The questions only. Training is logged on the Workouts tab (asked about
+// yesterday right after this, if it isn't logged yet); a heart reading is
+// optional, from Today.
 
 function renderMorning(query = new URLSearchParams()) {
   const date = todayISO();
   const team = query.has('joined') ? loadTeam() : null;
   const e = getEntry(date) || {};
-  const settings = loadSettings();
-  const supported = cameraSupported();
-  // Heart readings are only asked for on the athlete's reading days.
-  const readingDay = isReadingDay(settings.hrvDays, date);
-  const experienced = supported && hasCameraReading();
-  // Questions and reading together only once the athlete has opted in; until
-  // then the check-in is questions only, followed by the normal HRV screen.
-  // The front-camera reading needs the screen as its light, so it can't run
-  // alongside the questions.
-  const canCombine = readingDay && experienced && !settings.frontCamera;
-  const combined = canCombine && settings.hrvDuringCheckin;
-  const [toggleHtml, wireToggle] = canCombine ? combinedToggle(combined, () => route()) : ['', () => {}];
 
   view.innerHTML = `
-    ${combined ? `<section class="card reading-bar" id="reading">
-      <div class="reading-head">
-        <video id="camera" class="preview small" playsinline muted></video>
-        <div class="reading-text">
-          <b id="reading-title">Heart reading</b>
-          <span id="reading-msg" class="muted small">${supported ? 'Cover the flashlight and the camera closest to it, then tap Start.' : 'Camera not available in this browser.'}</span>
-        </div>
-        ${supported ? '<button class="btn" id="reading-start" type="button">Start</button>' : ''}
-      </div>
-      <div class="progress" id="reading-progress" hidden><div id="progress-bar"></div></div>
-    </section>` : ''}
-
     ${team ? `<section class="card welcome" role="status">
       <p><b>✓ You’re in, ${esc(team.athlete.split(' ')[0])}!</b> You’ve joined ${esc(team.group)}, and your check-ins will go to your coach.
         Now do today’s check-in below.</p>
@@ -303,22 +227,10 @@ function renderMorning(query = new URLSearchParams()) {
         (iPhone: Share → Add to Home Screen) – it will remember your group.</p>`}
     </section>` : ''}
 
-    ${combined ? `<section class="card">
+    <section class="card">
       <h2>Morning check-in</h2>
-      <ol class="steps">
-        <li>Hold your phone in one hand. With a fingertip of that hand, gently cover <b>both the flashlight and the camera closest to it</b> on the back.</li>
-        <li>Keep that hand steady – resting your arm on your lap or a table helps.</li>
-        <li>Tap <b>Start</b>, then answer the questions with your other hand.</li>
-        <li>Tap <b>Save</b> when you’re done. Your answers are saved straight away; if the reading is still going, it’s added when it finishes.</li>
-      </ol>
-      ${e.hrv ? '<p class="muted small">You already have a heart reading today. Start only if you want to redo it.</p>' : ''}
-      ${toggleHtml}
-    </section>` : `<section class="card">
-      <h2>Morning check-in</h2>
-      <p class="muted">Answer the questions, then tap <b>Save</b>.${!readingDay ? ' No heart reading needed today.'
-    : supported && !e.hrv ? ' Your 1-minute heart reading comes next.' : ''}</p>
+      <p class="muted">A few quick questions, then tap <b>${saveLabel()}</b>.</p>
     </section>
-    ${e.hrv ? '' : toggleHtml}`}
 
     <form id="checkin" class="stack" novalidate>
       ${checkinSections(e)}
@@ -331,99 +243,108 @@ function renderMorning(query = new URLSearchParams()) {
   // would otherwise reopen it every time.
   if (team) history.replaceState(null, '', location.href.replace(/\?joined=1$/, ''));
 
-  const $ = (sel) => view.querySelector(sel);
-  const form = $('#checkin');
+  const form = view.querySelector('#checkin');
   wireCheckin(form);
-  wireToggle(view);
-
-  let state = 'idle'; // idle | running | done | failed
-  let hrv = null;
-  let savedEarly = false; // answers saved while the reading was still going
-  let reading = null;
-  const cam = combined ? new PpgCamera($('#camera')) : null;
-  cleanup = async () => { reading?.stop(); await cam?.stop(); };
-
-  const setReading = (title, msg, level) => {
-    $('#reading-title').textContent = title;
-    $('#reading-msg').textContent = msg;
-    $('#reading').dataset.state = level || '';
-  };
-  const save = async (patch) => {
-    upsertEntry(date, hrv ? { ...patch, hrv } : patch);
-    await sendAndWait($('#save'));
-    // Not doing the reading here: go on to the normal HRV screen if today
-    // still needs one.
-    afterCheckin(readingDay && !combined && supported && !e.hrv && !hrv ? '#measure?after=checkin' : '#today');
-  };
-
-  const start = () => {
-    state = 'running';
-    hrv = null;
-    $('#reading-start').hidden = true;
-    $('#reading-progress').hidden = false;
-    reading = startReading(cam, {
-      durationSec: settings.durationSec,
-      posture: settings.posture,
-      onMessage: (m) => setReading('Heart reading', m),
-      onFinger: (f) => {
-        if (f === 'none') setReading('Place your fingertip on the lens', 'Gently cover the flashlight and the camera closest to it.', 'warn');
-        else if (f === 'settling') setReading('Hold still…', 'Finding your pulse.');
-        else if (f === 'lost') setReading('Finger moved', 'Put it back on the lens.', 'warn');
-      },
-      onProgress: (frac, left) => {
-        $('#progress-bar').style.width = `${frac * 100}%`;
-        if (frac > 0) setReading('Reading…', `${left} s left – keep your finger still and carry on answering.`);
-      },
-    });
-    reading.done.then((out) => {
-      reading = null;
-      $('#reading-progress').hidden = true;
-      if (out.cancelled) return;
-      $('#reading-start').hidden = false;
-      if (out.ok) {
-        state = 'done';
-        hrv = out.hrv;
-        $('#reading-start').textContent = 'Redo';
-        setReading('✓ Heart reading done', `${fmt(hrv.hr)} bpm · HRV ${fmt(hrv.rmssd)} ms – you can take your finger off the lens.`, 'ok');
-        if (savedEarly) {
-          upsertEntry(date, { hrv });
-          sendAndWait($('#save')).then(() => afterCheckin('#today'));
-        }
-        return;
-      }
-      state = 'failed';
-      $('#reading-start').textContent = 'Try again';
-      setReading('Heart reading didn’t work', out.reason, 'warn');
-      if (savedEarly) {
-        // The answers are already saved; the reading can be retried or skipped.
-        $('#save').disabled = false;
-        $('#save').textContent = 'Done – skip the heart reading';
-      }
-    });
-  };
-  $('#reading-start')?.addEventListener('click', start);
-
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const answers = readCheckin(form);
     if (answers.missing) { showMissing(form, answers); return; }
-    const { patch } = answers;
     showFormError(form, '');
-    if (state === 'running') {
-      // Save the answers now, so nothing is lost if the app is closed before
-      // the reading finishes; the reading is added when it does.
-      upsertEntry(date, patch);
-      savedEarly = true;
-      sendAndWait($('#save')).then(() => {
-        if (state !== 'running') return; // the reading already finished
-        $('#save').textContent = syncStatus().joined && !syncStatus().pending
-          ? '✓ Answers sent – finishing your heart reading…'
-          : '✓ Answers saved – finishing your heart reading…';
-      });
-      return;
-    }
-    reading?.stop();
-    save(patch);
+    upsertEntry(date, answers.patch);
+    sendAndWait(form.querySelector('#save')).then(() => afterCheckin());
+  });
+}
+
+// ---------------------------------------------------------------- workouts
+// Training logged by the swimmer for the day it happened: today and
+// yesterday first, then the last few weeks, each with its status, and any
+// day can be filled in or corrected later.
+
+const dayName = (d, today = todayISO()) => (d === today ? 'Today' : d === shiftDate(today, -1) ? 'Yesterday' : prettyDate(d));
+
+function workoutStatus(entries, d, opts) {
+  const w = entries.find((e) => e.date === d)?.workouts;
+  const done = complete(w, { doubles: asksDoubles(d, todayISO()) });
+  if (w) return { state: done ? 'logged' : 'partly', label: done ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts) };
+  const legacy = trainingOnDay(entries, d);
+  if (legacy) return { state: 'checkin', label: 'From check-in', summary: workoutSummary(formValues(null, legacy), opts) };
+  return { state: 'none', label: 'Not logged', summary: '' };
+}
+
+function renderWorkouts(arg, query) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(arg || '')) { renderWorkoutDay(arg, query); return; }
+  const today = todayISO();
+  const entries = loadEntries();
+  const card = (d) => {
+    const st = workoutStatus(entries, d);
+    return `<section class="card workout-day" data-day="${d}">
+      <div class="workout-head"><h3>${esc(dayName(d))} <span class="muted small">${d === today || d === shiftDate(today, -1) ? esc(prettyDate(d)) : ''}</span></h3>
+        <span class="wk-status wk-${st.state}">${st.label}</span></div>
+      ${st.summary ? `<p class="small">${esc(st.summary)}</p>` : ''}
+      <a class="btn ${st.state === 'none' ? '' : 'secondary'} block" href="#workouts/${d}">${st.state === 'none' ? `Log ${d === today ? 'today’s' : d === shiftDate(today, -1) ? 'yesterday’s' : 'this day’s'} training` : 'Edit'}</a>
+    </section>`;
+  };
+  const earlier = Array.from({ length: 19 }, (_, i) => shiftDate(today, -(i + 2)));
+  view.innerHTML = `
+    <section class="card"><h2>Workouts</h2>
+      <p class="muted small">Log each practice: how long, how hard, and how well it went – or why you didn’t go.</p></section>
+    ${card(today)}
+    ${card(shiftDate(today, -1))}
+    <section class="card"><h3>Earlier</h3>
+      <p class="muted small">Time, then effort · how well it went.</p>
+      <ul class="workout-list">${earlier.map((d) => {
+    const st = workoutStatus(entries, d, { short: true });
+    return `<li><a href="#workouts/${d}">
+          <span class="wl-date">${esc(prettyDate(d))}</span>
+          <span class="wl-sum muted small">${esc(st.summary || '')}</span>
+          <span class="wk-status wk-${st.state}">${st.label}</span></a></li>`;
+  }).join('')}</ul>
+      <form id="other-day" class="row other-day">
+        <label class="field">Another day <input type="date" name="d" max="${today}" required></label>
+        <button class="btn secondary" type="submit">Open</button>
+      </form>
+    </section>`;
+  view.querySelector('#other-day').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    location.hash = `#workouts/${ev.target.d.value}`;
+  });
+}
+
+function renderWorkoutDay(date, query) {
+  const today = todayISO();
+  if (date > today) { location.replace('#workouts'); return; }
+  const entries = loadEntries();
+  const own = entries.find((e) => e.date === date)?.workouts;
+  const values = formValues(own, own ? null : trainingOnDay(entries, date));
+  const afterCheckin = query.get('after') === 'checkin';
+  const doubles = asksDoubles(date, today);
+  view.innerHTML = `
+    ${afterCheckin ? `<section class="card welcome" role="status">
+      <p><b>✓ Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was yesterday’s training?
+        <a href="#today" id="skip">Skip</a></p></section>` : ''}
+    <form id="workout" class="stack" novalidate>
+      <section class="card"><p><a href="#workouts">‹ Workouts</a></p>
+        <h2>${esc(dayName(date) === 'Today' || dayName(date) === 'Yesterday' ? `${dayName(date)}’s training` : 'Training')}</h2>
+        <p class="eyebrow">${esc(prettyDate(date))}</p>
+        ${own?.loggedAt && own.loggedAt.slice(0, 10) > date ? `<p class="muted small">Filled in later, on ${esc(shortDate(own.loggedAt.slice(0, 10)))}.</p>` : ''}
+      </section>
+      ${workoutSections(values, { doubles })}
+      ${doubles ? '' : '<p class="muted small doubles-later">Doubles today? Log them after 4:30 pm, or tomorrow morning.</p>'}
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <div class="save-bar"><button class="btn block" type="submit" id="save-workout">${syncStatus().joined ? 'Save and send' : 'Save'}</button></div>
+    </form>`;
+  const form = view.querySelector('#workout');
+  wireWorkouts(form);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const out = readWorkouts(form);
+    if (out.missing) { showMissing(form, out); return; }
+    showFormError(form, '');
+    // When it was logged, kept apart from the day it's for (backfilling shows).
+    // Doubles not asked yet today: keep any already logged.
+    const kept = !doubles && own?.pm ? { pm: own.pm } : {};
+    upsertEntry(date, { workouts: { ...kept, ...out.workouts, loggedAt: own?.loggedAt || new Date().toISOString() } });
+    sendAndWait(form.querySelector('#save-workout')).then(() => { location.hash = afterCheckin ? '#today' : '#workouts'; });
   });
 }
 
@@ -562,17 +483,9 @@ function renderMeasure(query = new URLSearchParams()) {
         // No numbers here on purpose: single readings vary a lot, so the
         // athlete sees the weekly trend and the coach sees the details.
         upsertEntry(todayISO(), { hrv: out.hrv });
-        // After a first reading the normal way, offer to do it during the check-in.
-        const [offer, wireOffer] = loadSettings().hrvDuringCheckin || front ? ['', () => {}]
-          : combinedToggle(false, () => {
-            const card = view.querySelector('#measure-result .offer');
-            if (card) card.innerHTML = '<p><b>✓ Turned on.</b> Next time, your heart reading runs while you answer the questions.</p>';
-          });
         showResult(`<h3>✓ Thanks – reading saved</h3>
           ${heartStats(out.hrv)}
-          <a class="btn block" href="#today">Done</a>
-          ${offer}`);
-        wireOffer(view);
+          <a class="btn block" href="#today">Done</a>`);
         return;
       }
       showResult(`<h3>${out.poor ? 'Weak signal' : 'Reading didn’t work'}</h3><p>${esc(out.reason)}</p>
@@ -629,13 +542,14 @@ function renderHistory() {
         <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>HR</th><th>HRV</th><th>Load</th><th></th></tr></thead>
         <tbody>${[...entries].reverse().map((e) => {
     const a = assessDay(entries, e.date, { heart: false });
+    const load = sessionLoad(withWorkouts(entries).find((x) => x.date === e.date)?.training);
     return `<tr>
-            <td><a href="#checkin/${e.date}">${esc(shortDate(e.date))}</a></td>
+            <td><a href="${e.wellness ? `#checkin/${e.date}` : `#workouts/${e.date}`}">${esc(shortDate(e.date))}</a></td>
             <td>${a.score ?? '–'}</td>
             <td>${wellnessScore(e.wellness) ?? '–'}</td>
             <td>${fmt(e.hrv?.hr)}</td>
             <td>${fmt(e.hrv?.rmssd)}</td>
-            <td>${sessionLoad(e.training) || '–'}</td>
+            <td>${load || '–'}</td>
             <td><button class="link danger" data-del="${e.date}" aria-label="Delete ${e.date}">Delete</button></td>
           </tr>`;
   }).join('')}</tbody></table></div>` : '<p class="muted">No entries yet. Start with today’s check-in.</p>'}
@@ -685,7 +599,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   // for the next screen change.
   const hadController = Boolean(navigator.serviceWorker.controller);
   let updateReady = false;
-  const busy = () => /^#(checkin|measure|morning|saturday)/.test(location.hash);
+  const busy = () => /^#(checkin|measure|morning|workouts\/)/.test(location.hash);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || updateReady) return;
     updateReady = true;

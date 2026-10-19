@@ -1,4 +1,4 @@
-// Heart readings on the HRV screen, with the fake fingertip video.
+// Heart readings (optional, opened from Today), with the fake fingertip video.
 import { test, expect, seed, settings, todayEntry, readingResult } from './helpers.mjs';
 
 test('back-camera reading saves heart rate and HRV', async ({ page }) => {
@@ -13,8 +13,8 @@ test('back-camera reading saves heart rate and HRV', async ({ page }) => {
   expect(hrv.hr).toBeGreaterThan(50);
   expect(hrv.hr).toBeLessThan(70);
   expect(hrv.quality).not.toBe('poor');
-  // After a first reading the normal way, reading during the check-in is offered.
-  await expect(page.locator('#measure-result .offer')).toContainText('Save time');
+  // Heart readings are optional now: nothing more is offered.
+  await expect(page.locator('#measure-result .offer')).toHaveCount(0);
 });
 
 test('front camera: the whole screen lights the fingertip', async ({ page }) => {

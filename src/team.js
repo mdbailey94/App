@@ -1,6 +1,6 @@
 // Talking to the group's Google Sheet (see apps-script/Code.gs).
 
-import { assessDay, sessionLoad, wellnessScore } from './readiness.js';
+import { assessDay, sessionLoad, wellnessScore, withWorkouts } from './readiness.js';
 import { loadEntries, loadTeam, markSynced, saveTeam } from './storage.js';
 
 // Apps Script web apps accept a plain-text POST without a CORS preflight and
@@ -57,7 +57,7 @@ export function buildItems(allEntries, entries) {
         status: a.status?.label ?? null,
         flags: a.flags.map((f) => f.text),
         wellness: wellnessScore(entry.wellness),
-        load: sessionLoad(entry.training),
+        load: sessionLoad(withWorkouts(allEntries).find((e) => e.date === entry.date)?.training),
       },
     };
   });

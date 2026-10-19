@@ -1,244 +1,183 @@
-// The morning check-in: questions, reading days, reading during the
-// check-in, pre-filling and streaks.
+// The morning check-in (questions only), then the Workouts tab: logging each
+// day's training, backfilling, and streaks.
 import {
-  test, expect, seed, settings, todayEntry, answerAll, answerTraining, pick, dayISO, weekday, WELLNESS, HEART,
+  test, expect, seed, settings, todayEntry, answerAll, answerWorkout, finishCheckin, pick, dayISO, weekday, WELLNESS, ENTRIES,
 } from './helpers.mjs';
 
-const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const past = (n, extra = {}) => ({ date: dayISO(n), wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 }, ...extra });
+const entryOn = (page, date) => page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k) || '[]').find((e) => e.date === d), [ENTRIES, date]);
+const LOGGED = { am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false, loggedAt: new Date().toISOString() };
+// Today at a given local time (doubles are asked about from 4:30 pm).
+const at = (h, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; };
 
-test('first check-in: questions, then the heart reading, which can be skipped', async ({ page }) => {
-  await seed(page, { settings: { hrvDays: EVERY_DAY }, hash: '#morning' });
+test('the check-in is just the questions; then yesterday’s training, which can be skipped', async ({ page }) => {
+  await seed(page, { hash: '#morning' });
   await expect(page.locator('#reading')).toHaveCount(0);
-  await expect(page.locator('#combined-toggle')).toHaveCount(0);
-  await expect(page.locator('#view')).toContainText('Your 1-minute heart reading comes next.');
+  await expect(page.locator('#checkin select, #checkin [name=amDid], #checkin [name=weights]')).toHaveCount(0); // no training here
+  await expect(page.locator('[data-progress]')).toHaveText('7 questions left');
 
   await answerAll(page);
+  await expect(page.locator('[data-progress]')).toHaveText('All answered ✓');
   await page.click('#save');
-  await page.waitForURL(/#measure\?after=checkin/);
-  await expect(page.locator('#next-step')).toContainText('Answers saved');
-  expect((await todayEntry(page)).wellness).toMatchObject({ scaleMax: 7, energy: 5 });
+  await page.waitForURL(new RegExp(`#workouts/${dayISO(1)}\\?after=checkin`));
+  await expect(page.locator('.welcome')).toContainText('Check-in saved');
+  await expect(page.locator('h2')).toHaveText('Yesterday’s training');
+  const e = await todayEntry(page);
+  expect(e.wellness).toMatchObject({ scaleMax: 7, energy: 5 });
+  expect(e.training).toBeUndefined();
 
   await page.click('#skip');
   await page.waitForURL(/#today/);
-  await expect(page.locator('.done-list')).toContainText('No heart reading today');
-});
-
-test('reading during the check-in, once turned on', async ({ page }) => {
-  await seed(page, {
-    entries: [past(1, { hrv: HEART })],
-    settings: { hrvDays: EVERY_DAY, hrvDuringCheckin: true },
-    hash: '#morning',
-  });
-  await expect(page.locator('.toggle-line')).toContainText('on');
-  await page.click('#reading-start');
-  await answerAll(page, { value: 6 });
-  await page.click('#save');
-  await expect(page.locator('#save')).toHaveText('✓ Answers saved – finishing your heart reading…');
-  // Saved straight away, so closing the app mid-reading loses nothing.
-  expect((await todayEntry(page)).wellness.energy).toBe(6);
-  await page.waitForURL(/#today/, { timeout: 120_000 });
-
-  const e = await todayEntry(page);
-  expect(e.wellness.energy).toBe(6);
-  expect(e.hrv.source).toBe('camera');
-});
-
-test('reading during the check-in: saving without starting it keeps the answers', async ({ page }) => {
-  await seed(page, {
-    entries: [past(1, { hrv: HEART })],
-    settings: { hrvDays: EVERY_DAY, hrvDuringCheckin: true },
-    hash: '#morning',
-  });
-  await answerAll(page, { value: 6 });
-  await page.click('#save');
-  await page.waitForURL(/#today/);
-  const e = await todayEntry(page);
-  expect(e.wellness.energy).toBe(6);
-  expect(e.hrv).toBeUndefined();
-  await expect(page.locator('.done-list')).toContainText('No heart reading today');
-});
-
-test('reading during the check-in can be turned off again', async ({ page }) => {
-  await seed(page, {
-    entries: [past(1, { hrv: HEART })],
-    settings: { hrvDays: EVERY_DAY, hrvDuringCheckin: true },
-    hash: '#morning',
-  });
-  await page.click('#combined-toggle');
-  await expect(page.locator('#reading')).toHaveCount(0);
-  await expect(page.locator('.offer')).toContainText('Save time');
-  expect((await settings(page)).hrvDuringCheckin).toBe(false);
-});
-
-test('not a reading day: questions only, Today names the next reading day, streak grows', async ({ page }) => {
-  const tomorrow = weekday(-1);
-  await seed(page, { entries: [past(3), past(2), past(1)], settings: { hrvDays: [tomorrow] }, hash: '#today' });
-  await expect(page.locator('.hero')).toContainText('No heart reading needed today');
-  // No "check in today" nudge on Sundays.
-  await expect(page.locator('.streak')).toHaveText(weekday(0) === 0 ? '🔥 3-day streak' : '🔥 3-day streak – check in today to keep it going');
-
-  await page.click('text=Start my morning check-in');
-  await page.locator('#checkin').waitFor(); // the check-in screen is open
-  await expect(page.locator('#reading')).toHaveCount(0);
-  await answerAll(page);
-  await page.click('#save');
-  await page.waitForURL(/#today/);
-  await expect(page.locator('.done-list')).toContainText(`No heart reading needed today (next: ${DAY_NAMES[tomorrow]})`);
-  await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
+  await expect(page.locator('#yesterday-line')).toContainText('Yesterday’s training not logged');
+  await expect(page.locator('.heart-link')).toContainText('Add a heart reading');
 });
 
 test('a new day starts blank: nothing is carried over, and every answer is asked for', async ({ page }) => {
   await seed(page, { entries: [past(1)], hash: '#checkin' });
-  await expect(page.locator('.prefill-note')).toHaveCount(0);
   await expect(page.locator('input[name=energy]')).toHaveCount(7);
   await expect(page.locator('#checkin input[type=radio][name]:not([name=painLevel]):checked')).toHaveCount(0);
   await expect(page.locator('fieldset.scale', { hasText: 'Stressed or relaxed' }).locator('.scale-ends'))
     .toHaveText(/Very stressed\s*Very relaxed/);
-
-  // Practice length starts at the usual time: 2 h in the morning, 1½ h in the afternoon.
-  await expect(page.locator('select[name=amMin]')).toHaveValue('120');
-  await expect(page.locator('select[name=pmMin]')).toHaveValue('90');
-  // Afternoon practice is a yes/no first; Yes opens its time and effort.
-  await expect(page.locator('[data-details=pm]')).toBeHidden();
-  await page.click('input[name=pmDid][value=yes]');
-  await expect(page.locator('[data-details=pm]')).toBeVisible();
-  await expect(page.locator('select[name=pmMin] option')).toHaveCount(10); // no "No practice": that's the No button
-  await page.click('input[name=pmDid][value=no]');
-  await expect(page.locator('[data-details=pm]')).toBeHidden();
-  await page.$$eval('input[name=pmDid]', (all) => all.forEach((r) => { r.checked = false; }));
-  await expect(page.locator('select[name=amMin] option')).toHaveText([
-    'No practice', '30 min', '1 h', '1 h 30 min', '2 h', '2 h 30 min', '3 h', '3 h 30 min', '4 h', '4 h 30 min', '5 h',
-  ]);
-  // Effort: ten small buttons on one row; nothing picked.
-  const effort = page.locator('[data-effort=am] .effort-row label');
-  await expect(effort).toHaveCount(10);
-  const tops = await effort.evaluateAll((l) => new Set(l.map((x) => Math.round(x.getBoundingClientRect().top))).size);
-  expect(tops).toBe(1);
-
   // Unanswered questions are outlined; answering clears them.
   await page.click('button[type=submit]');
   await expect(page.locator('#form-error')).toContainText('Energy');
-  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, Afternoon practice?, Weights?, Meet?');
-  await expect(page.locator('.missing')).toHaveCount(11);
+  await expect(page.locator('.missing')).toHaveCount(7);
   await expect(page.locator('.missing').first()).toBeInViewport();
   await pick(page, 'input[name=energy][value="7"]');
-  await expect(page.locator('.missing')).toHaveCount(10);
-
-  // A rest day: no practices (no effort asked), no weights, no meet.
-  await answerAll(page, { value: 3, am: ['0'], pm: ['0'] });
-  await expect(page.locator('[data-effort=am]')).toBeHidden();
-  await page.click('button[type=submit]');
-  await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toEqual({ am: null, pm: null, weights: false, meet: false, durationMin: 0, rpe: 0 });
+  await expect(page.locator('.missing')).toHaveCount(6);
 });
 
-test('training: morning and afternoon practice, weights and meet, each on its own row', async ({ page }) => {
-  await seed(page, { hash: '#checkin' });
-  await answerAll(page, { am: ['90', '4'], pm: ['120', '8'], weights: 'yes', meet: 'no' });
-  // No words describing the rating, just the numbers.
-  await expect(page.locator('section.training')).not.toContainText(/easy|max|Somewhat|Very hard/i);
-  // Weights count as 45 minutes at hard effort (5): 90×4 + 120×8 + 45×5.
-  await expect(page.locator('[data-load-preview=""]')).toHaveText('Training load: 1545 AU (minutes × effort; weights count as 45 min, hard)');
-  for (const q of ['Weights?', 'Meet?']) {
-    const row = page.locator('.yes-no', { hasText: q });
-    // The question and both buttons share a row: the question's middle is
-    // within the buttons' height, and the buttons line up with each other.
-    const [text, yes, no] = await row.locator('.q, label').evaluateAll((l) => l.map((x) => x.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2 })));
-    expect(text.mid, `${q} on one row`).toBeGreaterThan(yes.top);
-    expect(text.mid, `${q} on one row`).toBeLessThan(yes.bottom);
-    expect(Math.abs(yes.top - no.top)).toBeLessThan(2);
-  }
-  await page.click('button[type=submit]');
-  await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toEqual({
-    am: { durationMin: 90, rpe: 4 }, pm: { durationMin: 120, rpe: 8 }, weights: true, meet: false, durationMin: 255, rpe: 6,
+test('logging yesterday right after the check-in, and the streak grows', async ({ page }) => {
+  await seed(page, { entries: [past(3), past(2), past(1)], hash: '#today' });
+  // No "check in today" nudge on Sundays.
+  await expect(page.locator('.streak')).toHaveText(weekday(0) === 0 ? '🔥 3-day streak' : '🔥 3-day streak – check in today to keep it going');
+  await page.click('text=Start my morning check-in');
+  await answerAll(page);
+  await page.click('#save');
+  await page.waitForURL(/#workouts\//);
+  await answerWorkout(page, { am: ['120', '5', '7'], pm: ['no'] });
+  await page.click('#save-workout');
+  await page.waitForURL(/#today$/);
+  await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
+  await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
+  const y = await entryOn(page, dayISO(1));
+  expect(y.workouts).toMatchObject({ am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false });
+  expect(y.wellness.energy).toBe(5); // the day's own check-in is kept
+});
+
+test('Workouts tab: today and yesterday first, then earlier days with their status', async ({ page }) => {
+  await seed(page, { entries: [past(3), { date: dayISO(1), workouts: LOGGED }], hash: '#workouts' });
+  await expect(page.locator('.tabs a')).toHaveText(['Today', 'Check-in', 'Workouts', 'History', 'Team']);
+  await expect(page.locator('.tabs a[aria-current]')).toHaveText('Workouts');
+
+  const days = page.locator('.workout-day');
+  await expect(days.locator('h3')).toHaveText([/^Today/, /^Yesterday/]);
+  await expect(days.first().locator('.wk-status')).toHaveText('Not logged');
+  await expect(days.first().locator('.btn')).toHaveText('Log today’s training');
+  await expect(days.nth(1).locator('.wk-status')).toHaveText('Logged');
+  await expect(days.nth(1)).toContainText('AM 2 h · effort 5 · how well 7/10');
+  await expect(days.nth(1).locator('.btn')).toHaveText('Edit');
+  // An older check-in reported the day before it (day 4): shown as such.
+  const rows = page.locator('.workout-list li');
+  await expect(rows).toHaveCount(19);
+  await expect(rows.nth(0).locator('.wk-status')).toHaveText('Not logged'); // 2 days ago
+  await expect(rows.nth(2).locator('.wk-status')).toHaveText('From check-in'); // 4 days ago
+});
+
+test('logging a day: morning practice (how hard, how well, or why not), doubles, weights, a meet', async ({ page }) => {
+  await page.clock.setFixedTime(at(17)); // after 4:30 pm: doubles are asked
+  await seed(page, { hash: `#workouts/${dayISO(0)}` });
+  await expect(page.locator('h2')).toHaveText('Today’s training');
+  await expect(page.locator('.session-card .yes-no .q')).toHaveText(['Morning practice?', 'Doubles?']);
+
+  // Missing morning practice asks why.
+  await page.click('input[name=amDid][value=no]');
+  await expect(page.locator('[data-skipped=am] .chips.reasons label')).toHaveText(['Off day', 'Sick/injured', 'Missed', 'Other']);
+  await pick(page, 'input[name=amWhy][value=other]');
+  await expect(page.locator('[data-note=am]')).toBeVisible();
+  // Missing doubles doesn't.
+  await page.click('input[name=pmDid][value=no]');
+  await expect(page.locator('[data-skipped=pm]')).toHaveCount(0);
+
+  // Went to morning practice after all: time, how hard, how well.
+  await page.click('input[name=amDid][value=yes]');
+  await expect(page.locator('[data-went=am]')).toBeVisible();
+  await expect(page.locator('[data-skipped=am]')).toBeHidden();
+  await expect(page.locator('select[name=amMin]')).toHaveValue('120'); // the usual 2 h
+  await expect(page.locator('[data-went=am] .q')).toHaveText(['How long?', 'How hard was it?', 'How well did you do?']);
+  await expect(page.locator('[data-went=am] .effort-row').nth(1).locator('label')).toHaveCount(10);
+  await expect(page.locator('[data-went=am] .scale-ends')).toHaveText(/Not well\s*Very well/);
+  // Half an answer is pointed out.
+  await page.click('#save-workout');
+  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How well you did at morning practice');
+
+  await answerWorkout(page, { am: ['90', '6', '8'], pm: ['no'], weights: 'yes', meet: 'yes', meetLevel: 'hard' });
+  await expect(page.locator('[data-meet] label')).toHaveText(['Light', 'Moderate', 'Hard']);
+  // 90 × 6 + weights (45 min at 5); meets aren't counted.
+  await expect(page.locator('[data-load-preview]')).toHaveText('Training load: 765 (minutes × effort; weights count as 45 min, hard)');
+  await page.click('#save-workout');
+  await page.waitForURL(/#workouts$/);
+  expect((await todayEntry(page)).workouts).toMatchObject({
+    am: { durationMin: 90, rpe: 6, perf: 8 }, pm: { none: null }, weights: true, meet: true, meetLevel: 'hard',
   });
+  await expect(page.locator('.workout-day').first().locator('.wk-status')).toHaveText('Logged');
 
-  // Editing today's check-in shows the saved answers.
-  await page.goto('/#checkin');
-  await expect(page.locator('select[name=amMin]')).toHaveValue('90');
-  await expect(page.locator('input[name=pmDid]:checked')).toHaveValue('yes');
-  await expect(page.locator('[data-details=pm]')).toBeVisible();
-  await expect(page.locator('input[name=pmRpe]:checked')).toHaveValue('8');
-  await expect(page.locator('input[name=weights]:checked')).toHaveValue('yes');
-  await expect(page.locator('input[name=meet]:checked')).toHaveValue('no');
+  // Editing shows the saved answers.
+  await page.goto(`/#workouts/${dayISO(0)}`);
+  await expect(page.locator('input[name=amPerf]:checked')).toHaveValue('8');
+  await expect(page.locator('input[name=pmDid]:checked')).toHaveValue('no');
+  await expect(page.locator('input[name=meetLevel]:checked')).toHaveValue('hard');
 });
 
-test('a meet asks how hard it was: light, moderate or hard', async ({ page }) => {
-  await seed(page, { hash: '#checkin' });
-  await expect(page.locator('[data-details=meet]')).toBeHidden();
-  await answerAll(page, { am: ['0'], pm: ['0'], meet: 'yes', meetLevel: null });
-  await expect(page.locator('[data-details=meet]')).toBeVisible();
-  await expect(page.locator('[data-details=meet] label')).toHaveText(['Light', 'Moderate', 'Hard']);
-  await page.click('button[type=submit]');
-  await expect(page.locator('#form-error')).toContainText('How hard the meet was');
-  await pick(page, 'input[name=meetLevel][value=light]');
-  await page.click('button[type=submit]');
-  await page.waitForURL(/#today/);
-  expect((await todayEntry(page)).training).toMatchObject({ meet: true, meetLevel: 'light', durationMin: 0, rpe: 0 });
+test('doubles: not asked about today before 4:30 pm; asked for yesterday', async ({ page }) => {
+  await page.clock.setFixedTime(at(9, 30));
+  await seed(page, { hash: `#workouts/${dayISO(0)}` });
+  await expect(page.locator('[name=pmDid]')).toHaveCount(0);
+  await expect(page.locator('.doubles-later')).toContainText('after 4:30 pm');
+  await answerWorkout(page);
+  await page.click('#save-workout');
+  await page.waitForURL(/#workouts$/);
+  // Morning practice, weights and meet answered: logged for now.
+  await expect(page.locator('.workout-day').first().locator('.wk-status')).toHaveText('Logged');
+  expect((await todayEntry(page)).workouts.pm).toBeUndefined();
 
-  // Editing shows the answer; a No hides the question again.
-  await page.goto('/#checkin');
-  await expect(page.locator('input[name=meetLevel]:checked')).toHaveValue('light');
-  await pick(page, 'input[name=meet][value=no]');
-  await expect(page.locator('[data-details=meet]')).toBeHidden();
+  await page.goto(`/#workouts/${dayISO(1)}`);
+  await expect(page.locator('.session-card .yes-no .q')).toHaveText(['Morning practice?', 'Doubles?']);
+});
+
+test('filling in an earlier day: saved under that day, with when it was logged', async ({ page }) => {
+  await seed(page, { hash: '#workouts' });
+  await page.fill('#other-day input[name=d]', dayISO(30));
+  await page.click('#other-day button');
+  await page.waitForURL(new RegExp(`#workouts/${dayISO(30)}`));
+  await answerWorkout(page, { am: ['no', 'sick'], pm: ['no'] });
+  await page.click('#save-workout');
+  await page.waitForURL(/#workouts$/);
+  const e = await entryOn(page, dayISO(30));
+  expect(e.workouts).toMatchObject({ am: { none: 'sick' }, pm: { none: null } });
+  expect(e.workouts.loggedAt.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+  expect(e.wellness).toBeUndefined(); // training only: not a check-in
+  await page.goto(`/#workouts/${dayISO(30)}`);
+  await expect(page.locator('#workout')).toContainText('Filled in later');
 });
 
 test.describe('on a Monday', () => {
-  const MONDAY = '2026-10-12', SUNDAY = '2026-10-11', SATURDAY_CHECKIN = '2026-10-10';
-  const entry = (date) => ({ date, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } });
+  const MONDAY = '2026-10-12';
   test.beforeEach(async ({ page }) => { await page.clock.setFixedTime(new Date(`${MONDAY}T07:00:00`)); });
 
-  test('no Sunday check-in: after checking in, they are asked about Saturday once', async ({ page }) => {
-    await seed(page, { entries: [entry(SATURDAY_CHECKIN)], settings: { hrvDays: [3] }, hash: '#morning' });
-    await answerAll(page);
-    await page.click('#save');
-    await page.waitForURL(/#saturday/);
-    await expect(page.locator('.welcome')).toContainText('how was Sat, Oct 10’s training');
-    await expect(page.locator('.training h3')).toHaveText('Saturday’s training');
-
-    await page.click('#save');
-    await expect(page.locator('#form-error')).toContainText('Weights?, Meet?');
-    await answerTraining(page, { prefix: 'sat', am: ['180', '7'], pm: ['0'], meet: 'yes', meetLevel: 'hard' });
-    await page.click('#save');
-    await page.waitForURL(/#today$/);
-
-    const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), 'athlete-readiness/entries/v1');
-    const sunday = saved.find((e) => e.date === SUNDAY);
-    expect(sunday.training).toEqual({ am: { durationMin: 180, rpe: 7 }, pm: null, weights: false, meet: true, meetLevel: 'hard', durationMin: 180, rpe: 7 });
-    expect(sunday.wellness).toBeUndefined(); // training only: not a Sunday check-in
-    expect(saved.find((e) => e.date === MONDAY).wellness.energy).toBe(5);
-    // Making up Saturday keeps the streak going through Sunday: Sat, Sun, Mon.
-    await expect(page.locator('.streak')).toHaveText('🔥 3-day streak');
-
-    // Not asked again.
-    await page.goto('/#checkin');
-    await page.click('button[type=submit]');
-    await page.waitForURL(/#today$/);
-  });
-
-  test('before Monday’s check-in the streak waits; skipping Saturday ends it; not asked again', async ({ page }) => {
-    await seed(page, { entries: [entry('2026-10-09'), entry(SATURDAY_CHECKIN)], settings: { hrvDays: [3] }, hash: '#today' });
-    await expect(page.locator('.streak')).toHaveText('🔥 2-day streak – check in today to keep it going');
+  test('Saturday’s training logged later keeps the streak going through Sunday', async ({ page }) => {
+    await seed(page, { entries: [{ date: '2026-10-10', wellness: WELLNESS() }], hash: '#today' });
+    // Until Monday is done, Sunday can still be made up.
+    await expect(page.locator('.streak')).toHaveCount(0);
+    await page.goto('/#workouts/2026-10-10');
+    await answerWorkout(page);
+    await page.click('#save-workout');
+    await page.waitForURL(/#workouts$/);
     await page.goto('/#morning');
     await answerAll(page);
     await page.click('#save');
-    await page.waitForURL(/#saturday/);
-    await page.click('#skip-saturday');
-    await page.waitForURL(/#today$/);
-    await expect(page.locator('.streak')).toHaveCount(0); // Sunday wasn't made up: a new streak of 1
-    await page.goto('/#checkin');
-    await page.click('button[type=submit]');
-    await page.waitForURL(/#today$/);
-  });
-
-  test('with a Sunday check-in, Saturday is already reported: no question', async ({ page }) => {
-    await seed(page, { entries: [entry(SUNDAY)], settings: { hrvDays: [3] }, hash: '#morning' });
-    await answerAll(page);
-    await page.click('#save');
-    await page.waitForURL(/#today$/);
+    await finishCheckin(page); // asked about Sunday: skipped
+    await expect(page.locator('.streak')).toHaveText('🔥 3-day streak'); // Sat, Sun (made up), Mon
   });
 });
 
@@ -264,10 +203,10 @@ test('an app saved on the check-in page opens on Today once today is done', asyn
 
 test('after checking in: thanks, no score or advice, then a comparison with their own usual', async ({ page }) => {
   // Two earlier check-ins: too few to compare yet.
-  await seed(page, { entries: [past(2), past(1)], settings: { hrvDays: [weekday(-1)] }, hash: '#morning' });
+  await seed(page, { entries: [past(2), past(1)], hash: '#morning' });
   await answerAll(page, { value: 2 });
   await page.click('#save');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   const hero = page.locator('.hero');
   await expect(hero.locator('h2')).toHaveText('Thanks for checking in!');
   await expect(hero).toContainText('After 3 more check-ins, you’ll see how each day compares with your usual.');
@@ -275,11 +214,11 @@ test('after checking in: thanks, no score or advice, then a comparison with thei
   await expect(page.locator('#view')).not.toContainText(/light session|recovery|trimming|\/100/);
 
   // A low day after a handful of usual ones: neutral wording, keep to the program.
-  await seed(page, { entries: [6, 5, 4, 3, 2, 1].map((n) => past(n)), settings: { hrvDays: [weekday(-1)] }, hash: '#morning' });
+  await seed(page, { entries: [6, 5, 4, 3, 2, 1].map((n) => past(n)), hash: '#morning' });
   await answerAll(page, { value: 2 });
   await pick(page, 'input[name=painLevel][value="3"]');
   await page.click('#save');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   await expect(hero.locator('.usual')).toHaveText('Feeling a bit below usual');
   await expect(hero).toContainText('Keep following your program');
   await expect(hero.locator('.injury-note')).toContainText('talk to your coach before practice');

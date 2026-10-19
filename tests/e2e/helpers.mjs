@@ -53,31 +53,45 @@ export const pick = (page, selector) => page.$eval(selector, (el) => {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
-// Answer every questionnaire item.
-// Training: morning and afternoon practice minutes ('0' = none) and effort,
-// then weights and meet ('yes' / 'no'; a meet also asks how hard: meetLevel). Afternoon practice is a yes/no that
-// opens its time and effort. `prefix` answers another training card (the
-// Monday question about Saturday).
-export async function answerTraining(page, { am = ['120', '5'], pm = ['90', '6'], weights = 'no', meet = 'no', meetLevel = 'moderate', prefix = '' } = {}) {
-  await page.selectOption(`select[name=${prefix}amMin]`, am[0]);
-  if (am[0] !== '0') await pick(page, `input[name=${prefix}amRpe][value="${am[1]}"]`);
-  await pick(page, `input[name=${prefix}pmDid][value=${pm[0] === '0' ? 'no' : 'yes'}]`);
-  if (pm[0] !== '0') {
-    await page.selectOption(`select[name=${prefix}pmMin]`, pm[0]);
-    await pick(page, `input[name=${prefix}pmRpe][value="${pm[1]}"]`);
-  }
-  await pick(page, `input[name=${prefix}weights][value=${weights}]`);
-  await pick(page, `input[name=${prefix}meet][value=${meet}]`);
-  if (meet === 'yes' && meetLevel) await pick(page, `input[name=${prefix}meetLevel][value=${meetLevel}]`);
-}
-
-export async function answerAll(page, { value = 5, sleep = '8', ...training } = {}) {
+// Answer every questionnaire item (training is on the Workouts tab now).
+export async function answerAll(page, { value = 5, sleep = '8' } = {}) {
   await page.locator('#checkin').waitFor();
   await pick(page, `input[name=sleepHours][value="${sleep}"]`);
   for (const k of ['sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'motivation']) {
     await pick(page, `input[name=${k}][value="${value}"]`);
   }
-  await answerTraining(page, training);
+}
+
+// After saving today's check-in, the app asks about yesterday's training if
+// it isn't logged; skip that and land on Today.
+export async function finishCheckin(page, opts) {
+  await page.waitForURL(/#(today|workouts\/)/, opts);
+  if (/#workouts\//.test(page.url())) {
+    await page.click('#skip');
+    await page.waitForURL(/#today/);
+  }
+}
+
+// Fill in the Workouts form for one day. A practice is [minutes, effort,
+// how well] or ['no', reason] (doubles: just ['no']); weights and meet are
+// 'yes' / 'no'. Doubles are skipped when the form doesn't ask yet.
+export async function answerWorkout(page, { am = ['120', '5', '7'], pm = ['no'], weights = 'no', meet = 'no', meetLevel } = {}) {
+  await page.locator('#workout').waitFor();
+  for (const [k, v] of [['am', am], ['pm', pm]]) {
+    if (!v || !(await page.locator(`[name=${k}Did]`).count())) continue;
+    if (v[0] === 'no') {
+      await pick(page, `input[name=${k}Did][value=no]`);
+      if (v[1]) await pick(page, `input[name=${k}Why][value=${v[1]}]`);
+    } else {
+      await pick(page, `input[name=${k}Did][value=yes]`);
+      await page.selectOption(`select[name=${k}Min]`, v[0]);
+      await pick(page, `input[name=${k}Rpe][value="${v[1]}"]`);
+      await pick(page, `input[name=${k}Perf][value="${v[2]}"]`);
+    }
+  }
+  if (weights) await pick(page, `input[name=weights][value=${weights}]`);
+  if (meet) await pick(page, `input[name=meet][value=${meet}]`);
+  if (meet === 'yes' && meetLevel) await pick(page, `input[name=meetLevel][value=${meetLevel}]`);
 }
 
 // A fake group sheet of its own for each test.
