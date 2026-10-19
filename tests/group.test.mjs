@@ -343,5 +343,5 @@ test('workouts logged on the Workouts tab count like check-in reports, filed und
   // Off sick: on the watch list, even with an otherwise fine week.
   const w = watchList(r, D).find((x) => x.name === 'Ana');
   assert.equal(w.reasons[0].level, 'serious');
-  assert.match(w.reasons[0].text, /Missed practice sick: yesterday, 2 days ago\./);
+  assert.match(w.reasons[0].text, /Missed practice sick\/injured: yesterday, 2 days ago\./);
 });

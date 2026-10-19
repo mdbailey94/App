@@ -197,7 +197,7 @@ export function watchList(rows, date) {
   for (const a of groupByAthlete(rows).values()) {
     const upTo = a.entries.filter((e) => e.date <= date);
     const week = upTo.filter((e) => e.date >= weekAgo && isCheckIn(e));
-    // Off sick (Workouts tab): practices missed for illness in the last 3
+    // Off sick or injured (Workouts tab): practices missed for that in the last 3
     // days, whether or not they checked in. Training is filed under the next
     // morning, so today's log sits on tomorrow's entry.
     const sickDays = a.entries
@@ -207,7 +207,7 @@ export function watchList(rows, date) {
       .reverse(); // most recent first
     const sick = sickDays.length ? {
       level: 'serious',
-      text: `Missed practice sick: ${sickDays.map((d) => (d === date ? 'today' : d === shiftDate(date, -1) ? 'yesterday' : `${daysBetween(d, date)} days ago`)).join(', ')}.`,
+      text: `Missed practice sick/injured: ${sickDays.map((d) => (d === date ? 'today' : d === shiftDate(date, -1) ? 'yesterday' : `${daysBetween(d, date)} days ago`)).join(', ')}.`,
     } : null;
     if (!week.length) {
       if (sick) list.push({ key: a.key, name: a.name, reasons: [sick], lastCheckIn: upTo.filter(isCheckIn).at(-1)?.date ?? null });

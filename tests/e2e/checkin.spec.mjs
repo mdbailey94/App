@@ -96,11 +96,11 @@ test('logging a day: each practice with how hard and how well, or why not; weigh
 
   // Half an answer is pointed out.
   await page.click('#save-workout');
-  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How well morning practice went');
+  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How morning practice went for you');
 
   // No afternoon practice: why not.
   await page.click('input[name=pmDid][value=no]');
-  await expect(page.locator('[data-skipped=pm] .chips.reasons label')).toHaveText(['Off day', 'Sick', 'Missed', 'Other']);
+  await expect(page.locator('[data-skipped=pm] .chips.reasons label')).toHaveText(['Off day', 'Sick/injured', 'Missed', 'Other']);
   await pick(page, 'input[name=pmWhy][value=other]');
   await expect(page.locator('[data-note=pm]')).toBeVisible();
   await page.fill('input[name=pmNote]', 'dentist');

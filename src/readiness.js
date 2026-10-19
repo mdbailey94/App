@@ -63,12 +63,12 @@ export function trainingFrom({ am, pm, weights = false, meet = false, meetLevel:
 //   { am: Practice | Skipped, pm: Practice | Skipped,
 //     weights: boolean, meet: boolean, meetLevel }
 //   Practice = { durationMin, rpe, perf }   effort and "how well it went", 1–10
-//   Skipped  = { none: 'off' | 'sick' | 'missed' | 'other', note }
+//   Skipped  = { none: 'off' | 'sick' (sick or injured) | 'missed' | 'other', note }
 // Before the Workouts tab, training was reported in the next morning's
 // check-in (`entry.training` on the day after). The analysis still reads it
 // there, so `withWorkouts` puts each logged day's training on the next
 // morning; a logged workout wins over an older check-in report of that day.
-export const SKIP_REASONS = { off: 'Off day', sick: 'Sick', missed: 'Missed', other: 'Other' };
+export const SKIP_REASONS = { off: 'Off day', sick: 'Sick/injured', missed: 'Missed', other: 'Other' };
 const practiced = (p) => (p?.durationMin > 0 ? { durationMin: p.durationMin, rpe: p.rpe, perf: p.perf } : null);
 
 export function trainingFromWorkouts(w) {

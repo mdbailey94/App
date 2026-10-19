@@ -102,7 +102,7 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   const compare = page.locator('#day-before .compare-table');
   await expect(compare.locator('tbody th')).toHaveText([
     'Reported', 'Morning practice', 'time', 'effort', 'how well', 'Afternoon practice', 'time', 'effort', 'how well',
-    'Lifted', 'Raced', 'Missed: sick', 'Missed: other', 'Avg load',
+    'Lifted', 'Raced', 'Missed: sick/injured', 'Missed: other', 'Avg load',
   ]);
   await expect(compare.locator('tr', { hasText: 'Raced' }).locator('td')).toHaveText(['1', '0', '0']);
   // The five who checked in today, heaviest load first.
@@ -249,7 +249,7 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
 
   const nia = page.locator('#day-before .day-table tr', { hasText: 'Nia Lopez' });
   await expect(nia.locator('td.effort')).toContainText('AM 2h · 6 · 8');
-  await expect(nia.locator('td.effort')).toContainText('PM sick');
-  await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick' }).locator('td').first()).toHaveText('1');
-  await expect(page.locator('.watch > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
+  await expect(nia.locator('td.effort')).toContainText('PM sick/injured');
+  await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick/injured' }).locator('td').first()).toHaveText('1');
+  await expect(page.locator('.watch > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick/injured: yesterday.');
 });

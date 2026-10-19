@@ -21,8 +21,8 @@ a **practice group**, in which case each day's check-in is also sent to a Google
   own answers, and ✓ for questions answered / heart reading saved.
 - **Check-in (morning)** — the questions (about a minute). A new day starts blank. Right after, the app
   asks about yesterday's training if it isn't logged yet (skippable).
-- **Workouts** — training logged for the day it happened: each practice (how long, how hard 1–10, how well it
-  went 1–10, or why not: off day, sick, missed, other), weights, and a meet. Today and yesterday first, then
+- **Workouts** — training logged for the day it happened: each practice (how long, how hard 1–10, how it went
+  for them 1–10, or why not: off day, sick/injured, missed, other), weights, and a meet. Today and yesterday first, then
   earlier days with their status; any day can be filled in or corrected later (when it was logged is kept).
 - **Heart reading** (optional, from Today) — 1–3 min camera reading. Past readings are kept.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
