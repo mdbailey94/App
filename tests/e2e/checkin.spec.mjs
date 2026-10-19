@@ -6,7 +6,9 @@ import {
 
 const past = (n, extra = {}) => ({ date: dayISO(n), wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 }, ...extra });
 const entryOn = (page, date) => page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k) || '[]').find((e) => e.date === d), [ENTRIES, date]);
-const LOGGED = { am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: 'off' }, weights: false, meet: false, loggedAt: new Date().toISOString() };
+const LOGGED = { am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false, loggedAt: new Date().toISOString() };
+// Today at a given local time (doubles are asked about from 4:30 pm).
+const at = (h, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; };
 
 test('the check-in is just the questions; then yesterday’s training, which can be skipped', async ({ page }) => {
   await seed(page, { hash: '#morning' });
@@ -53,13 +55,13 @@ test('logging yesterday right after the check-in, and the streak grows', async (
   await answerAll(page);
   await page.click('#save');
   await page.waitForURL(/#workouts\//);
-  await answerWorkout(page, { am: ['120', '5', '7'], pm: ['no', 'off'] });
+  await answerWorkout(page, { am: ['120', '5', '7'], pm: ['no'] });
   await page.click('#save-workout');
   await page.waitForURL(/#today$/);
   await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
   await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
   const y = await entryOn(page, dayISO(1));
-  expect(y.workouts).toMatchObject({ am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: 'off' }, weights: false, meet: false });
+  expect(y.workouts).toMatchObject({ am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false });
   expect(y.wellness.energy).toBe(5); // the day's own check-in is kept
 });
 
@@ -73,7 +75,7 @@ test('Workouts tab: today and yesterday first, then earlier days with their stat
   await expect(days.first().locator('.wk-status')).toHaveText('Not logged');
   await expect(days.first().locator('.btn')).toHaveText('Log today’s training');
   await expect(days.nth(1).locator('.wk-status')).toHaveText('Logged');
-  await expect(days.nth(1)).toContainText('AM 2 h · effort 5 · went 7/10 · PM off day');
+  await expect(days.nth(1)).toContainText('AM 2 h · effort 5 · how well 7/10');
   await expect(days.nth(1).locator('.btn')).toHaveText('Edit');
   // An older check-in reported the day before it (day 4): shown as such.
   const rows = page.locator('.workout-list li');
@@ -82,45 +84,65 @@ test('Workouts tab: today and yesterday first, then earlier days with their stat
   await expect(rows.nth(2).locator('.wk-status')).toHaveText('From check-in'); // 4 days ago
 });
 
-test('logging a day: each practice with how hard and how well, or why not; weights; a meet', async ({ page }) => {
+test('logging a day: morning practice (how hard, how well, or why not), doubles, weights, a meet', async ({ page }) => {
+  await page.clock.setFixedTime(at(17)); // after 4:30 pm: doubles are asked
   await seed(page, { hash: `#workouts/${dayISO(0)}` });
   await expect(page.locator('h2')).toHaveText('Today’s training');
-  await expect(page.locator('[data-went=am], [data-skipped=am]')).toHaveCount(2);
-  await expect(page.locator('[data-went=am]')).toBeHidden();
+  await expect(page.locator('.session-card .yes-no .q')).toHaveText(['Morning practice?', 'Doubles?']);
+
+  // Missing morning practice asks why.
+  await page.click('input[name=amDid][value=no]');
+  await expect(page.locator('[data-skipped=am] .chips.reasons label')).toHaveText(['Off day', 'Sick/injured', 'Missed', 'Other']);
+  await pick(page, 'input[name=amWhy][value=other]');
+  await expect(page.locator('[data-note=am]')).toBeVisible();
+  // Missing doubles doesn't.
+  await page.click('input[name=pmDid][value=no]');
+  await expect(page.locator('[data-skipped=pm]')).toHaveCount(0);
+
+  // Went to morning practice after all: time, how hard, how well.
   await page.click('input[name=amDid][value=yes]');
   await expect(page.locator('[data-went=am]')).toBeVisible();
+  await expect(page.locator('[data-skipped=am]')).toBeHidden();
   await expect(page.locator('select[name=amMin]')).toHaveValue('120'); // the usual 2 h
-  await expect(page.locator('[data-went=am] .effort-row')).toHaveCount(2); // how hard, how well
+  await expect(page.locator('[data-went=am] .q')).toHaveText(['How long?', 'How hard was it?', 'How well did you do?']);
   await expect(page.locator('[data-went=am] .effort-row').nth(1).locator('label')).toHaveCount(10);
   await expect(page.locator('[data-went=am] .scale-ends')).toHaveText(/Not well\s*Very well/);
-
   // Half an answer is pointed out.
   await page.click('#save-workout');
   await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How well you did at morning practice');
 
-  // No afternoon practice: why not.
-  await page.click('input[name=pmDid][value=no]');
-  await expect(page.locator('[data-skipped=pm] .chips.reasons label')).toHaveText(['Off day', 'Sick/injured', 'Missed', 'Other']);
-  await pick(page, 'input[name=pmWhy][value=other]');
-  await expect(page.locator('[data-note=pm]')).toBeVisible();
-  await page.fill('input[name=pmNote]', 'dentist');
-
-  await answerWorkout(page, { am: ['90', '6', '8'], pm: null, weights: 'yes', meet: 'yes', meetLevel: 'hard' });
+  await answerWorkout(page, { am: ['90', '6', '8'], pm: ['no'], weights: 'yes', meet: 'yes', meetLevel: 'hard' });
   await expect(page.locator('[data-meet] label')).toHaveText(['Light', 'Moderate', 'Hard']);
   // 90 × 6 + weights (45 min at 5); meets aren't counted.
   await expect(page.locator('[data-load-preview]')).toHaveText('Training load: 765 (minutes × effort; weights count as 45 min, hard)');
   await page.click('#save-workout');
   await page.waitForURL(/#workouts$/);
   expect((await todayEntry(page)).workouts).toMatchObject({
-    am: { durationMin: 90, rpe: 6, perf: 8 }, pm: { none: 'other', note: 'dentist' }, weights: true, meet: true, meetLevel: 'hard',
+    am: { durationMin: 90, rpe: 6, perf: 8 }, pm: { none: null }, weights: true, meet: true, meetLevel: 'hard',
   });
+  await expect(page.locator('.workout-day').first().locator('.wk-status')).toHaveText('Logged');
 
   // Editing shows the saved answers.
   await page.goto(`/#workouts/${dayISO(0)}`);
   await expect(page.locator('input[name=amPerf]:checked')).toHaveValue('8');
-  await expect(page.locator('input[name=pmWhy]:checked')).toHaveValue('other');
-  await expect(page.locator('input[name=pmNote]')).toHaveValue('dentist');
+  await expect(page.locator('input[name=pmDid]:checked')).toHaveValue('no');
   await expect(page.locator('input[name=meetLevel]:checked')).toHaveValue('hard');
+});
+
+test('doubles: not asked about today before 4:30 pm; asked for yesterday', async ({ page }) => {
+  await page.clock.setFixedTime(at(9, 30));
+  await seed(page, { hash: `#workouts/${dayISO(0)}` });
+  await expect(page.locator('[name=pmDid]')).toHaveCount(0);
+  await expect(page.locator('.doubles-later')).toContainText('after 4:30 pm');
+  await answerWorkout(page);
+  await page.click('#save-workout');
+  await page.waitForURL(/#workouts$/);
+  // Morning practice, weights and meet answered: logged for now.
+  await expect(page.locator('.workout-day').first().locator('.wk-status')).toHaveText('Logged');
+  expect((await todayEntry(page)).workouts.pm).toBeUndefined();
+
+  await page.goto(`/#workouts/${dayISO(1)}`);
+  await expect(page.locator('.session-card .yes-no .q')).toHaveText(['Morning practice?', 'Doubles?']);
 });
 
 test('filling in an earlier day: saved under that day, with when it was logged', async ({ page }) => {
@@ -128,11 +150,11 @@ test('filling in an earlier day: saved under that day, with when it was logged',
   await page.fill('#other-day input[name=d]', dayISO(30));
   await page.click('#other-day button');
   await page.waitForURL(new RegExp(`#workouts/${dayISO(30)}`));
-  await answerWorkout(page, { am: ['no', 'sick'], pm: ['no', 'sick'] });
+  await answerWorkout(page, { am: ['no', 'sick'], pm: ['no'] });
   await page.click('#save-workout');
   await page.waitForURL(/#workouts$/);
   const e = await entryOn(page, dayISO(30));
-  expect(e.workouts).toMatchObject({ am: { none: 'sick' }, pm: { none: 'sick' } });
+  expect(e.workouts).toMatchObject({ am: { none: 'sick' }, pm: { none: null } });
   expect(e.workouts.loggedAt.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
   expect(e.wellness).toBeUndefined(); // training only: not a check-in
   await page.goto(`/#workouts/${dayISO(30)}`);

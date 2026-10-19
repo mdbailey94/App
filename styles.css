@@ -507,3 +507,5 @@ h3 { font-size: 16px; letter-spacing: -0.005em; }
 .chips.reasons label:last-child { grid-column: auto; }
 .chips.reasons span { height: 40px; font-size: 12.5px; text-align: center; line-height: 1.15; padding: 0 2px; }
 .heart-link { text-align: center; margin: 12px 0 0; }
+
+.doubles-later { text-align: center; margin: 0 0 12px; }

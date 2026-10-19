@@ -101,7 +101,7 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   // Yesterday's training against the same day last week and the usual.
   const compare = page.locator('#day-before .compare-table');
   await expect(compare.locator('tbody th')).toHaveText([
-    'Reported', 'Morning practice', 'time', 'effort', 'how well', 'Afternoon practice', 'time', 'effort', 'how well',
+    'Reported', 'Morning practice', 'time', 'effort', 'how well', 'Doubles', 'time', 'effort', 'how well',
     'Lifted', 'Raced', 'Missed: sick/injured', 'Missed: other', 'Avg load',
   ]);
   await expect(compare.locator('tr', { hasText: 'Raced' }).locator('td')).toHaveText(['1', '0', '0']);
@@ -115,7 +115,7 @@ test('Group tab: watch list, check-ins and who is missing', async ({ page }, tes
   await expect(ana.locator('td').nth(4)).toHaveText('▲+327%');
   const mayaDay = trainedRows.filter({ hasText: 'Maya Torres' });
   await expect(mayaDay.locator('td.effort')).toContainText('AM 1½h · 4');
-  await expect(mayaDay.locator('td.effort')).toContainText('PM 2h · 8');
+  await expect(mayaDay.locator('td.effort')).toContainText('Dbl 2h · 8');
   await expect(mayaDay.locator('.tag')).toHaveText(['Wt', 'Meet · moderate']); // meets from before the question count as moderate
 
   await page.click('a:has-text("Send a reminder")');
@@ -235,9 +235,9 @@ test('Settings tab: group code and sign out', async ({ page }, testInfo) => {
 });
 
 test('workouts logged on the Workouts tab: how well it went, why practices were missed, off sick on the watch list', async ({ page, request }, testInfo) => {
-  // Nia logs yesterday's training: morning practice, and the afternoon missed sick.
+  // Nia logs yesterday's training: morning practice missed sick, and doubles.
   const entries = [2, 1, 0].map((n) => ({ date: dayISO(n), wellness: W(5, 8) }));
-  entries[1].workouts = { am: { durationMin: 120, rpe: 6, perf: 8 }, pm: { none: 'sick' }, weights: false, meet: false, loggedAt: new Date().toISOString() };
+  entries[1].workouts = { am: { none: 'sick' }, pm: { durationMin: 90, rpe: 6, perf: 8 }, weights: false, meet: false, loggedAt: new Date().toISOString() };
   const res = await request.post(sheetFor(testInfo).url, {
     headers: { 'Content-Type': 'text/plain' },
     data: JSON.stringify({ action: 'submit', group: GROUP_CODE, athlete: 'Nia Lopez', items: buildItems(entries, entries) }),
@@ -248,8 +248,8 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   await page.goto('/coach.html#group');
 
   const nia = page.locator('#day-before .day-table tr', { hasText: 'Nia Lopez' });
-  await expect(nia.locator('td.effort')).toContainText('AM 2h · 6 · 8');
-  await expect(nia.locator('td.effort')).toContainText('PM sick/injured');
+  await expect(nia.locator('td.effort')).toContainText('AM sick/injured');
+  await expect(nia.locator('td.effort')).toContainText('Dbl 1½h · 6 · 8');
   await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick/injured' }).locator('td').first()).toHaveText('1');
   await expect(page.locator('.watch > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick/injured: yesterday.');
 });

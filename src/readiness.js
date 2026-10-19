@@ -22,7 +22,7 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 
 // Yesterday's training, as asked since sessions were split:
 //   { am: { durationMin, rpe } | null,   morning practice (null = none)
-//     pm: { durationMin, rpe } | null,   afternoon practice
+//     pm: { durationMin, rpe } | null,   doubles (afternoon practice)
 //     weights: boolean, meet: boolean,   did they lift / race
 //     meetLevel: 'light' | 'moderate' | 'hard'   (only with meet: true)
 //     durationMin, rpe }                 totals: minutes, and the

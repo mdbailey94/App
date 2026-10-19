@@ -37,7 +37,7 @@ const ago = (at) => {
   const mins = Math.round((Date.now() - at) / 60000);
   return mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
 };
-// Yesterday's effort (1–10) for morning · afternoon practice (– = didn't
+// Yesterday's effort (1–10) for morning practice · doubles (– = didn't
 // go), plus Wt / Meet tags. Older check-ins had one effort for the whole day.
 function effortCell(t) {
   if (!t) return '–';
@@ -72,8 +72,9 @@ const sessionTags = (t) => [
 const practicesCell = (t) => {
   if (!t) return '–';
   if (!('am' in t) && !('pm' in t)) return t.durationMin > 0 ? `<span title="Whole day">${shortTime(t.durationMin)} · ${t.rpe}</span>` : 'Rest';
-  const line = (k) => (t[k]?.durationMin > 0 ? `${k.toUpperCase()} ${practiceCell(t[k])}`
-    : t[`${k}None`] ? `<span class="muted">${k.toUpperCase()} ${esc(SKIP_REASONS[t[`${k}None`]].toLowerCase())}</span>` : null);
+  const tag = { am: 'AM', pm: 'Dbl' };
+  const line = (k) => (t[k]?.durationMin > 0 ? `${tag[k]} ${practiceCell(t[k])}`
+    : t[`${k}None`] ? `<span class="muted">${tag[k]} ${esc(SKIP_REASONS[t[`${k}None`]].toLowerCase())}</span>` : null);
   const lines = PRACTICE_KEYS.map(line).filter(Boolean);
   return lines.length ? lines.join('<br>') : (t.weights || t.meet ? '' : 'Rest');
 };
@@ -222,7 +223,7 @@ function renderGroup({ rows, query }) {
           ${compareRow('time', (d) => (d.am.avgMin === null ? null : shortTime(Math.round(d.am.avgMin))), { sub: true })}
           ${compareRow('effort', (d) => d.am.avgRpe, { sub: true })}
           ${compareRow('how well', (d) => d.am.avgPerf, { sub: true })}
-          ${compareRow('Afternoon practice', (d) => d.pm.count)}
+          ${compareRow('Doubles', (d) => d.pm.count)}
           ${compareRow('time', (d) => (d.pm.avgMin === null ? null : shortTime(Math.round(d.pm.avgMin))), { sub: true })}
           ${compareRow('effort', (d) => d.pm.avgRpe, { sub: true })}
           ${compareRow('how well', (d) => d.pm.avgPerf, { sub: true })}
@@ -314,15 +315,15 @@ function renderHistory({ rows, query }) {
         and how well it went (logged on the Workouts tab).</p>
       <div class="stats two small-stats" id="effort-stats">
         <div><span class="stat-num">${now.rpeAm ?? '–'}${change(now.rpeAm, prev.rpeAm)}</span><span class="stat-label">morning effort</span></div>
-        <div><span class="stat-num">${now.rpePm ?? '–'}${change(now.rpePm, prev.rpePm)}</span><span class="stat-label">afternoon effort</span></div>
+        <div><span class="stat-num">${now.rpePm ?? '–'}${change(now.rpePm, prev.rpePm)}</span><span class="stat-label">doubles effort</span></div>
       </div>
       <div class="stats two small-stats" id="perf-stats">
         <div><span class="stat-num">${now.perfAm ?? '–'}${change(now.perfAm, prev.perfAm)}</span><span class="stat-label">morning: how well</span></div>
-        <div><span class="stat-num">${now.perfPm ?? '–'}${change(now.perfPm, prev.perfPm)}</span><span class="stat-label">afternoon: how well</span></div>
+        <div><span class="stat-num">${now.perfPm ?? '–'}${change(now.perfPm, prev.perfPm)}</span><span class="stat-label">doubles: how well</span></div>
       </div>
       <p class="small" id="lift-meet">${now.weights} weights session${now.weights === 1 ? '' : 's'} · ${now.meet} meet day${now.meet === 1 ? '' : 's'} reported</p>
       <div class="trend-block"><h4>Morning practice</h4><div data-t="rpeAm"></div></div>
-      <div class="trend-block"><h4>Afternoon practice</h4><div data-t="rpePm"></div></div>
+      <div class="trend-block"><h4>Doubles</h4><div data-t="rpePm"></div></div>
       <p class="muted small">Effort; each bar is the day the session happened.</p>
     </section>
 
@@ -461,7 +462,7 @@ function renderSwimmer({ rows, arg }) {
     <div id="trends"></div>
     <section class="card"><h3>Recent days</h3>
       <div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Sleep</th><th>HR</th><th>HRV</th><th>Effort<br><span class="th-sub">AM · PM</span></th><th>Load</th></tr></thead>
+        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Sleep</th><th>HR</th><th>HRV</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>Load</th></tr></thead>
         <tbody>${[...a.entries].reverse().slice(0, 28).map((e) => `
           <tr>
             <td>${esc(shortDate(e.date))}</td>
@@ -479,7 +480,7 @@ function renderSwimmer({ rows, arg }) {
   ].filter(Boolean).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
       <p class="muted small">HRV = RMSSD in ms. Training is reported the morning after, so each row is the day before’s
-        effort (1–10) for morning · afternoon practice, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
+        effort (1–10) for morning practice · doubles, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
   renderTrends(view.querySelector('#trends'), a.entries, { who: 'their' });
 }

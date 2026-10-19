@@ -73,14 +73,15 @@ export async function finishCheckin(page, opts) {
 }
 
 // Fill in the Workouts form for one day. A practice is [minutes, effort,
-// how well] or ['no', reason]; weights and meet are 'yes' / 'no'.
-export async function answerWorkout(page, { am = ['120', '5', '7'], pm = ['no', 'off'], weights = 'no', meet = 'no', meetLevel } = {}) {
+// how well] or ['no', reason] (doubles: just ['no']); weights and meet are
+// 'yes' / 'no'. Doubles are skipped when the form doesn't ask yet.
+export async function answerWorkout(page, { am = ['120', '5', '7'], pm = ['no'], weights = 'no', meet = 'no', meetLevel } = {}) {
   await page.locator('#workout').waitFor();
   for (const [k, v] of [['am', am], ['pm', pm]]) {
-    if (!v) continue;
+    if (!v || !(await page.locator(`[name=${k}Did]`).count())) continue;
     if (v[0] === 'no') {
       await pick(page, `input[name=${k}Did][value=no]`);
-      await pick(page, `input[name=${k}Why][value=${v[1]}]`);
+      if (v[1]) await pick(page, `input[name=${k}Why][value=${v[1]}]`);
     } else {
       await pick(page, `input[name=${k}Did][value=yes]`);
       await page.selectOption(`select[name=${k}Min]`, v[0]);

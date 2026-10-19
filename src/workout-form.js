@@ -6,10 +6,18 @@
 import { MEET_LEVELS, PRACTICE_KEYS, SKIP_REASONS, sessionLoad, trainingFromWorkouts } from './readiness.js';
 import { esc } from './ui.js';
 
+// Morning practice, and doubles (a second practice later in the day). Only
+// a missed morning practice asks why; doubles aren't every day.
 export const PRACTICES = [
-  { key: 'am', title: 'Morning practice', usual: 120 },
-  { key: 'pm', title: 'Afternoon practice', usual: 90 },
+  { key: 'am', title: 'Morning practice', tag: 'AM', short: 'AM', usual: 120, askWhy: true },
+  { key: 'pm', title: 'Doubles', tag: 'Doubles', short: 'Dbl', usual: 90 },
 ];
+// Doubles are asked about once they could have happened: for today after
+// 4:30 pm, and any time for earlier days (logged the next morning).
+export const DOUBLES_FROM = 16 * 60 + 30;
+export function asksDoubles(date, today, now = new Date()) {
+  return date < today || now.getHours() * 60 + now.getMinutes() >= DOUBLES_FROM;
+}
 const checked = (on) => (on ? 'checked' : '');
 const hoursLabel = (min) => {
   const h = Math.floor(min / 60);
@@ -55,10 +63,10 @@ export function formValues(workouts, legacy) {
   return v;
 }
 
-export function workoutSections(v = {}) {
+export function workoutSections(v = {}, { doubles = true } = {}) {
   const went = (k) => (v[k] ? v[k].durationMin > 0 : undefined);
   return `
-      ${PRACTICES.map((p) => {
+      ${PRACTICES.filter((p) => doubles || p.key !== 'pm').map((p) => {
     const s = v[p.key] || {};
     return `
       <section class="card session-card" data-session="${p.key}">
@@ -70,12 +78,12 @@ export function workoutSections(v = {}) {
           <div class="field"><span class="q">How well did you do?</span>${tenButtons(`${p.key}Perf`, s.perf, 'How well you did')}
             <div class="scale-ends"><span>Not well</span><span>Very well</span></div></div>
         </div>
-        <div class="field" data-skipped="${p.key}" ${went(p.key) === false ? '' : 'hidden'}><span class="q">Why not?</span>
+        ${p.askWhy ? `<div class="field" data-skipped="${p.key}" ${went(p.key) === false ? '' : 'hidden'}><span class="q">Why not?</span>
           <div class="chips reasons">${Object.entries(SKIP_REASONS).map(([k, l]) => `
             <label><input type="radio" name="${p.key}Why" value="${k}" ${checked(s.none === k)}><span>${l}</span></label>`).join('')}</div>
           <label class="field" data-note="${p.key}" ${s.none === 'other' ? '' : 'hidden'}>What happened? <span class="muted small">(optional)</span>
             <input type="text" name="${p.key}Note" maxlength="120" value="${esc(s.note || '')}"></label>
-        </div>
+        </div>` : ''}
       </section>`;
   }).join('')}
       <section class="card">
@@ -104,6 +112,8 @@ export function readWorkouts(form) {
       if (!rpe) missing.push({ key: `${p.key}Rpe`, label: `How hard ${p.title.toLowerCase()} was` });
       if (!perf) missing.push({ key: `${p.key}Perf`, label: `How well you did at ${p.title.toLowerCase()}` });
       w[p.key] = { durationMin: Number(fd.get(`${p.key}Min`)), rpe, perf };
+    } else if (did === 'no' && !p.askWhy) {
+      w[p.key] = { none: null }; // didn't do doubles: no reason asked
     } else if (did === 'no') {
       const why = fd.get(`${p.key}Why`);
       if (!why) missing.push({ key: `${p.key}Why`, label: `Why no ${p.title.toLowerCase()}` });
@@ -120,8 +130,9 @@ export function readWorkouts(form) {
   return { workouts: w };
 }
 
-// Whether every question for the day has an answer.
-export const complete = (w) => Boolean(w) && PRACTICES.every((p) => w[p.key]) && 'weights' in w && 'meet' in w;
+// Whether every question for the day has an answer (doubles only once asked).
+export const complete = (w, { doubles = true } = {}) => Boolean(w)
+  && PRACTICES.every((p) => w[p.key] || (p.key === 'pm' && !doubles)) && 'weights' in w && 'meet' in w;
 
 export function wireWorkouts(form) {
   const preview = form.querySelector('[data-load-preview]');
@@ -136,7 +147,8 @@ export function wireWorkouts(form) {
     const did = /^(am|pm)Did$/.exec(t.name)?.[1];
     if (did) {
       form.querySelector(`[data-went="${did}"]`).hidden = t.value !== 'yes';
-      form.querySelector(`[data-skipped="${did}"]`).hidden = t.value !== 'no';
+      const why = form.querySelector(`[data-skipped="${did}"]`);
+      if (why) why.hidden = t.value !== 'no';
     }
     const why = /^(am|pm)Why$/.exec(t.name)?.[1];
     if (why) form.querySelector(`[data-note="${why}"]`).hidden = t.value !== 'other';
@@ -146,19 +158,21 @@ export function wireWorkouts(form) {
   update();
 }
 
-// One line per day: "AM 2 h · effort 7 · went 8/10 · PM off day · Weights",
-// or `short` for lists: "AM 2h 7·8 · PM off · Wt" (time, effort·how well).
+// One line per day: "AM 2 h · effort 7 · how well 8/10 · Doubles 1 h 30 min …",
+// or `short` for lists: "AM 2h 7·8 · Dbl 1½h 6·7 · Wt" (time, effort·how well).
+// No doubles shows nothing.
 export function workoutSummary(w, { short = false } = {}) {
   if (!w) return '';
   const part = (p) => {
     const s = w[p.key];
     if (!s) return null;
-    const tag = p.key.toUpperCase();
+    const tag = short ? p.short : p.tag;
     if (s.durationMin > 0) {
       return short ? `${tag} ${shortHours(s.durationMin)} ${s.rpe}${s.perf ? `·${s.perf}` : ''}`
-        : `${tag} ${hoursLabel(s.durationMin)} · effort ${s.rpe}${s.perf ? ` · went ${s.perf}/10` : ''}`;
+        : `${tag} ${hoursLabel(s.durationMin)} · effort ${s.rpe}${s.perf ? ` · how well ${s.perf}/10` : ''}`;
     }
-    const why = s.none ? SKIP_REASONS[s.none].toLowerCase() : 'none';
+    if (!s.none) return p.askWhy ? `${tag} no` : null;
+    const why = SKIP_REASONS[s.none].toLowerCase();
     return `${tag} ${short ? why.replace(' day', '') : why}`;
   };
   return [...PRACTICES.map(part), w.weights && (short ? 'Wt' : 'Weights'), w.meet && `Meet${w.meetLevel && !short ? ` (${w.meetLevel})` : ''}`]

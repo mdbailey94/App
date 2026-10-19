@@ -11,7 +11,9 @@ import { startReading } from './reading.js';
 import {
   checkinSections, readCheckin, showFormError, showMissing, wireCheckin,
 } from './checkin-form.js';
-import { complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary } from './workout-form.js';
+import {
+  asksDoubles, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary,
+} from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
 import { stuck, syncPending, syncStatus } from './team.js';
@@ -262,7 +264,8 @@ const dayName = (d, today = todayISO()) => (d === today ? 'Today' : d === shiftD
 
 function workoutStatus(entries, d, opts) {
   const w = entries.find((e) => e.date === d)?.workouts;
-  if (w) return { state: complete(w) ? 'logged' : 'partly', label: complete(w) ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts) };
+  const done = complete(w, { doubles: asksDoubles(d, todayISO()) });
+  if (w) return { state: done ? 'logged' : 'partly', label: done ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts) };
   const legacy = trainingOnDay(entries, d);
   if (legacy) return { state: 'checkin', label: 'From check-in', summary: workoutSummary(formValues(null, legacy), opts) };
   return { state: 'none', label: 'Not logged', summary: '' };
@@ -314,6 +317,7 @@ function renderWorkoutDay(date, query) {
   const own = entries.find((e) => e.date === date)?.workouts;
   const values = formValues(own, own ? null : trainingOnDay(entries, date));
   const afterCheckin = query.get('after') === 'checkin';
+  const doubles = asksDoubles(date, today);
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" role="status">
       <p><b>✓ Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was yesterday’s training?
@@ -324,7 +328,8 @@ function renderWorkoutDay(date, query) {
         <p class="eyebrow">${esc(prettyDate(date))}</p>
         ${own?.loggedAt && own.loggedAt.slice(0, 10) > date ? `<p class="muted small">Filled in later, on ${esc(shortDate(own.loggedAt.slice(0, 10)))}.</p>` : ''}
       </section>
-      ${workoutSections(values)}
+      ${workoutSections(values, { doubles })}
+      ${doubles ? '' : '<p class="muted small doubles-later">Doubles today? Log them after 4:30 pm, or tomorrow morning.</p>'}
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <div class="save-bar"><button class="btn block" type="submit" id="save-workout">${syncStatus().joined ? 'Save and send' : 'Save'}</button></div>
     </form>`;
@@ -336,7 +341,9 @@ function renderWorkoutDay(date, query) {
     if (out.missing) { showMissing(form, out); return; }
     showFormError(form, '');
     // When it was logged, kept apart from the day it's for (backfilling shows).
-    upsertEntry(date, { workouts: { ...out.workouts, loggedAt: own?.loggedAt || new Date().toISOString() } });
+    // Doubles not asked yet today: keep any already logged.
+    const kept = !doubles && own?.pm ? { pm: own.pm } : {};
+    upsertEntry(date, { workouts: { ...kept, ...out.workouts, loggedAt: own?.loggedAt || new Date().toISOString() } });
     sendAndWait(form.querySelector('#save-workout')).then(() => { location.hash = afterCheckin ? '#today' : '#workouts'; });
   });
 }
