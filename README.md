@@ -92,7 +92,7 @@ The group's data lives in a Google Sheet the coach owns, via a small Apps Script
 
 What the coach gets:
 
-- **Follow-up** (Group tab): six categories – illness / injury, recovery / fatigue, stress / mood, training
+- **Watchlist** (its own coach tab): six categories – illness / injury, recovery / fatigue, stress / mood, training
   response, missing data, ready – each with the swimmers in it, the evidence (against each swimmer's own usual
   where there's enough history), whether it's new today or has lasted for days, and a question to start with.
   Thresholds are in `src/followups.js` (`FOLLOW_UP`). Coaching prompts, not diagnoses or training changes.

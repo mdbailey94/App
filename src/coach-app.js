@@ -1,5 +1,6 @@
 // The coach dashboard (coach.html): its own page with its own tabs.
-//   #group      one day: who checked in, who needs a word, who's missing
+//   #group      one day: who checked in, yesterday's training, who's missing
+//   #watchlist  who may need a word, by category (follow-up), and why
 //   #history    the group over 7 or 28 days, and a check-in record
 //   #swimmers   everyone in the group; #swimmers/<key> for one swimmer
 //   #messages   notes and injuries from swimmers, reminders, invite link
@@ -118,7 +119,7 @@ function signOut() {
 
 // ------------------------------------------------------------------ router
 
-const SCREENS = { group: renderGroup, history: renderHistory, swimmers: renderSwimmers, messages: renderMessages, settings: renderSettings };
+const SCREENS = { group: renderGroup, watchlist: renderWatchlist, history: renderHistory, swimmers: renderSwimmers, messages: renderMessages, settings: renderSettings };
 
 function route() {
   const [path, qs] = (location.hash.slice(1) || 'group').split('?');
@@ -151,7 +152,7 @@ window.addEventListener('hashchange', route);
 
 const WATCH_LABEL = { critical: 'Talk today', serious: 'Talk soon', warning: 'Keep an eye', note: 'FYI' };
 
-// Follow-up: one swimmer in one category, with the evidence, whether it's new
+// Watchlist: one swimmer in one category, with the evidence, whether it's new
 // or has been showing for a few days, and a question to start with.
 const since = (days) => `<span class="fu-since">${days === 1 ? 'New today' : `${days > 6 ? '7+' : days} days`}</span>`;
 const followUpItem = (s, { name = true } = {}) => `
@@ -179,14 +180,37 @@ function followUpCard(fu) {
     return n ? `<div class="fu-cat" id="fu-${c.key}"><h4>${c.label} <span class="muted">(${n})</span></h4>${list}</div>` : '';
   };
   return `
-    <section class="card" id="follow-up">
-      <h3>Follow-up</h3>
+    <section class="card" id="watchlist">
       <p class="muted small">Who may need a word, and why – each swimmer against their own usual. Prompts for a
         conversation, not a diagnosis or a change to the plan.</p>
       <div class="fu-tiles">${fu.categories.map((c) => `<button type="button" class="fu-tile fu-tile-${c.key}" data-go="fu-${c.key}" ${c.swimmers.length ? '' : 'disabled'}>
         <span class="fu-count">${c.swimmers.length}</span><span class="fu-label">${c.label}</span></button>`).join('')}</div>
       ${fu.categories.map(cat).join('')}
     </section>`;
+}
+
+// On the Group tab: a pointer to the Watchlist tab with its counts.
+function watchLine(fu) {
+  const n = (k) => fu.categories.find((c) => c.key === k).swimmers.length;
+  const concerns = new Set(fu.categories.filter((c) => !['missing', 'ready'].includes(c.key)).flatMap((c) => c.swimmers.map((s) => s.key))).size;
+  return `<section class="card watch-line"><a href="#watchlist?d=${fu.date}">
+    <b>Watchlist</b> <span class="muted small">${concerns ? `${concerns} swimmer${concerns === 1 ? '' : 's'} to follow up with${n('health') ? ` · ${n('health')} illness / injury` : ''}` : 'nobody stands out'}</span> ›</a></section>`;
+}
+
+function renderWatchlist({ rows, query }) {
+  const date = query.get('d') || todayISO();
+  view.innerHTML = `
+    <section class="card">
+      <div class="coach-head">
+        <a class="btn secondary icon-btn" href="#watchlist?d=${shiftDate(date, -1)}" aria-label="Previous day">‹</a>
+        <h2>Watchlist</h2>
+        <a class="btn secondary icon-btn" href="#watchlist?d=${shiftDate(date, 1)}" aria-label="Next day" ${date >= todayISO() ? 'hidden' : ''}>›</a>
+      </div>
+      <p class="eyebrow" style="text-align:center">${esc(prettyDate(date))}</p>
+      ${refreshLine(`#watchlist?d=${date}`)}
+    </section>
+    ${followUpCard(followUps(rows, date))}`;
+  wireFollowUp(view);
 }
 
 function wireFollowUp(root) {
@@ -248,7 +272,7 @@ function renderGroup({ rows, query }) {
       ${refreshLine(`#group?d=${date}`)}
     </section>
 
-    ${followUpCard(fu)}
+    ${watchLine(fu)}
 
     <section class="card" id="day-before">
       <h3>Yesterday’s training</h3>
@@ -293,7 +317,6 @@ function renderGroup({ rows, query }) {
           <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
         </ul>
         ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
-  wireFollowUp(view);
 }
 
 // ----------------------------------------------------------------- history
@@ -478,7 +501,7 @@ function renderSwimmer({ rows, arg }) {
       <div class="actions"><a class="btn secondary" href="#messages?to=${encodeURIComponent(a.key)}">Message ${esc(first(a.name))}</a></div>
     </section>
 
-    ${fus.length ? `<section class="card" id="swimmer-followup"><h3>Follow-up</h3>
+    ${fus.length ? `<section class="card" id="swimmer-followup"><h3>Watchlist</h3>
       ${fus.map((c) => `<div class="fu-cat"><h4>${c.label}</h4><ul class="fu-list">${followUpItem({ ...c, key: null }, { name: false })}</ul></div>`).join('')}
       <p class="muted small">Against their own usual. Prompts for a conversation, not a diagnosis.</p></section>` : ''}
 
