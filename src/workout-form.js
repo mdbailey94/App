@@ -1,5 +1,5 @@
 // The Workouts tab's form for one day's training: for each practice, did
-// they go (how long, how hard, how it went for them) or why not (off day,
+// they go (how long, how hard, how well they did) or why not (off day,
 // sick/injured, missed, other); then weights and a meet. Swimmers log on the day or later
 // (backfilling), so a practice can be left unanswered and filled in later.
 
@@ -67,8 +67,8 @@ export function workoutSections(v = {}) {
           <label class="field inline-q"><span class="q">How long?</span>
             <select name="${p.key}Min">${timeOptions(s.durationMin || p.usual)}</select></label>
           <div class="field"><span class="q">How hard was it?</span>${tenButtons(`${p.key}Rpe`, s.rpe, 'How hard')}</div>
-          <div class="field"><span class="q">How did it go for you?</span>${tenButtons(`${p.key}Perf`, s.perf, 'How it went for you')}
-            <div class="scale-ends"><span>Didn’t go well</span><span>Went really well</span></div></div>
+          <div class="field"><span class="q">How well did you do?</span>${tenButtons(`${p.key}Perf`, s.perf, 'How well you did')}
+            <div class="scale-ends"><span>Not well</span><span>Very well</span></div></div>
         </div>
         <div class="field" data-skipped="${p.key}" ${went(p.key) === false ? '' : 'hidden'}><span class="q">Why not?</span>
           <div class="chips reasons">${Object.entries(SKIP_REASONS).map(([k, l]) => `
@@ -102,7 +102,7 @@ export function readWorkouts(form) {
       const rpe = Number(fd.get(`${p.key}Rpe`));
       const perf = Number(fd.get(`${p.key}Perf`));
       if (!rpe) missing.push({ key: `${p.key}Rpe`, label: `How hard ${p.title.toLowerCase()} was` });
-      if (!perf) missing.push({ key: `${p.key}Perf`, label: `How ${p.title.toLowerCase()} went for you` });
+      if (!perf) missing.push({ key: `${p.key}Perf`, label: `How well you did at ${p.title.toLowerCase()}` });
       w[p.key] = { durationMin: Number(fd.get(`${p.key}Min`)), rpe, perf };
     } else if (did === 'no') {
       const why = fd.get(`${p.key}Why`);

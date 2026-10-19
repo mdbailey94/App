@@ -92,11 +92,11 @@ test('logging a day: each practice with how hard and how well, or why not; weigh
   await expect(page.locator('select[name=amMin]')).toHaveValue('120'); // the usual 2 h
   await expect(page.locator('[data-went=am] .effort-row')).toHaveCount(2); // how hard, how well
   await expect(page.locator('[data-went=am] .effort-row').nth(1).locator('label')).toHaveCount(10);
-  await expect(page.locator('[data-went=am] .scale-ends')).toHaveText(/Didn’t go well\s*Went really well/);
+  await expect(page.locator('[data-went=am] .scale-ends')).toHaveText(/Not well\s*Very well/);
 
   // Half an answer is pointed out.
   await page.click('#save-workout');
-  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How morning practice went for you');
+  await expect(page.locator('#form-error')).toContainText('How hard morning practice was, How well you did at morning practice');
 
   // No afternoon practice: why not.
   await page.click('input[name=pmDid][value=no]');
