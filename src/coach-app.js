@@ -9,8 +9,9 @@ import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
   checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare,
-  swimmerInsights, trendSummary, watchList,
+  swimmerInsights, trendSummary,
 } from './group.js';
+import { followUps, followUpsFor } from './followups.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, wellnessScore,
 } from './readiness.js';
@@ -150,10 +151,57 @@ window.addEventListener('hashchange', route);
 
 const WATCH_LABEL = { critical: 'Talk today', serious: 'Talk soon', warning: 'Keep an eye', note: 'FYI' };
 
+// Follow-up: one swimmer in one category, with the evidence, whether it's new
+// or has been showing for a few days, and a question to start with.
+const since = (days) => `<span class="fu-since">${days === 1 ? 'New today' : `${days > 6 ? '7+' : days} days`}</span>`;
+const followUpItem = (s, { name = true } = {}) => `
+  <li>
+    <div class="fu-head">${name ? athleteLink(s.key, s.name) : ''}
+      ${s.key && s.level && ['critical', 'serious'].includes(s.level) ? statusBadge({ level: s.level, label: WATCH_LABEL[s.level] }) : ''}
+      ${s.days ? since(s.days) : ''}</div>
+    <ul class="fu-reasons">${s.reasons.map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul>
+    ${s.ask ? `<p class="fu-ask">Ask: “${esc(s.ask)}”</p>` : ''}
+  </li>`;
+
+function followUpCard(fu) {
+  const cat = (c) => {
+    const n = c.swimmers.length;
+    if (c.key === 'ready') {
+      return `<details class="fu-cat" id="fu-ready"><summary><b>${c.label}</b> <span class="muted">(${n})</span></summary>
+        <p class="small">${n ? c.swimmers.map((s) => athleteLink(s.key, s.name)).join(', ') : 'Nobody yet.'}</p>
+        <p class="muted small">Checked in, and nothing in their answers or training stands out.</p></details>`;
+    }
+    const list = `<ul class="fu-list">${c.swimmers.map((s) => followUpItem(s)).join('')}</ul>`;
+    if (c.key === 'missing') {
+      return `<details class="fu-cat" id="fu-missing"><summary><b>${c.label}</b> <span class="muted">(${n})</span></summary>
+        ${n ? list : '<p class="muted small">Nothing missing.</p>'}<p class="muted small">Missing means not reported – not a sign of how they are.</p></details>`;
+    }
+    return n ? `<div class="fu-cat" id="fu-${c.key}"><h4>${c.label} <span class="muted">(${n})</span></h4>${list}</div>` : '';
+  };
+  return `
+    <section class="card" id="follow-up">
+      <h3>Follow-up</h3>
+      <p class="muted small">Who may need a word, and why – each swimmer against their own usual. Prompts for a
+        conversation, not a diagnosis or a change to the plan.</p>
+      <div class="fu-tiles">${fu.categories.map((c) => `<button type="button" class="fu-tile fu-tile-${c.key}" data-go="fu-${c.key}" ${c.swimmers.length ? '' : 'disabled'}>
+        <span class="fu-count">${c.swimmers.length}</span><span class="fu-label">${c.label}</span></button>`).join('')}</div>
+      ${fu.categories.map(cat).join('')}
+    </section>`;
+}
+
+function wireFollowUp(root) {
+  root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => {
+    const el = root.querySelector(`#${b.dataset.go}`);
+    if (!el) return;
+    if (el.tagName === 'DETAILS') el.open = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+}
+
 function renderGroup({ rows, query }) {
   const date = query.get('d') || todayISO();
   const day = groupDay(rows, date);
-  const watch = watchList(rows, date);
+  const fu = followUps(rows, date);
   const tr = trainingCompare(rows, date);
   const { now, weekAgo, usual } = tr.team;
   const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
@@ -200,16 +248,7 @@ function renderGroup({ rows, query }) {
       ${refreshLine(`#group?d=${date}`)}
     </section>
 
-    <section class="card" id="watch">
-      <h3>Watch list</h3>
-      ${watch.length ? `<p class="muted small">Swimmers worth a word, based on their last 7 days.</p>
-        <ul class="watch">${watch.map((w) => `
-          <li><div class="watch-head">${athleteLink(w.key, w.name)}
-            ${statusBadge({ level: w.reasons[0].level, label: WATCH_LABEL[w.reasons[0].level] })}</div>
-            <ul>${w.reasons.map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul></li>`).join('')}
-        </ul>`
-    : '<p class="muted">Nobody stands out over the last 7 days.</p>'}
-    </section>
+    ${followUpCard(fu)}
 
     <section class="card" id="day-before">
       <h3>Yesterday’s training</h3>
@@ -254,6 +293,7 @@ function renderGroup({ rows, query }) {
           <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
         </ul>
         ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
+  wireFollowUp(view);
 }
 
 // ----------------------------------------------------------------- history
@@ -417,6 +457,7 @@ function renderSwimmer({ rows, arg }) {
   }
   const latest = a.entries.at(-1);
   const assessment = assessDay(a.entries, latest.date);
+  const fus = followUpsFor(a.entries, todayISO());
   const ins = swimmerInsights(rows, arg);
   const r = ins?.readiness;
   const t = ins?.training;
@@ -437,10 +478,9 @@ function renderSwimmer({ rows, arg }) {
       <div class="actions"><a class="btn secondary" href="#messages?to=${encodeURIComponent(a.key)}">Message ${esc(first(a.name))}</a></div>
     </section>
 
-    ${ins?.watch.length ? `<section class="card" id="swimmer-watch"><h3>On the watch list</h3>
-      <ul class="watch"><li><div class="watch-head">${statusBadge({ level: ins.watch[0].level, label: WATCH_LABEL[ins.watch[0].level] })}</div>
-        <ul>${ins.watch.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul></li></ul>
-      <p class="muted small">Based on their last 7 days.</p></section>` : ''}
+    ${fus.length ? `<section class="card" id="swimmer-followup"><h3>Follow-up</h3>
+      ${fus.map((c) => `<div class="fu-cat"><h4>${c.label}</h4><ul class="fu-list">${followUpItem({ ...c, key: null }, { name: false })}</ul></div>`).join('')}
+      <p class="muted small">Against their own usual. Prompts for a conversation, not a diagnosis.</p></section>` : ''}
 
     ${t ? `<section class="card" id="swimmer-training">
       <h3>Training the day before</h3>

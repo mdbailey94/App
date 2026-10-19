@@ -78,16 +78,32 @@ test('coach sign-in checks the password, then shows the Group tab', async ({ pag
   await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Group');
 });
 
-test('Group tab: watch list, check-ins and who is missing', async ({ page }, testInfo) => {
+test('Group tab: follow-up categories, check-ins and who is missing', async ({ page }, testInfo) => {
   await page.goto('/coach.html');
   await signIn(page, testInfo);
   await page.goto('/coach.html#group');
 
-  const watch = page.locator('.watch > li');
-  await expect(watch.locator('.watch-head a')).toHaveText(['Kai Moana', 'Ana Ruiz', 'Sam Lee', 'Eli Brooks']);
-  await expect(watch.first()).toContainText('Talk today');
-  await expect(watch.first()).toContainText('Injury stopping certain strokes or movements (right shoulder), reported today.');
-  await expect(watch.nth(1)).toContainText('Training load spike');
+  // Follow-up: counts per category, then who and why.
+  await expect(page.locator('.fu-tile .fu-label')).toHaveText([
+    'Illness / injury', 'Recovery / fatigue', 'Stress / mood', 'Training response', 'Missing data', 'Ready for planned training',
+  ]);
+  await expect(page.locator('.fu-tile-health .fu-count')).toHaveText('1');
+  const health = page.locator('#fu-health .fu-list > li');
+  await expect(health.locator('.fu-head a')).toHaveText(['Kai Moana']);
+  await expect(health.first()).toContainText('Talk today');
+  await expect(health.first()).toContainText('Injury stopping certain strokes or movements (right shoulder), reported today.');
+  await expect(health.first().locator('.fu-ask')).toContainText('right shoulder');
+  const recovery = page.locator('#fu-recovery .fu-list > li');
+  await expect(recovery.filter({ hasText: 'Ana Ruiz' })).toContainText('Training load: the last 7 days are');
+  // Sam and Eli dipped against their own usual this week: it has been building, not new.
+  await expect(recovery.filter({ hasText: 'Sam Lee' }).locator('.fu-since')).toHaveText(/\d days|7\+ days/);
+  await expect(page.locator('#fu-stress .fu-list > li .fu-head a')).toContainText(['Eli Brooks', 'Sam Lee']); // most reasons first
+  // Missing data and ready are folded away; a tile opens them.
+  await expect(page.locator('#fu-missing')).not.toHaveAttribute('open');
+  await page.click('.fu-tile-missing');
+  await expect(page.locator('#fu-missing')).toHaveAttribute('open');
+  await expect(page.locator('#fu-missing .fu-head a')).toHaveText(['Leo Park', 'Zoe Chen']);
+  await expect(page.locator('#fu-ready')).toContainText('Maya Torres');
   await expect(page.locator('#not-in li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
 
   // Check-ins: readiness, and its change since yesterday and against their usual.
@@ -184,7 +200,8 @@ test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, 
   await expect(page.locator('#trends')).toContainText('HRV (ms)');
   // Coach-only insights: change in readiness, the day before's training, watch list, own pattern.
   await expect(page.locator('#swimmer-change .stat-label')).toHaveText([/vs yesterday/, /vs usual/]);
-  await expect(page.locator('#swimmer-watch')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
+  await expect(page.locator('#swimmer-followup')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
+  await expect(page.locator('#swimmer-followup h4')).toContainText(['Illness / injury']);
   await expect(page.locator('#swimmer-training')).toContainText('2h · 6');
   await expect(page.locator('#swimmer-training .stat-num').first()).toHaveText('720');
   await expect(page.locator('#swimmer-response tbody tr')).toHaveText([/^Light/, /^Moderate/, /^Heavy/]);
@@ -234,7 +251,7 @@ test('Settings tab: group code and sign out', async ({ page }, testInfo) => {
   await expect(page.locator('#coach-tabs')).toBeHidden();
 });
 
-test('workouts logged on the Workouts tab: how well it went, why practices were missed, off sick on the watch list', async ({ page, request }, testInfo) => {
+test('workouts logged on the Workouts tab: how well it went, why practices were missed, off sick in follow-up', async ({ page, request }, testInfo) => {
   // Nia logs yesterday's training: morning practice missed sick, and doubles.
   const entries = [2, 1, 0].map((n) => ({ date: dayISO(n), wellness: W(5, 8) }));
   entries[1].workouts = { am: { none: 'sick' }, pm: { durationMin: 90, rpe: 6, perf: 8 }, weights: false, meet: false, loggedAt: new Date().toISOString() };
@@ -251,5 +268,5 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   await expect(nia.locator('td.effort')).toContainText('AM sick');
   await expect(nia.locator('td.effort')).toContainText('Dbl 1½h · 6 · 8');
   await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick' }).locator('td').first()).toHaveText('1');
-  await expect(page.locator('.watch > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
+  await expect(page.locator('#fu-health .fu-list > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
 });
