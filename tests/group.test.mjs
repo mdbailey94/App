@@ -119,7 +119,7 @@ test('teamTrend: daily averages of readiness and load (with 6+ swimmers), check-
   assert.deepEqual([t[0].avgLoad, t[0].loadReported], [240, 240]);
   // Only five swimmers today: no team averages for the day.
   assert.deepEqual([t[1].avgReadiness, t[1].avgLoad, t[1].loadReported], [null, 0, null]);
-  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 92, avgLoad: 240, rpeAm: null, rpePm: null, weights: 0, meet: 0 });
+  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 92, avgLoad: 240, rpeAm: null, rpePm: null, perfAm: null, perfPm: null, weights: 0, meet: 0 });
 });
 
 test('reminderText lists who is missing', () => {
@@ -230,8 +230,8 @@ test('trainingCompare: yesterday against the same day last week and the usual fo
   const c = trainingCompare(r, D);
   assert.equal(c.trainedOn, shiftDate(D, -1));
   assert.equal(c.weekAgo, shiftDate(D, -7));
-  assert.deepEqual(c.team.now.am, { count: 3, avgMin: 120, avgRpe: 5.3 });
-  assert.deepEqual(c.team.now.pm, { count: 1, avgMin: 90, avgRpe: 9 });
+  assert.deepEqual(c.team.now.am, { count: 3, avgMin: 120, avgRpe: 5.3, avgPerf: null });
+  assert.deepEqual(c.team.now.pm, { count: 1, avgMin: 90, avgRpe: 9, avgPerf: null });
   assert.equal(c.team.now.weights, 1);
   assert.equal(c.team.weekAgo.meet, 1);
   assert.equal(c.team.weekAgo.reported, 2);
@@ -320,4 +320,28 @@ test('teamTrend: the team’s average readiness against each swimmer’s own usu
   assert.equal(t[0].vsUsual, 0); // yesterday everyone was at their usual
   // Fewer than 6 swimmers with a usual: no team number for the day.
   assert.equal(teamTrend(r.filter((x) => x.athlete !== 'F'), D, 1)[0].vsUsual, null);
+});
+
+test('workouts logged on the Workouts tab count like check-in reports, filed under the next morning', () => {
+  // One entry (one sheet row) per day: that morning's check-in and that day's workouts.
+  const workouts = {
+    2: { am: { durationMin: 120, rpe: 6, perf: 8 }, pm: { none: 'sick' }, weights: true, meet: false },
+    1: { am: { none: 'sick' }, pm: { none: 'sick' }, weights: false, meet: false },
+  };
+  const r = [
+    ...[3, 2, 1, 0].map((n) => day('Ana', n, { wellness: W7(5), ...(workouts[n] ? { workouts: workouts[n] } : {}) })),
+    day('Ben', 0, { wellness: W7(5) }),
+  ];
+  const ana = groupByAthlete(r).get('ana');
+  // Day 2's workout shows up on day 1's morning entry, day 1's on today's.
+  const t1 = ana.entries.find((e) => e.date === shiftDate(D, -1)).training;
+  assert.deepEqual([t1.am.perf, t1.pmNone, t1.weights, t1.logged], [8, 'sick', true, true]);
+  assert.equal(ana.entries.find((e) => e.date === shiftDate(D, -1)).wellness.energy, 5); // check-in kept
+  const c = trainingCompare(r, shiftDate(D, -1));
+  assert.equal(c.team.now.am.avgPerf, 8);
+  assert.equal(c.team.now.sick, 1);
+  // Off sick: on the watch list, even with an otherwise fine week.
+  const w = watchList(r, D).find((x) => x.name === 'Ana');
+  assert.equal(w.reasons[0].level, 'serious');
+  assert.match(w.reasons[0].text, /Missed practice sick: yesterday, 2 days ago\./);
 });

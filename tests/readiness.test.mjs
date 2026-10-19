@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, trainingOnDay, withWorkouts, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -186,4 +186,26 @@ test('training split into practices; weights count as 45 min at hard (5); a meet
   // Older check-ins: one number for the whole day, no per-session effort.
   assert.equal(sessionLoad({ durationMin: 60, rpe: 5 }), 300);
   assert.equal(sessionRpe({ durationMin: 60, rpe: 5 }, 'am'), undefined);
+});
+
+test('withWorkouts: a logged day lands on the next morning, wins over an older report, and is idempotent', () => {
+  const entries = [
+    { date: '2026-10-10', wellness: { sleepHours: 8 }, workouts: { am: { durationMin: 90, rpe: 6, perf: 7 }, pm: { none: 'off' }, weights: true, meet: false } },
+    { date: '2026-10-11', wellness: { sleepHours: 8 }, training: { durationMin: 30, rpe: 2 } }, // an older check-in's report of the 10th
+  ];
+  const out = withWorkouts(entries);
+  const t = out.find((e) => e.date === '2026-10-11').training;
+  assert.deepEqual([t.am, t.pm, t.pmNone, t.weights, t.logged], [{ durationMin: 90, rpe: 6, perf: 7 }, null, 'off', true, true]);
+  assert.equal(sessionLoad(t), 90 * 6 + 45 * 5);
+  assert.deepEqual(withWorkouts(out), out);
+  assert.equal(entries[1].training.durationMin, 30); // the stored entries are untouched
+  // A workout with no check-in the next day makes a training-only entry.
+  const only = withWorkouts([{ date: '2026-10-10', workouts: { am: { none: 'sick' } } }]);
+  assert.deepEqual(only.map((e) => e.date), ['2026-10-10', '2026-10-11']);
+  assert.equal(only[1].training.amNone, 'sick');
+  assert.equal(only[1].wellness, undefined);
+  // trainingOnDay reads either kind.
+  assert.equal(trainingOnDay(entries, '2026-10-10').am.perf, 7);
+  assert.equal(trainingOnDay([{ date: '2026-10-11', training: { durationMin: 30, rpe: 2 } }], '2026-10-10').durationMin, 30);
+  assert.equal(trainingOnDay(entries, '2026-10-12'), null);
 });

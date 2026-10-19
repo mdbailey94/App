@@ -1,6 +1,6 @@
 // Small UI helpers shared by the athlete screens and the coach dashboard.
 
-import { assessDay, baseline, rollingMean, sessionLoad, wellnessScore } from './readiness.js';
+import { assessDay, baseline, rollingMean, sessionLoad, wellnessScore, withWorkouts } from './readiness.js';
 import { barChart, lineChart } from './charts.js';
 import qrcode from './vendor/qrcode.js';
 
@@ -24,6 +24,7 @@ export function statusBadge(status) {
 // from their answers only and 7-day averages for HRV and resting HR, so a
 // single noisy morning doesn't stand out; the coach sees daily values.
 export function renderTrends(container, entries, { who = 'your', athlete = false } = {}) {
+  entries = withWorkouts(entries);
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const hrvAvg = rollingMean(sorted, (e) => e.hrv?.lnRmssd);
   const hrAvg = rollingMean(sorted, (e) => e.hrv?.hr);

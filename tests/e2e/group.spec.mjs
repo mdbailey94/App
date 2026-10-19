@@ -1,12 +1,11 @@
 // Joining the coach's group from the invite link, syncing to the group
 // sheet, and reconnecting a Home Screen copy of the app.
 import {
-  test, expect, seed, answerAll, dayISO, weekday, WELLNESS, GROUP_CODE, sheetFor, sheetState,
+  test, expect, seed, answerAll, finishCheckin, dayISO, weekday, WELLNESS, GROUP_CODE, sheetFor, sheetState,
 } from './helpers.mjs';
 import { inviteLink } from '../../src/team.js';
 
 const history = [3, 2, 1].map((n) => ({ date: dayISO(n), wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } }));
-// Not a reading day, so saving the check-in goes straight to Today.
 const settings = { hrvDays: [weekday(-1)] };
 
 async function join(page, sheet, baseURL, name = 'Maya Torres') {
@@ -30,7 +29,7 @@ test('joining from the invite goes straight to the check-in and shares history',
 
   await answerAll(page);
   await page.click('#save');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   await expect(page.locator('#sync-line')).toContainText('Shared with coach', { timeout: 15_000 });
   expect((await sheetState(request, sheet)).rows).toBe(4);
 
@@ -82,7 +81,7 @@ test('check-ins wait while the sheet is down, then send', async ({ page, request
 
   await answerAll(page);
   await page.click('#save');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   const status = page.locator('.hero #sync-line');
   await expect(status).toContainText('Not sent yet', { timeout: 15_000 });
 
@@ -100,7 +99,7 @@ test('while a check-in is unsent, every screen says so; after a day, how to fix 
   await sheetState(request, sheet, { down: true });
   await answerAll(page);
   await page.click('#save');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   await expect(page.locator('.hero #sync-line')).toContainText('Not sent yet', { timeout: 15_000 });
 
   await page.click('.tabs a[data-tab=history]');
@@ -114,7 +113,7 @@ test('while a check-in is unsent, every screen says so; after a day, how to fix 
     const t = JSON.parse(localStorage.getItem(k));
     localStorage.setItem(k, JSON.stringify({ ...t, failingSince: new Date(Date.now() - 30 * 3600e3).toISOString() }));
   });
-  await page.click('.tabs a[data-tab=measure]');
+  await page.click('.tabs a[data-tab=workouts]');
   await expect(banner).toContainText('ask them for a new QR code');
 
   await sheetState(request, sheet, { down: false });
@@ -130,7 +129,7 @@ test('a check-in saved while an earlier send is still going is sent straight aft
   await join(page, sheet, baseURL);
   await answerAll(page);
   await page.click('#save'); // while the history is still on its way
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   // No further taps or screen changes: today's check-in follows on its own.
   await expect.poll(async () => (await sheetState(request, sheet, { delay: 3000 })).rows, { timeout: 20_000 }).toBe(4);
 });
@@ -145,7 +144,7 @@ test('Save and send: waits for the sheet, then shows it reached the coach', asyn
   await answerAll(page);
   await page.click('#save');
   await expect(page.locator('#save')).toHaveText('Sending to your coach…');
-  await page.waitForURL(/#today/);
+  await finishCheckin(page);
   // Already in the sheet by the time Today appears.
   expect((await sheetState(request, sheet)).rows).toBe(1);
   await expect(page.locator('.hero #sync-line')).toContainText('Shared with coach');
@@ -158,7 +157,7 @@ test('Save and send with the sheet down: answers kept, Today says not sent yet',
   await sheetState(request, sheet, { down: true });
   await answerAll(page);
   await page.click('#save');
-  await page.waitForURL(/#today/, { timeout: 15_000 });
+  await finishCheckin(page, { timeout: 15_000 });
   await expect(page.locator('.hero #sync-line')).toContainText('Not sent yet');
   await expect(page.locator('.hero [data-send-now]')).toBeVisible();
 });

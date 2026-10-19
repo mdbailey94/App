@@ -1,6 +1,6 @@
 // Coach-side analysis of the group's rows from the sheet. Pure functions.
 
-import { assessDay, daysBetween, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
+import { assessDay, daysBetween, PRACTICE_KEYS, withWorkouts, sessionLoad, sessionRpe, shiftDate, wellnessScore, workload } from './readiness.js';
 
 // A check-in has answers. An entry can also hold training only: a Monday
 // answer about Saturday, filed under Sunday. That counts for training, not
@@ -26,7 +26,8 @@ export function groupByAthlete(rows) {
     a.entries = a.entries.filter((e) => e.date !== row.date).concat({ ...row.entry, date: row.date });
     map.set(key, a);
   }
-  for (const a of map.values()) a.entries.sort((x, y) => x.date.localeCompare(y.date));
+  // Logged workouts are filed under the next morning, like check-in reports.
+  for (const a of map.values()) a.entries = withWorkouts(a.entries.sort((x, y) => x.date.localeCompare(y.date)));
   return map;
 }
 
@@ -139,9 +140,16 @@ export function teamTrend(rows, endDate, days = 7) {
       const vals = trainings.map((t) => sessionRpe(t, k)).filter((v) => v > 0);
       return [k, vals.length ? +avg(vals).toFixed(1) : null];
     }));
+    // And how well it went (1–10), logged on the Workouts tab.
+    const went = Object.fromEntries(PRACTICE_KEYS.map((k) => {
+      const vals = trainings.map((t) => t[k]?.perf).filter((v) => v > 0);
+      return [k, vals.length ? +avg(vals).toFixed(1) : null];
+    }));
     out.push({
       rpeAm: effort.am,
       rpePm: effort.pm,
+      perfAm: went.am,
+      perfPm: went.pm,
       weights: trainings.filter((t) => t.weights === true).length,
       meet: trainings.filter((t) => t.meet === true).length,
       date,
@@ -170,6 +178,8 @@ export function trendSummary(trend) {
     avgLoad: load === null ? null : Math.round(load),
     rpeAm: oneDp('rpeAm'),
     rpePm: oneDp('rpePm'),
+    perfAm: oneDp('perfAm'),
+    perfPm: oneDp('perfPm'),
     weights: trend.reduce((n, d) => n + (d.weights || 0), 0),
     meet: trend.reduce((n, d) => n + (d.meet || 0), 0),
   };
@@ -187,7 +197,22 @@ export function watchList(rows, date) {
   for (const a of groupByAthlete(rows).values()) {
     const upTo = a.entries.filter((e) => e.date <= date);
     const week = upTo.filter((e) => e.date >= weekAgo && isCheckIn(e));
-    if (!week.length) continue;
+    // Off sick (Workouts tab): practices missed for illness in the last 3
+    // days, whether or not they checked in. Training is filed under the next
+    // morning, so today's log sits on tomorrow's entry.
+    const sickDays = a.entries
+      .filter((e) => e.date > shiftDate(date, -2) && e.date <= shiftDate(date, 1)
+        && PRACTICE_KEYS.some((k) => e.training?.[`${k}None`] === 'sick'))
+      .map((e) => shiftDate(e.date, -1))
+      .reverse(); // most recent first
+    const sick = sickDays.length ? {
+      level: 'serious',
+      text: `Missed practice sick: ${sickDays.map((d) => (d === date ? 'today' : d === shiftDate(date, -1) ? 'yesterday' : `${daysBetween(d, date)} days ago`)).join(', ')}.`,
+    } : null;
+    if (!week.length) {
+      if (sick) list.push({ key: a.key, name: a.name, reasons: [sick], lastCheckIn: upTo.filter(isCheckIn).at(-1)?.date ?? null });
+      continue;
+    }
     const latest = week.at(-1);
     const ago = daysBetween(latest.date, date);
     const when = ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`;
@@ -221,6 +246,8 @@ export function watchList(rows, date) {
 
     const acwr = workload(upTo, date).acwr;
     if (acwr !== null && acwr > 1.5) reasons.push({ level: 'warning', text: `Training load spike: this week is ${acwr.toFixed(1)}× their 4-week average.` });
+
+    if (sick) reasons.push(sick);
 
     const sleeps = week.slice(-4).map((e) => e.wellness?.sleepHours).filter((h) => h > 0);
     const short = sleeps.filter((h) => h < 7);
@@ -332,12 +359,16 @@ function teamTraining(athletes, d, { past = false } = {}) {
   const split = trainings.filter(isSplitTraining);
   const practice = (k) => {
     const went = split.map((t) => t[k]).filter((p) => p?.durationMin > 0);
+    const perfs = went.map((p) => p.perf).filter((v) => v > 0);
     return {
       count: went.length,
       avgMin: went.length ? Math.round(avg(went.map((p) => p.durationMin))) : null,
       avgRpe: went.length ? round1(avg(went.map((p) => p.rpe))) : null,
+      avgPerf: perfs.length ? round1(avg(perfs)) : null, // how well it went, 1–10 (logged on the Workouts tab)
     };
   };
+  // Swimmers who said why they missed a practice (Workouts tab).
+  const skipped = (reason) => split.filter((t) => PRACTICE_KEYS.some((k) => t[`${k}None`] === reason)).length;
   const loads = trainings.map(sessionLoad);
   return {
     reported: trainings.length,
@@ -345,6 +376,8 @@ function teamTraining(athletes, d, { past = false } = {}) {
     pm: practice('pm'),
     weights: split.filter((t) => t.weights).length,
     meet: split.filter((t) => t.meet).length,
+    sick: skipped('sick'),
+    missed: skipped('missed'),
     avgLoad: loads.length >= (past ? MIN_TEAM : 1) ? Math.round(avg(loads)) : null,
   };
 }
@@ -357,7 +390,9 @@ function usualOf(days) {
     const vals = got.map(f).filter((v) => v !== null && v !== undefined);
     return vals.length ? +avg(vals).toFixed(digits) : null;
   };
-  const practice = (k) => ({ count: mean((d) => d[k].count), avgMin: mean((d) => d[k].avgMin, 0), avgRpe: mean((d) => d[k].avgRpe) });
+  const practice = (k) => ({
+    count: mean((d) => d[k].count), avgMin: mean((d) => d[k].avgMin, 0), avgRpe: mean((d) => d[k].avgRpe), avgPerf: mean((d) => d[k].avgPerf),
+  });
   return {
     days: got.length,
     reported: mean((d) => d.reported),
@@ -365,6 +400,8 @@ function usualOf(days) {
     pm: practice('pm'),
     weights: mean((d) => d.weights),
     meet: mean((d) => d.meet),
+    sick: mean((d) => d.sick),
+    missed: mean((d) => d.missed),
     avgLoad: mean((d) => d.avgLoad, 0),
   };
 }

@@ -19,14 +19,12 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 
 - **Today** — one button: **Start my morning check-in**. Afterwards: a readiness score from the athlete's
   own answers, and ✓ for questions answered / heart reading saved.
-- **Check-in (morning)** — the questions (about a minute), then straight on to the 1-minute heart
-  reading on the HRV screen (or *Skip for today*). After their first reading, athletes can turn on
-  **heart reading during check-in**: the reading then runs in a bar pinned at the top while they answer
-  with their other hand; saving early waits for it to finish.
-  A new day opens **pre-filled with the last check-in's answers** (not notes), so most mornings are a
-  quick review before saving.
-- **HRV** — a heart reading on its own (1–3 min), ending in "Reading saved ✓". Manual entry for chest
-  straps.
+- **Check-in (morning)** — the questions (about a minute). A new day starts blank. Right after, the app
+  asks about yesterday's training if it isn't logged yet (skippable).
+- **Workouts** — training logged for the day it happened: each practice (how long, how hard 1–10, how well it
+  went 1–10, or why not: off day, sick, missed, other), weights, and a meet. Today and yesterday first, then
+  earlier days with their status; any day can be filled in or corrected later (when it was logged is kept).
+- **Heart reading** (optional, from Today) — 1–3 min camera reading. Past readings are kept.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
   edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
 - **History** — trend charts (readiness, HRV in ms with your normal band, resting HR, wellness,
