@@ -3,7 +3,7 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll, fixMisloggedSunday,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, WEEKDAYS, wellnessScore, withWorkouts,
+  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, unloggedDays, WEEKDAYS, wellnessScore, withWorkouts,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
@@ -96,6 +96,7 @@ function renderToday() {
   const { solo } = loadSettings();
   const yesterday = shiftDate(date, -1);
   const trainedYesterday = trainingOnDay(entries, yesterday);
+  const gaps = unloggedDays(entries, date).filter((d) => d !== yesterday);
   const status = syncStatus();
   const streak = checkInStreak(entries, date);
   const streakLine = streak.days >= 2
@@ -111,8 +112,9 @@ function renderToday() {
         ${injuryNote(entry.pain)}
         <ul class="done-list">
           <li>✓ Questions answered</li>
-          <li id="yesterday-line">${trainedYesterday ? '✓ Yesterday’s training logged'
+          <li id="yesterday-line">${trainedYesterday?.assumed ? '✓ Yesterday: day off (Sunday)' : trainedYesterday ? '✓ Yesterday’s training logged'
     : `<span class="muted">– Yesterday’s training not logged</span> <a href="#workouts/${yesterday}">Log it</a>`}</li>
+          ${gaps.length ? `<li id="gaps-line"><span class="muted">– ${gaps.length === 1 ? `${esc(weekdayName(gaps[0]))}’s training` : `${gaps.length} earlier days`} not logged</span> <a href="#workouts/${gaps[0]}">Fill in</a></li>` : ''}
           ${heartDone ? '<li>✓ Heart reading saved</li>' : ''}
         </ul>
         ${streakLine}
@@ -166,12 +168,15 @@ async function sendAndWait(btn) {
   await Promise.race([sync(), new Promise((r) => setTimeout(r, 10000))]);
 }
 
-// After today's check-in: on to logging yesterday's training, if it isn't
-// logged yet (in the Workouts tab, or by an older check-in that asked).
+// After today's check-in (and after each day logged from there): on to the
+// most recent day this past week with no training logged, if any. Sundays
+// count as off days unless they log otherwise.
+const nextUnlogged = () => unloggedDays(loadEntries(), todayISO())[0];
 function afterCheckin() {
-  const yesterday = shiftDate(todayISO(), -1);
-  location.hash = trainingOnDay(loadEntries(), yesterday) ? '#today' : `#workouts/${yesterday}?after=checkin`;
+  const d = nextUnlogged();
+  location.hash = d ? `#workouts/${d}?after=checkin` : '#today';
 }
+const weekdayName = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
 
 function renderCheckin(dateArg) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? dateArg : todayISO();
@@ -267,6 +272,7 @@ function workoutStatus(entries, d, opts) {
   const done = complete(w, { doubles: asksDoubles(d, todayISO()) });
   if (w) return { state: done ? 'logged' : 'partly', label: done ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts) };
   const legacy = trainingOnDay(entries, d);
+  if (legacy?.assumed) return { state: 'assumed', label: 'Off (Sunday)', summary: '' };
   if (legacy) return { state: 'checkin', label: 'From check-in', summary: workoutSummary(formValues(null, legacy), opts) };
   return { state: 'none', label: 'Not logged', summary: '' };
 }
@@ -320,8 +326,9 @@ function renderWorkoutDay(date, query) {
   const doubles = asksDoubles(date, today);
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" role="status">
-      <p><b>✓ Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was <b>yesterday’s</b> training
-        (${esc(new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))})?
+      <p><b>✓ ${date === shiftDate(today, -1) ? `Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was <b>yesterday’s</b> training`
+    : `Saved.</b> ${esc(weekdayName(date))}’s training isn’t logged yet: how was it`}
+        (${esc(date === shiftDate(today, -1) ? weekdayName(date) : prettyDate(date))})?
         <a href="#today" id="skip">Skip</a></p>
       <p class="muted small">Already trained this morning? <a href="#workouts/${today}" id="log-today">Log today’s instead</a>.</p></section>` : ''}
     <form id="workout" class="stack" novalidate>
@@ -346,7 +353,10 @@ function renderWorkoutDay(date, query) {
     // Doubles not asked yet today: keep any already logged.
     const kept = !doubles && own?.pm ? { pm: own.pm } : {};
     upsertEntry(date, { workouts: { ...kept, ...out.workouts, loggedAt: own?.loggedAt || new Date().toISOString() } });
-    sendAndWait(form.querySelector('#save-workout')).then(() => { location.hash = afterCheckin ? '#today' : '#workouts'; });
+    sendAndWait(form.querySelector('#save-workout')).then(() => {
+      const next = afterCheckin && nextUnlogged();
+      location.hash = next ? `#workouts/${next}?after=checkin` : afterCheckin ? '#today' : '#workouts';
+    });
   });
 }
 

@@ -78,27 +78,56 @@ const practiced = (p) => (p?.durationMin > 0 ? { durationMin: p.durationMin, rpe
 export function trainingFromWorkouts(w) {
   const t = trainingFrom({ am: practiced(w.am), pm: practiced(w.pm), weights: w.weights, meet: w.meet, meetLevel: w.meetLevel });
   for (const k of PRACTICE_KEYS) if (w[k]?.none) t[`${k}None`] = w[k].none;
-  return { ...t, logged: true };
+  return { ...t, logged: true, ...(w.assumed ? { assumed: true } : {}) };
 }
+
+// Sunday is the day off: a Sunday with nothing logged counts as an off day
+// (`assumed`), until the swimmer logs something else for it.
+export const isSunday = (date) => new Date(`${date}T12:00:00Z`).getUTCDay() === 0;
+export const SUNDAY_OFF = { am: { none: 'off' }, pm: { none: null }, weights: false, meet: false, assumed: true };
 
 // Never saved: for analysis only. Idempotent, so it is safe to apply twice.
 export function withWorkouts(entries) {
-  if (!entries.some((e) => e.workouts || (e.training && !isSplit(e.training)))) return entries;
+  if (!entries.length) return entries;
   const byDate = new Map(entries.map((e) => [e.date, e.training && !isSplit(e.training) ? { ...e, training: asMorning(e.training) } : e]));
   for (const e of entries) {
     if (!e.workouts) continue;
     const next = shiftDate(e.date, 1);
     byDate.set(next, { ...(byDate.get(next) || { date: next }), training: trainingFromWorkouts(e.workouts) });
   }
+  // An unlogged Sunday is an off day, filed on the Monday after (when they
+  // have a Monday entry).
+  for (const [mon, e] of byDate) {
+    const sun = shiftDate(mon, -1);
+    if (isSunday(sun) && !e.training && !byDate.get(sun)?.workouts) byDate.set(mon, { ...e, training: trainingFromWorkouts(SUNDAY_OFF) });
+  }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // Training done on `date`: what was logged that day, or (older reports) what
-// the next morning's check-in said. null if neither.
+// the next morning's check-in said, or for a Sunday in their history, an
+// assumed off day. null if none of these.
 export function trainingOnDay(entries, date) {
   const w = entries.find((e) => e.date === date)?.workouts;
   if (w) return trainingFromWorkouts(w);
-  return asMorning(entries.find((e) => e.date === shiftDate(date, 1))?.training ?? null);
+  const legacy = entries.find((e) => e.date === shiftDate(date, 1))?.training;
+  if (legacy) return asMorning(legacy);
+  if (isSunday(date) && entries.some((e) => e.date <= date)) return trainingFromWorkouts(SUNDAY_OFF);
+  return null;
+}
+
+// Days in the last `days` (before today) with nothing logged, newest first:
+// the ones to prompt for. Sundays are assumed off; before yesterday, only
+// days since their first entry count.
+export function unloggedDays(entries, today, days = 7) {
+  const first = entries.reduce((m, e) => (!m || e.date < m ? e.date : m), null);
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    const d = shiftDate(today, -i);
+    if (i > 1 && (!first || d < first)) break;
+    if (!isSunday(d) && !trainingOnDay(entries, d)) out.push(d);
+  }
+  return out;
 }
 
 // Effort (1–10) for one practice: a number, null if they didn't go, or
