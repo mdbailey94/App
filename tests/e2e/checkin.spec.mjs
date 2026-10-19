@@ -92,7 +92,7 @@ test('logging a day: morning practice (how hard, how well, or why not), doubles,
 
   // Missing morning practice asks why.
   await page.click('input[name=amDid][value=no]');
-  await expect(page.locator('[data-skipped=am] .chips.reasons label')).toHaveText(['Off day', 'Sick/injured', 'Missed', 'Other']);
+  await expect(page.locator('[data-skipped=am] .chips.reasons label')).toHaveText(['Off day', 'Sick', 'Missed', 'Other']);
   await pick(page, 'input[name=amWhy][value=other]');
   await expect(page.locator('[data-note=am]')).toBeVisible();
   // Missing doubles doesn't.

@@ -1,6 +1,6 @@
 // The Workouts tab's form for one day's training: for each practice, did
 // they go (how long, how hard, how well they did) or why not (off day,
-// sick/injured, missed, other); then weights and a meet. Swimmers log on the day or later
+// sick, missed, other); then weights and a meet. Swimmers log on the day or later
 // (backfilling), so a practice can be left unanswered and filled in later.
 
 import { MEET_LEVELS, PRACTICE_KEYS, SKIP_REASONS, sessionLoad, trainingFromWorkouts } from './readiness.js';
