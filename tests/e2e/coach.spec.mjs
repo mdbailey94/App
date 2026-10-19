@@ -114,7 +114,7 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   await expect(page.locator('#not-in li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
 
   // Check-ins: readiness, and its change since yesterday and against their usual.
-  await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual']);
+  await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual', /^Training/]);
   await expect(page.locator('.checkin-table tbody tr:not(.flag-row)')).toHaveCount(5);
   // Sam gave the same answers as yesterday.
   const sam = page.locator('.checkin-table tr', { hasText: 'Sam Lee' });
@@ -180,9 +180,10 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await expect(leo.locator('td.grid-miss')).toHaveCount(3);
   await expect(grid.filter({ hasText: 'Kai' }).locator('td.grid-critical')).toHaveText('✕'); // injury today
 
-  // Only Maya split her training: morning 4 every day, afternoon 8 on the days she went.
+  // Only Maya split her training (afternoon 8 on the days she went); the
+  // others' older whole-day reports count as morning practice.
   const effort = page.locator('#effort-stats .stat-num');
-  await expect(effort.nth(0)).toHaveText(/^4/);
+  await expect(effort.nth(0)).toHaveText(/^5\.7/);
   await expect(effort.nth(1)).toHaveText(/^8/);
   await expect(page.locator('#lift-meet')).toHaveText('28 weights sessions · 1 meet day reported');
   await expect(page.locator('#load-response')).toContainText('Last 28 days');
@@ -262,6 +263,8 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   // Nia logs yesterday's training: morning practice missed sick, and doubles.
   const entries = [2, 1, 0].map((n) => ({ date: dayISO(n), wellness: W(5, 8) }));
   entries[1].workouts = { am: { none: 'sick' }, pm: { durationMin: 90, rpe: 6, perf: 8 }, weights: false, meet: false, loggedAt: new Date().toISOString() };
+  // …and this morning's practice.
+  entries[2].workouts = { am: { durationMin: 120, rpe: 7, perf: 8 }, weights: true, meet: false, loggedAt: new Date().toISOString() };
   const res = await request.post(sheetFor(testInfo).url, {
     headers: { 'Content-Type': 'text/plain' },
     data: JSON.stringify({ action: 'submit', group: GROUP_CODE, athlete: 'Nia Lopez', items: buildItems(entries, entries) }),
@@ -275,6 +278,14 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   await expect(nia.locator('td.effort')).toContainText('AM sick');
   await expect(nia.locator('td.effort')).toContainText('Dbl 1½h · 6 · 8');
   await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick' }).locator('td').first()).toHaveText('1');
+  // Today's workouts in the check-in list and on her page.
+  const row = page.locator('#checkins .checkin-table tr', { hasText: 'Nia Lopez' });
+  await expect(row.locator('td.trained')).toContainText('AM 2h · 7 · 8');
+  await expect(row.locator('td.trained')).toContainText('Wt');
+  await row.getByRole('link', { name: 'Nia Lopez' }).click();
+  await expect(page.locator('#swimmer-today')).toContainText('AM 2h · 7 · 8');
+  await expect(page.locator('#swimmer-today')).toContainText('Load 1065');
+  await page.goto('/coach.html#group');
   await page.goto('/coach.html#watchlist');
   await expect(page.locator('#fu-health .fu-list > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
 });

@@ -14,7 +14,7 @@ import {
 } from './group.js';
 import { followUps, followUpsFor } from './followups.js';
 import {
-  assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, wellnessScore,
+  assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
 import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
 import { barChart, stackedChart } from './charts.js';
@@ -225,6 +225,12 @@ function wireFollowUp(root) {
 function renderGroup({ rows, query }) {
   const date = query.get('d') || todayISO();
   const day = groupDay(rows, date);
+  const athletes = groupByAthlete(rows);
+  // What they logged for this day on the Workouts tab (or not yet).
+  const trainedCell = (key) => {
+    const t = trainingOnDay(athletes.get(key)?.entries || [], date);
+    return t ? `${practicesCell(t)}${sessionTags(t) ? `<br>${sessionTags(t)}` : ''}` : '<span class="muted small">not logged</span>';
+  };
   const fu = followUps(rows, date);
   const tr = trainingCompare(rows, date);
   const { now, weekAgo, usual } = tr.team;
@@ -256,18 +262,19 @@ function renderGroup({ rows, query }) {
         <div><span class="stat-num">${delta(vsDay(day.avgReadiness, day.readiness7), { big: 5 })}</span><span class="stat-label">vs usual<br><span class="muted">${day.readiness7 ?? '–'}</span></span></div>
       </div>
       ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table checkin-table">
-        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th></tr></thead>
+        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th><th>Training<br><span class="th-sub">time · effort · how well</span></th></tr></thead>
         <tbody>${day.checkedIn.map((c) => `
           <tr>
             <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
             <td><b>${c.assessment.score ?? '–'}</b></td>
             <td>${delta(c.vsPrev)}${c.prevDate && c.prevDate !== shiftDate(date, -1) ? `<br><span class="muted small">since ${esc(shortDate(c.prevDate))}</span>` : ''}</td>
             <td>${delta(c.vsUsual)}</td>
+            <td class="trained">${trainedCell(c.key)}</td>
           </tr>
-          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="4">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
+          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="5">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
         <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
-          over the 7 days before (needs 3 check-ins).</p>`
+          over the 7 days before (needs 3 check-ins). Training = what they logged for ${date === todayISO() ? 'today' : 'this day'} on the Workouts tab.</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
       ${refreshLine(`#group?d=${date}`)}
     </section>
@@ -484,6 +491,7 @@ function renderSwimmer({ rows, arg }) {
   const ins = swimmerInsights(rows, arg);
   const r = ins?.readiness;
   const t = ins?.training;
+  const today = trainingOnDay(a.entries, todayISO());
   view.innerHTML = `
     <section class="card">
       <p><a href="#swimmers">‹ Swimmers</a></p>
@@ -504,6 +512,13 @@ function renderSwimmer({ rows, arg }) {
     ${fus.length ? `<section class="card" id="swimmer-followup"><h3>Watchlist</h3>
       ${fus.map((c) => `<div class="fu-cat"><h4>${c.label}</h4><ul class="fu-list">${followUpItem({ ...c, key: null }, { name: false })}</ul></div>`).join('')}
       <p class="muted small">Against their own usual. Prompts for a conversation, not a diagnosis.</p></section>` : ''}
+
+    <section class="card" id="swimmer-today">
+      <h3>Today’s training</h3>
+      ${today ? `<p>${practicesCell(today)} ${sessionTags(today)}</p>
+      ${sessionLoad(today) ? `<p class="muted small">Load ${sessionLoad(today)} (minutes × effort)</p>` : ''}`
+    : '<p class="muted">Not logged yet.</p>'}
+    </section>
 
     ${t ? `<section class="card" id="swimmer-training">
       <h3>Training the day before</h3>

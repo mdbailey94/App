@@ -22,6 +22,7 @@ test('the check-in is just the questions; then yesterday’s training, which can
   await page.waitForURL(new RegExp(`#workouts/${dayISO(1)}\\?after=checkin`));
   await expect(page.locator('.welcome')).toContainText('Check-in saved');
   await expect(page.locator('h2')).toHaveText('Yesterday’s training');
+  await expect(page.locator('#log-today')).toHaveAttribute('href', `#workouts/${dayISO(0)}`);
   const e = await todayEntry(page);
   expect(e.wellness).toMatchObject({ scaleMax: 7, energy: 5 });
   expect(e.training).toBeUndefined();

@@ -162,3 +162,26 @@ export function markSynced(dates, stamp) {
 export function resetSync() {
   write(ENTRIES_KEY, loadEntries().map(({ syncedAt, ...e }) => e));
 }
+
+// One-time fix, Oct 2026: on Monday the 19th some swimmers logged that
+// morning's practice under Sunday the 18th (the after-check-in prompt asks
+// about "yesterday"). Move a Sunday practice logged on the Monday to the
+// Monday, when the Monday has none. The sheet was corrected the same way;
+// both entries are re-sent so phone and sheet agree.
+export function fixMisloggedSunday() {
+  const KEY = 'athlete-readiness/fix-2026-10-18';
+  if (localStorage.getItem(KEY)) return false;
+  localStorage.setItem(KEY, '1');
+  const entries = loadEntries();
+  const sun = entries.find((e) => e.date === '2026-10-18');
+  const mon = entries.find((e) => e.date === '2026-10-19');
+  const w = sun?.workouts;
+  if (!(w?.am?.durationMin > 0) || !String(w.loggedAt || '').startsWith('2026-10-19') || mon?.workouts) return false;
+  const { workouts, ...rest } = sun;
+  const now = new Date().toISOString();
+  const moved = entries.map((e) => (e === sun ? { ...rest, updatedAt: now } : e));
+  if (mon) moved[moved.indexOf(mon)] = { ...mon, workouts, updatedAt: now };
+  else moved.push({ date: '2026-10-19', createdAt: now, updatedAt: now, workouts });
+  write(ENTRIES_KEY, moved);
+  return true;
+}
