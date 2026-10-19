@@ -9,8 +9,12 @@ const entryOn = (page, date) => page.evaluate(([k, d]) => JSON.parse(localStorag
 const LOGGED = { am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false, loggedAt: new Date().toISOString() };
 // Today at a given local time (doubles are asked about from 4:30 pm).
 const at = (h, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; };
+// A fixed week, for flows that depend on the weekday (Sundays are assumed off).
+const WEEK = { sat: '2026-10-10', sun: '2026-10-11', mon: '2026-10-12', tue: '2026-10-13', wed: '2026-10-14' };
+const atDay = (date, h = 7) => new Date(`${date}T${String(h).padStart(2, '0')}:00:00`);
 
 test('the check-in is just the questions; then yesterday’s training, which can be skipped', async ({ page }) => {
+  await page.clock.setFixedTime(atDay(WEEK.wed));
   await seed(page, { hash: '#morning' });
   await expect(page.locator('#reading')).toHaveCount(0);
   await expect(page.locator('#checkin select, #checkin [name=amDid], #checkin [name=weights]')).toHaveCount(0); // no training here
@@ -19,11 +23,11 @@ test('the check-in is just the questions; then yesterday’s training, which can
   await answerAll(page);
   await expect(page.locator('[data-progress]')).toHaveText('All answered ✓');
   await page.click('#save');
-  await page.waitForURL(new RegExp(`#workouts/${dayISO(1)}\\?after=checkin`));
+  await page.waitForURL(new RegExp(`#workouts/${WEEK.tue}\\?after=checkin`));
   await expect(page.locator('.welcome')).toContainText('Check-in saved');
   await expect(page.locator('h2')).toHaveText('Yesterday’s training');
-  await expect(page.locator('#log-today')).toHaveAttribute('href', `#workouts/${dayISO(0)}`);
-  const e = await todayEntry(page);
+  await expect(page.locator('#log-today')).toHaveAttribute('href', `#workouts/${WEEK.wed}`);
+  const e = await entryOn(page, WEEK.wed);
   expect(e.wellness).toMatchObject({ scaleMax: 7, energy: 5 });
   expect(e.training).toBeUndefined();
 
@@ -49,9 +53,11 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 });
 
 test('logging yesterday right after the check-in, and the streak grows', async ({ page }) => {
-  await seed(page, { entries: [past(3), past(2), past(1)], hash: '#today' });
-  // No "check in today" nudge on Sundays.
-  await expect(page.locator('.streak')).toHaveText(weekday(0) === 0 ? '🔥 3-day streak' : '🔥 3-day streak – check in today to keep it going');
+  await page.clock.setFixedTime(atDay(WEEK.wed));
+  // Up to Tuesday: training for Saturday–Monday came from older check-ins.
+  const before = [WEEK.sun, WEEK.mon, WEEK.tue].map((date) => ({ date, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } }));
+  await seed(page, { entries: before, hash: '#today' });
+  await expect(page.locator('.streak')).toHaveText('🔥 3-day streak – check in today to keep it going');
   await page.click('text=Start my morning check-in');
   await answerAll(page);
   await page.click('#save');
@@ -61,7 +67,7 @@ test('logging yesterday right after the check-in, and the streak grows', async (
   await page.waitForURL(/#today$/);
   await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
   await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
-  const y = await entryOn(page, dayISO(1));
+  const y = await entryOn(page, WEEK.tue);
   expect(y.workouts).toMatchObject({ am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, weights: false, meet: false });
   expect(y.wellness.energy).toBe(5); // the day's own check-in is kept
 });
@@ -226,4 +232,48 @@ test('after checking in: thanks, no score or advice, then a comparison with thei
   await expect(hero.locator('.usual')).toHaveText('Feeling a bit below usual');
   await expect(hero).toContainText('Keep following your program');
   await expect(hero.locator('.injury-note')).toContainText('talk to your coach before practice');
+});
+
+test('Sunday counts as a day off; after the check-in, each unlogged day this week is asked for in turn', async ({ page }) => {
+  await page.clock.setFixedTime(atDay(WEEK.mon));
+  await seed(page, {
+    entries: [
+      { date: '2026-10-08', wellness: WELLNESS(), workouts: LOGGED },
+      { date: '2026-10-09', wellness: WELLNESS() }, // Friday: not logged
+      { date: WEEK.sat, wellness: WELLNESS() }, // Saturday: not logged
+    ],
+    hash: '#morning',
+  });
+  await answerAll(page);
+  await page.click('#save');
+  // Sunday is skipped (assumed off): Saturday first, then Friday.
+  await page.waitForURL(new RegExp(`#workouts/${WEEK.sat}\\?after=checkin`));
+  await expect(page.locator('.welcome')).toContainText('Saturday’s training isn’t logged yet');
+  await answerWorkout(page);
+  await page.click('#save-workout');
+  await page.waitForURL(/#workouts\/2026-10-09\?after=checkin/);
+  await answerWorkout(page, { am: ['no', 'sick'], pm: ['no'] });
+  await page.click('#save-workout');
+  await page.waitForURL(/#today$/);
+  await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday: day off (Sunday)');
+  await expect(page.locator('#gaps-line')).toHaveCount(0);
+  expect((await entryOn(page, '2026-10-09')).workouts.am).toEqual({ none: 'sick' });
+
+  await page.goto('/#workouts');
+  await expect(page.locator(`[data-day="${WEEK.sun}"] .wk-status`)).toHaveText('Off (Sunday)');
+});
+
+test('Today lists earlier unlogged days to fill in', async ({ page }) => {
+  await page.clock.setFixedTime(atDay(WEEK.wed));
+  await seed(page, {
+    entries: [
+      { date: WEEK.mon, wellness: WELLNESS() }, // Monday: not logged
+      { date: WEEK.tue, wellness: WELLNESS(), workouts: LOGGED },
+      { date: WEEK.wed, wellness: WELLNESS() },
+    ],
+    hash: '#today',
+  });
+  await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
+  await expect(page.locator('#gaps-line')).toContainText('Monday’s training not logged');
+  await expect(page.locator('#gaps-line a')).toHaveAttribute('href', `#workouts/${WEEK.mon}`);
 });

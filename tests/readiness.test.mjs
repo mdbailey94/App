@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, trainingOnDay, withWorkouts, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, trainingOnDay, unloggedDays, withWorkouts, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -212,4 +212,23 @@ test('withWorkouts: a logged day lands on the next morning, wins over an older r
   assert.deepEqual(trainingOnDay([{ date: '2026-10-11', training: { durationMin: 30, rpe: 2 } }], '2026-10-10').am, { durationMin: 30, rpe: 2 });
   const old = withWorkouts([{ date: '2026-10-11', training: { durationMin: 90, rpe: 6 } }])[0].training;
   assert.deepEqual([old.am, old.pm, sessionRpe(old, 'am'), sessionLoad(old)], [{ durationMin: 90, rpe: 6 }, null, 6, 540]);
+});
+
+test('Sundays with nothing logged are an off day; unloggedDays skips them', () => {
+  // 2026-10-11 is a Sunday.
+  const entries = [
+    { date: '2026-10-08', wellness: {}, workouts: { am: { durationMin: 120, rpe: 5 } } },
+    { date: '2026-10-10', wellness: {} },
+    { date: '2026-10-12', wellness: {} },
+  ];
+  const sun = trainingOnDay(entries, '2026-10-11');
+  assert.deepEqual([sun.assumed, sun.amNone, sessionLoad(sun)], [true, 'off', 0]);
+  assert.equal(withWorkouts(entries).find((e) => e.date === '2026-10-12').training.assumed, true);
+  // Logged Sunday training wins.
+  const trained = [...entries, { date: '2026-10-11', workouts: { am: { durationMin: 60, rpe: 4 } } }];
+  assert.equal(trainingOnDay(trained, '2026-10-11').assumed, undefined);
+  // On Tuesday the 13th: Monday, Saturday and Friday unlogged; Sunday skipped; nothing before the first entry.
+  assert.deepEqual(unloggedDays(entries, '2026-10-13'), ['2026-10-12', '2026-10-10', '2026-10-09']);
+  // Yesterday is asked about even for a new swimmer.
+  assert.deepEqual(unloggedDays([{ date: '2026-10-14', wellness: {} }], '2026-10-14'), ['2026-10-13']);
 });

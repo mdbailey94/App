@@ -73,6 +73,7 @@ const sessionTags = (t) => [
 // Both practices in one cell, a line each.
 const practicesCell = (t) => {
   if (!t) return '–';
+  if (t.assumed) return '<span class="muted">Off (Sunday)</span>';
   if (!('am' in t) && !('pm' in t)) return t.durationMin > 0 ? `<span title="Whole day">${shortTime(t.durationMin)} · ${t.rpe}</span>` : 'Rest';
   const tag = { am: 'AM', pm: 'Dbl' };
   const line = (k) => (t[k]?.durationMin > 0 ? `${tag[k]} ${practiceCell(t[k])}`
