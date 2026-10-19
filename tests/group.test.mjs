@@ -119,7 +119,7 @@ test('teamTrend: daily averages of readiness and load (with 6+ swimmers), check-
   assert.deepEqual([t[0].avgLoad, t[0].loadReported], [240, 240]);
   // Only five swimmers today: no team averages for the day.
   assert.deepEqual([t[1].avgReadiness, t[1].avgLoad, t[1].loadReported], [null, 0, null]);
-  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 92, avgLoad: 240, rpeAm: null, rpePm: null, perfAm: null, perfPm: null, weights: 0, meet: 0 });
+  assert.deepEqual(trendSummary(t), { avgReadiness: t[0].avgReadiness, rate: 92, avgLoad: 240, rpeAm: 4.5, rpePm: null, perfAm: null, perfPm: null, weights: 0, meet: 0 });
 });
 
 test('reminderText lists who is missing', () => {
@@ -181,11 +181,11 @@ test('teamTrend: average effort per practice over those who went, and weights / 
   const r = [
     day('A', 0, { wellness: good, training: split(4, 8, true) }),
     day('B', 0, { wellness: good, training: split(6, null, false, true) }), // no afternoon practice; a meet
-    day('C', 0, { wellness: good, training: { durationMin: 60, rpe: 5 } }), // older, unsplit check-in
+    day('C', 0, { wellness: good, training: { durationMin: 60, rpe: 5 } }), // older, unsplit check-in: counts as AM
     day('D', 0, { training: split(2, null) }), // Monday's answer about Saturday: training only
   ];
   const [t] = teamTrend(r, D, 1);
-  assert.deepEqual([t.rpeAm, t.rpePm, t.weights, t.meet], [4, 8, 1, 1]);
+  assert.deepEqual([t.rpeAm, t.rpePm, t.weights, t.meet], [4.3, 8, 1, 1]);
   // Training-only entries are not check-ins.
   assert.equal(t.checkedIn, 3);
   assert.deepEqual(groupDay(r, D).checkedIn.map((c) => c.name).sort(), ['A', 'B', 'C']);

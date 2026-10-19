@@ -1,6 +1,6 @@
 import {
   deleteEntry, exportCSV, exportJSON, getEntry, importJSON, loadEntries, loadSettings,
-  loadTeam, saveSettings, todayISO, upsertEntry, clearAll,
+  loadTeam, saveSettings, todayISO, upsertEntry, clearAll, fixMisloggedSunday,
 } from './storage.js';
 import {
   assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, WEEKDAYS, wellnessScore, withWorkouts,
@@ -320,8 +320,10 @@ function renderWorkoutDay(date, query) {
   const doubles = asksDoubles(date, today);
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" role="status">
-      <p><b>✓ Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was yesterday’s training?
-        <a href="#today" id="skip">Skip</a></p></section>` : ''}
+      <p><b>✓ Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was <b>yesterday’s</b> training
+        (${esc(new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))})?
+        <a href="#today" id="skip">Skip</a></p>
+      <p class="muted small">Already trained this morning? <a href="#workouts/${today}" id="log-today">Log today’s instead</a>.</p></section>` : ''}
     <form id="workout" class="stack" novalidate>
       <section class="card"><p><a href="#workouts">‹ Workouts</a></p>
         <h2>${esc(dayName(date) === 'Today' || dayName(date) === 'Yesterday' ? `${dayName(date)}’s training` : 'Training')}</h2>
@@ -678,5 +680,6 @@ if (/^#morning$/.test(location.hash) && getEntry(todayISO())?.wellness) {
 // The coach dashboard moved to its own page; old #coach links still work.
 if (/^#coach/.test(location.hash)) location.replace('coach.html');
 
+fixMisloggedSunday();
 route();
 sync();

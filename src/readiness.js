@@ -31,9 +31,13 @@ const clamp = (x, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, x));
 // (45 minutes at hard effort, 5 on the 1–10 scale). Meets aren't counted in
 // load (yet); how hard one was is kept, and meets reported before that was
 // asked count as moderate.
-// Older check-ins have only { durationMin, rpe } for the whole day.
+// Older check-ins have only { durationMin, rpe } for the whole day; before
+// doubles were asked about (Oct 12) that was morning practice, so
+// `withWorkouts` reads it as the AM practice.
 export const PRACTICE_KEYS = ['am', 'pm'];
 const isSplit = (t) => Boolean(t) && PRACTICE_KEYS.some((k) => k in t);
+export const asMorning = (t) => (!t || isSplit(t) ? t
+  : { ...t, am: t.durationMin > 0 ? { durationMin: t.durationMin, rpe: t.rpe } : null, pm: null });
 const practiceLoad = (s) => (s?.durationMin > 0 && s.rpe >= 0 ? Math.round(s.durationMin * s.rpe) : 0);
 export const WEIGHTS = { durationMin: 45, rpe: 5 };
 export const MEET_LEVELS = { light: { label: 'Light' }, moderate: { label: 'Moderate' }, hard: { label: 'Hard' } };
@@ -79,8 +83,8 @@ export function trainingFromWorkouts(w) {
 
 // Never saved: for analysis only. Idempotent, so it is safe to apply twice.
 export function withWorkouts(entries) {
-  if (!entries.some((e) => e.workouts)) return entries;
-  const byDate = new Map(entries.map((e) => [e.date, e]));
+  if (!entries.some((e) => e.workouts || (e.training && !isSplit(e.training)))) return entries;
+  const byDate = new Map(entries.map((e) => [e.date, e.training && !isSplit(e.training) ? { ...e, training: asMorning(e.training) } : e]));
   for (const e of entries) {
     if (!e.workouts) continue;
     const next = shiftDate(e.date, 1);
@@ -94,7 +98,7 @@ export function withWorkouts(entries) {
 export function trainingOnDay(entries, date) {
   const w = entries.find((e) => e.date === date)?.workouts;
   if (w) return trainingFromWorkouts(w);
-  return entries.find((e) => e.date === shiftDate(date, 1))?.training ?? null;
+  return asMorning(entries.find((e) => e.date === shiftDate(date, 1))?.training ?? null);
 }
 
 // Effort (1–10) for one practice: a number, null if they didn't go, or

@@ -92,6 +92,10 @@ The group's data lives in a Google Sheet the coach owns, via a small Apps Script
 
 What the coach gets:
 
+- **Watchlist** (its own coach tab): six categories – illness / injury, recovery / fatigue, stress / mood, training
+  response, missing data, ready – each with the swimmers in it, the evidence (against each swimmer's own usual
+  where there's enough history), whether it's new today or has lasted for days, and a question to start with.
+  Thresholds are in `src/followups.js` (`FOLLOW_UP`). Coaching prompts, not diagnoses or training changes.
 - **Coach dashboard**: per day, who checked in (worst readiness first, with flags for injury,
   short sleep, low HRV, elevated resting HR, load spikes), who hasn't, group averages, and each
   athlete's trends and notes (with their readiness change, the day before's training against a week before

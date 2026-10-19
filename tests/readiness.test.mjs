@@ -208,4 +208,8 @@ test('withWorkouts: a logged day lands on the next morning, wins over an older r
   assert.equal(trainingOnDay(entries, '2026-10-10').am.perf, 7);
   assert.equal(trainingOnDay([{ date: '2026-10-11', training: { durationMin: 30, rpe: 2 } }], '2026-10-10').durationMin, 30);
   assert.equal(trainingOnDay(entries, '2026-10-12'), null);
+  // Older whole-day reports were morning practice.
+  assert.deepEqual(trainingOnDay([{ date: '2026-10-11', training: { durationMin: 30, rpe: 2 } }], '2026-10-10').am, { durationMin: 30, rpe: 2 });
+  const old = withWorkouts([{ date: '2026-10-11', training: { durationMin: 90, rpe: 6 } }])[0].training;
+  assert.deepEqual([old.am, old.pm, sessionRpe(old, 'am'), sessionLoad(old)], [{ durationMin: 90, rpe: 6 }, null, 6, 540]);
 });
