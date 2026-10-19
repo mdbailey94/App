@@ -229,7 +229,7 @@ function renderGroup({ rows, query }) {
           ${compareRow('how well', (d) => d.pm.avgPerf, { sub: true })}
           ${compareRow('Lifted', (d) => d.weights)}
           ${compareRow('Raced', (d) => d.meet)}
-          ${compareRow('Missed: sick/injured', (d) => d.sick)}
+          ${compareRow('Missed: sick', (d) => d.sick)}
           ${compareRow('Missed: other', (d) => d.missed)}
           ${compareRow('Avg load', (d) => d.avgLoad, { load: true })}
         </tbody></table></div>
