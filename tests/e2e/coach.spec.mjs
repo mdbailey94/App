@@ -121,14 +121,22 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   await expect(sam.locator('td').nth(2)).toHaveText('0');
   await expect(page.locator('#checkins .stats .stat-label')).toHaveText([/checked in/, /avg readiness/, /vs yesterday/, /vs usual/]);
 
-  // Yesterday's training against the same day last week and the usual.
+  // Today's training: nothing logged yet in this data (it's reported the morning after).
+  await expect(page.locator('#day-before h3')).toHaveText('Today’s training');
+  await expect(page.locator('#day-before')).toContainText('No training logged yet today.');
+  await page.click('a:has-text("Send a reminder")');
+  await expect(page).toHaveURL(/#messages/);
+
+  // Yesterday (one day back): its training against the same day last week and the usual.
+  await page.goto(`/coach.html#group?d=${dayISO(1)}`);
+  await expect(page.locator('#day-before h3')).toHaveText('Training');
   const compare = page.locator('#day-before .compare-table');
   await expect(compare.locator('tbody th')).toHaveText([
     'Reported', 'Morning practice', 'time', 'effort', 'how well', 'Doubles', 'time', 'effort', 'how well',
     'Lifted', 'Raced', 'Missed: sick', 'Missed: other', 'Avg load',
   ]);
   await expect(compare.locator('tr', { hasText: 'Raced' }).locator('td')).toHaveText(['1', '0', '0']);
-  // The five who checked in today, heaviest load first.
+  // The five who reported it this morning, heaviest load first.
   const trainedRows = page.locator('#day-before .day-table tbody tr');
   await expect(trainedRows).toHaveCount(5);
   const ana = trainedRows.first();
@@ -140,9 +148,6 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   await expect(mayaDay.locator('td.effort')).toContainText('AM 1½h · 4');
   await expect(mayaDay.locator('td.effort')).toContainText('Dbl 2h · 8');
   await expect(mayaDay.locator('.tag')).toHaveText(['Wt', 'Meet · moderate']); // meets from before the question count as moderate
-
-  await page.click('a:has-text("Send a reminder")');
-  await expect(page).toHaveURL(/#messages/);
 });
 
 test('History tab: 7/14/28-day trends and the check-in record', async ({ page }, testInfo) => {
@@ -185,7 +190,7 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   const effort = page.locator('#effort-stats .stat-num');
   await expect(effort.nth(0)).toHaveText(/^5\.7/);
   await expect(effort.nth(1)).toHaveText(/^8/);
-  await expect(page.locator('#lift-meet')).toHaveText('28 weights sessions · 1 meet day reported');
+  await expect(page.locator('#lift-meet')).toHaveText('27 weights sessions · 1 meet day reported');
   await expect(page.locator('#load-response')).toContainText('Last 28 days');
   await expect(page.locator('[data-t="rpePm"] svg')).toBeVisible();
 });
@@ -274,18 +279,22 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   await signIn(page, testInfo);
   await page.goto('/coach.html#group');
 
+  // Today's training: this morning's practice.
+  const niaToday = page.locator('#day-before .day-table tr', { hasText: 'Nia Lopez' });
+  await expect(niaToday.locator('td.effort')).toContainText('AM 2h · 7 · 8');
+  await page.goto(`/coach.html#group?d=${dayISO(1)}`);
   const nia = page.locator('#day-before .day-table tr', { hasText: 'Nia Lopez' });
   await expect(nia.locator('td.effort')).toContainText('AM sick');
   await expect(nia.locator('td.effort')).toContainText('Dbl 1½h · 6 · 8');
   await expect(page.locator('#day-before .compare-table tr', { hasText: 'Missed: sick' }).locator('td').first()).toHaveText('1');
   // Today's workouts in the check-in list and on her page.
+  await page.goto('/coach.html#group');
   const row = page.locator('#checkins .checkin-table tr', { hasText: 'Nia Lopez' });
   await expect(row.locator('td.trained')).toContainText('AM 2h · 7 · 8');
   await expect(row.locator('td.trained')).toContainText('Wt');
   await row.getByRole('link', { name: 'Nia Lopez' }).click();
   await expect(page.locator('#swimmer-today')).toContainText('AM 2h · 7 · 8');
   await expect(page.locator('#swimmer-today')).toContainText('Load 1065');
-  await page.goto('/coach.html#group');
   await page.goto('/coach.html#watchlist');
   await expect(page.locator('#fu-health .fu-list > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
 });

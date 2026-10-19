@@ -233,7 +233,9 @@ function renderGroup({ rows, query }) {
     return t ? `${practicesCell(t)}${sessionTags(t) ? `<br>${sessionTags(t)}` : ''}` : '<span class="muted small">not logged</span>';
   };
   const fu = followUps(rows, date);
-  const tr = trainingCompare(rows, date);
+  // The day's own training (logged that day; older days: reported the next morning).
+  const tr = trainingCompare(rows, shiftDate(date, 1));
+  const isToday = date === todayISO();
   const { now, weekAgo, usual } = tr.team;
   const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
   // One row of the team comparison: yesterday, a week ago, the usual.
@@ -283,11 +285,11 @@ function renderGroup({ rows, query }) {
     ${watchLine(fu)}
 
     <section class="card" id="day-before">
-      <h3>Yesterday’s training</h3>
+      <h3>${isToday ? 'Today’s training' : 'Training'}</h3>
       <p class="muted small">${esc(prettyDate(tr.trainedOn))} against the same day last week (${esc(shortDate(shiftDate(tr.trainedOn, -7)))})
         and a usual ${esc(weekday)} (average of the 4 before${usual ? '' : '; needs 2'}).</p>
       ${now.reported ? `<div class="table-wrap"><table class="group-table compare-table">
-        <thead><tr><th></th><th>Yesterday</th><th>Week ago</th><th>Usual</th></tr></thead>
+        <thead><tr><th></th><th>${isToday ? 'Today' : esc(shortDate(date))}</th><th>Week ago</th><th>Usual</th></tr></thead>
         <tbody>
           ${compareRow('Reported', (d) => d.reported)}
           ${compareRow('Morning practice', (d) => d.am.count)}
@@ -317,7 +319,7 @@ function renderGroup({ rows, query }) {
         </tbody></table></div>
       <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5 (meets aren’t counted).
         Each swimmer is compared with their own load on those days.</p>`
-    : '<p class="muted">No training reported yet.</p>'}
+    : `<p class="muted">No training logged ${isToday ? 'yet today' : 'for this day'}.</p>`}
     </section>
 
     ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
@@ -347,6 +349,11 @@ function renderHistory({ rows, query }) {
   const trend = teamTrend(rows, date, span);
   const now = trendSummary(trend);
   const prev = trendSummary(teamTrend(rows, shiftDate(date, -span), span));
+  // Training sits on the morning after it (see withWorkouts), so ending a day
+  // later covers sessions up to and including today.
+  const sessionTrend = teamTrend(rows, shiftDate(date, 1), span);
+  const sess = trendSummary(sessionTrend);
+  const sessPrev = trendSummary(teamTrend(rows, shiftDate(date, 1 - span), span));
   const grid = checkinGrid(rows, date, 14);
   const resp = loadResponse(rows, date, { days: span });
   const change = (a, b, unit = '') => (a === null || b === null || a === b ? ''
@@ -382,17 +389,17 @@ function renderHistory({ rows, query }) {
 
     <section class="card">
       <h3>How sessions felt</h3>
-      <p class="muted small">Averages (1–10) from swimmers who went to each practice, last ${span} days: how hard it was,
+      <p class="muted small">Averages (1–10) from swimmers who went to each practice, last ${span} days including today: how hard it was,
         and how well it went (logged on the Workouts tab).</p>
       <div class="stats two small-stats" id="effort-stats">
-        <div><span class="stat-num">${now.rpeAm ?? '–'}${change(now.rpeAm, prev.rpeAm)}</span><span class="stat-label">morning effort</span></div>
-        <div><span class="stat-num">${now.rpePm ?? '–'}${change(now.rpePm, prev.rpePm)}</span><span class="stat-label">doubles effort</span></div>
+        <div><span class="stat-num">${sess.rpeAm ?? '–'}${change(sess.rpeAm, sessPrev.rpeAm)}</span><span class="stat-label">morning effort</span></div>
+        <div><span class="stat-num">${sess.rpePm ?? '–'}${change(sess.rpePm, sessPrev.rpePm)}</span><span class="stat-label">doubles effort</span></div>
       </div>
       <div class="stats two small-stats" id="perf-stats">
-        <div><span class="stat-num">${now.perfAm ?? '–'}${change(now.perfAm, prev.perfAm)}</span><span class="stat-label">morning: how well</span></div>
-        <div><span class="stat-num">${now.perfPm ?? '–'}${change(now.perfPm, prev.perfPm)}</span><span class="stat-label">doubles: how well</span></div>
+        <div><span class="stat-num">${sess.perfAm ?? '–'}${change(sess.perfAm, sessPrev.perfAm)}</span><span class="stat-label">morning: how well</span></div>
+        <div><span class="stat-num">${sess.perfPm ?? '–'}${change(sess.perfPm, sessPrev.perfPm)}</span><span class="stat-label">doubles: how well</span></div>
       </div>
-      <p class="small" id="lift-meet">${now.weights} weights session${now.weights === 1 ? '' : 's'} · ${now.meet} meet day${now.meet === 1 ? '' : 's'} reported</p>
+      <p class="small" id="lift-meet">${sess.weights} weights session${sess.weights === 1 ? '' : 's'} · ${sess.meet} meet day${sess.meet === 1 ? '' : 's'} reported</p>
       <div class="trend-block"><h4>Morning practice</h4><div data-t="rpeAm"></div></div>
       <div class="trend-block"><h4>Doubles</h4><div data-t="rpePm"></div></div>
       <p class="muted small">Effort; each bar is the day the session happened.</p>
@@ -451,7 +458,7 @@ function renderHistory({ rows, query }) {
     barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
     // Effort is reported the morning after, so each bar sits on the day the
     // session happened. No bar = nobody reported that session.
-    const trained = (k) => trend.map((d) => {
+    const trained = (k) => sessionTrend.map((d) => {
       const day = shiftDate(d.date, -1);
       return { x: dayIndex(day), y: d[k] ?? 0, label: shortDate(day) };
     });
