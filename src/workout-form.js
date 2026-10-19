@@ -7,7 +7,8 @@ import { MEET_LEVELS, PRACTICE_KEYS, SKIP_REASONS, sessionLoad, trainingFromWork
 import { esc } from './ui.js';
 
 // Morning practice, and doubles (a second practice later in the day). Only
-// a missed morning practice asks why; doubles aren't every day.
+// a missed morning practice asks why; doubles aren't every day, so doubles,
+// weights and meet start on No.
 export const PRACTICES = [
   { key: 'am', title: 'Morning practice', tag: 'AM', short: 'AM', usual: 120, askWhy: true },
   { key: 'pm', title: 'Doubles', tag: 'Doubles', short: 'Dbl', usual: 90 },
@@ -70,7 +71,7 @@ export function workoutSections(v = {}, { doubles = true } = {}) {
     const s = v[p.key] || {};
     return `
       <section class="card session-card" data-session="${p.key}">
-        <div class="field inline-q yes-no"><span class="q">${p.title}?</span>${yesNoButtons(`${p.key}Did`, went(p.key))}</div>
+        <div class="field inline-q yes-no"><span class="q">${p.title}?</span>${yesNoButtons(`${p.key}Did`, went(p.key) ?? (p.askWhy ? undefined : false))}</div>
         <div data-went="${p.key}" ${went(p.key) ? '' : 'hidden'}>
           <label class="field inline-q"><span class="q">How long?</span>
             <select name="${p.key}Min">${timeOptions(s.durationMin || p.usual)}</select></label>
@@ -87,8 +88,8 @@ export function workoutSections(v = {}, { doubles = true } = {}) {
       </section>`;
   }).join('')}
       <section class="card">
-        <div class="field inline-q yes-no"><span class="q">Weights?</span>${yesNoButtons('weights', v.weights)}</div>
-        <div class="field inline-q yes-no"><span class="q">Meet?</span>${yesNoButtons('meet', v.meet)}</div>
+        <div class="field inline-q yes-no"><span class="q">Weights?</span>${yesNoButtons('weights', v.weights ?? false)}</div>
+        <div class="field inline-q yes-no"><span class="q">Meet?</span>${yesNoButtons('meet', v.meet ?? false)}</div>
         <div class="field inline-q" data-meet ${v.meet ? '' : 'hidden'}><span class="q">How hard?</span>
           <div class="chips meet-level">${Object.entries(MEET_LEVELS).map(([k, l]) => `
             <label><input type="radio" name="meetLevel" value="${k}" ${checked(v.meet && (v.meetLevel || 'moderate') === k)}><span>${l.label}</span></label>`).join('')}

@@ -90,6 +90,9 @@ test('logging a day: morning practice (how hard, how well, or why not), doubles,
   await seed(page, { hash: `#workouts/${dayISO(0)}` });
   await expect(page.locator('h2')).toHaveText('Today’s training');
   await expect(page.locator('.session-card .yes-no .q')).toHaveText(['Morning practice?', 'Doubles?']);
+  // Doubles, weights and meet start on No; morning practice is unanswered.
+  for (const name of ['pmDid', 'weights', 'meet']) await expect(page.locator(`input[name=${name}][value=no]`)).toBeChecked();
+  await expect(page.locator('input[name=amDid]:checked')).toHaveCount(0);
 
   // Missing morning practice asks why.
   await page.click('input[name=amDid][value=no]');
