@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, swimmerInsights, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, metricSeries, swimmerInsights, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
   watchList,
 } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
@@ -344,4 +344,21 @@ test('workouts logged on the Workouts tab count like check-in reports, filed und
   const w = watchList(r, D).find((x) => x.name === 'Ana');
   assert.equal(w.reasons[0].level, 'serious');
   assert.match(w.reasons[0].text, /Missed practice sick: yesterday, 2 days ago\./);
+});
+
+test('metricSeries: a team average needs 6+ swimmers; one swimmer; training from the day before; 1–5 answers rescaled', () => {
+  const W5 = { sleepHours: 7, sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5 }; // old 1–5 scale
+  const T = { am: { durationMin: 120, rpe: 6, perf: 8 }, pm: null, weights: false, meet: false };
+  const rows = ['A', 'B', 'C', 'D', 'E', 'F'].flatMap((n, i) => [
+    { athlete: n, date: '2026-10-06', entry: { wellness: W5 } },
+    // Only five check in on the 7th; A also logs that day's practice.
+    ...(i < 5 ? [{ athlete: n, date: '2026-10-07', entry: { wellness: W5, ...(i === 0 ? { workouts: T } : {}) } }] : []),
+  ]);
+  const days = ['2026-10-06', '2026-10-07'];
+  assert.deepEqual(metricSeries(rows, 'energy', days).map((p) => [p.value, p.n]), [[7, 6], [null, 5]]);
+  assert.deepEqual(metricSeries(rows, 'sleepHours', days, 'a').map((p) => p.value), [7, 7]);
+  // A's practice on the 7th is filed on the morning of the 8th.
+  assert.deepEqual(metricSeries(rows, 'perfAm', ['2026-10-08'], 'a').map((p) => p.value), [8]);
+  assert.deepEqual(metricSeries(rows, 'load', ['2026-10-08'], 'a').map((p) => p.value), [720]);
+  assert.equal(metricSeries(rows, 'rate', ['2026-10-07'])[0].value, 83);
 });

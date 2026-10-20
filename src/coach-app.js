@@ -9,15 +9,15 @@
 import { loadCoach, loadTeam, saveCoach, todayISO } from './storage.js';
 import { callSheet, inviteLink, isValidSheetUrl } from './team.js';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, recentNotes, reminderText, roster, teamTrend, trainingCompare,
-  swimmerInsights, trendSummary,
+  checkinGrid, groupByAthlete, groupDay, loadResponse, METRICS, metricSeries, MIN_TEAM, recentNotes, reminderText, roster,
+  swimmerInsights, teamTrend, trainingCompare, trendSummary,
 } from './group.js';
 import { followUps, followUpsFor } from './followups.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
-import { dayIndex, esc, fmt, prettyDate, qrSvg, renderTrends, shareOrCopy, shortDate, statusBadge } from './ui.js';
-import { barChart, stackedChart } from './charts.js';
+import { dayIndex, esc, fmt, prettyDate, qrSvg, shareOrCopy, shortDate, statusBadge } from './ui.js';
+import { barChart, lineChart, pairChart } from './charts.js';
 
 const view = document.getElementById('view');
 const tabs = document.getElementById('coach-tabs');
@@ -329,6 +329,135 @@ function renderGroup({ rows, query }) {
         ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
 }
 
+// --------------------------------------------------------------- charts
+// The chart picker: any measure for the team or one swimmer, alone, against
+// a second measure (two panels on one day axis), or against the team
+// average. The choice lives in the address (so Back and links keep it) and
+// is remembered for next time.
+
+const PICKS_KEY = 'athlete-readiness/coach-charts/v1';
+const loadPicks = () => { try { return JSON.parse(localStorage.getItem(PICKS_KEY)) || {}; } catch { return {}; } };
+const savePicks = (where, pick) => { try { localStorage.setItem(PICKS_KEY, JSON.stringify({ ...loadPicks(), [where]: pick })); } catch { /* private mode */ } };
+const PRESETS = [
+  { a: 'readiness', b: 'load', label: 'Readiness & load' },
+  { a: 'readiness', b: 'sleepHours', label: 'Readiness & sleep' },
+  { a: 'soreness', b: 'load', label: 'Soreness & load' },
+  { a: 'rpeAm', b: 'perfAm', label: 'Effort & how well' },
+  { a: 'vsUsual', b: '', label: 'Vs usual' },
+  { a: 'rate', b: '', label: 'Check-ins' },
+];
+
+// The picker's state from the address, else last time's, else the default.
+function picks(query, where, { team = true } = {}) {
+  const saved = loadPicks()[where] || {};
+  const ok = (k) => METRICS[k] && (team || !METRICS[k].teamOnly);
+  const a = ok(query.get('a')) ? query.get('a') : ok(saved.a) ? saved.a : 'readiness';
+  const bq = query.has('b') ? query.get('b') : saved.b ?? (team ? 'load' : 'team');
+  const b = bq === a ? '' : bq === 'team' && !team ? 'team' : ok(bq) ? bq : '';
+  return { a, b };
+}
+
+function pickerHtml({ a, b, who }, { swimmers = null, team = true } = {}) {
+  const opts = (sel, skip = []) => {
+    const groups = {};
+    for (const [k, m] of Object.entries(METRICS)) {
+      if (skip.includes(k) || (!team && m.teamOnly)) continue;
+      (groups[m.group] ||= []).push(`<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(m.label)}</option>`);
+    }
+    return Object.entries(groups).map(([g, o]) => `<optgroup label="${esc(g)}">${o.join('')}</optgroup>`).join('');
+  };
+  return `
+      <div class="picker">
+        <label class="field">Show <select name="a">${opts(a)}</select></label>
+        <label class="field">Compare with <select name="b">
+          <option value="" ${b ? '' : 'selected'}>Nothing</option>
+          ${team ? '' : `<option value="team" ${b === 'team' ? 'selected' : ''}>Team average</option>`}
+          ${opts(b, [a])}</select></label>
+        ${swimmers ? `<label class="field">For <select name="who">
+          <option value="team">Whole team</option>
+          ${swimmers.map((s) => `<option value="${esc(s.key)}" ${s.key === who ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : ''}
+      </div>
+      <div class="presets" role="group" aria-label="Quick picks">${PRESETS.filter((p) => team || !METRICS[p.a].teamOnly).map((p) => `
+        <button type="button" class="preset${p.a === a && p.b === b ? ' on' : ''}" data-a="${p.a}" data-b="${p.b}">${p.label}</button>`).join('')}</div>
+      <div data-t="picker"></div>
+      <p class="muted small" data-picker-note></p>`;
+}
+
+// Draw the picked chart into `root` [data-t=picker].
+function drawPicker(root, athletes, { a, b, who, span }) {
+  const el = root.querySelector('[data-t="picker"]');
+  const A = METRICS[a];
+  const B = b && b !== 'team' ? METRICS[b] : null;
+  // Training is filed on the morning after. All training: chart the days
+  // the sessions happened, up to today. Mixed with a morning measure: chart
+  // the mornings, training being the day before's.
+  const sessions = A.training && (!B || B.training);
+  const today = todayISO();
+  const mornings = Array.from({ length: span }, (_, i) => shiftDate(today, i - span + 1 + (sessions ? 1 : 0)));
+  const day = (m) => (sessions ? shiftDate(m, -1) : m);
+  const title = (M) => `${M.label}${M.training && !sessions ? ' (day before)' : ''}`;
+  const unit = (M) => M.unit || '';
+  const show = (M, v) => (Number.isFinite(v) ? `${fmt(v, Number.isInteger(v) ? 0 : 1)}${unit(M)}` : '–');
+  const sa = metricSeries(athletes, a, mornings, who);
+  const base = mornings.map((m, i) => ({ x: dayIndex(day(m)), label: shortDate(day(m)), n: sa[i].n }));
+  const forWho = who === 'team' ? 'Team average' : athletes.get(who)?.name || '';
+  const notes = [A, B].filter(Boolean).map((M) => (M.hint ? `${M.label}: ${M.hint}.` : '')).filter(Boolean);
+  if (who === 'team' && [A, B].some((M) => M?.team > 1)) notes.push(`Team averages need ${MIN_TEAM}+ swimmers that day.`);
+  if (B) {
+    const sb = metricSeries(athletes, b, mornings, who);
+    const panel = (M) => ({ kind: M.kind, min: M.min, max: M.max, title: title(M) });
+    pairChart(el, base.map((d, i) => ({ ...d, top: sa[i].value ?? NaN, bottom: sb[i].value ?? NaN })), {
+      top: panel(A),
+      bottom: panel(B),
+      tip: (d) => `${d.label}<br>${esc(title(A))}: <b>${show(A, d.top)}</b><br>${esc(title(B))}: <b>${show(B, d.bottom)}</b>`,
+    });
+  } else if (b === 'team') {
+    const st = metricSeries(athletes, a, mornings, 'team');
+    lineChart(el, base.map((d, i) => ({ ...d, y: sa[i].value ?? NaN, y2: st[i].value ?? NaN })), {
+      yMin: A.min, yMax: A.max, yFormat: (v) => String(+v.toFixed(1)),
+      tip: (d) => `${d.label}<br>${esc(forWho)}: <b>${show(A, d.y)}</b><br>Team: <b>${show(A, d.y2)}</b>`,
+    });
+    notes.unshift('Solid = this swimmer · dashed = team average.');
+  } else if (A.kind === 'line') {
+    lineChart(el, base.map((d, i) => ({ ...d, y: sa[i].value ?? NaN })), {
+      yMin: A.min, yMax: A.max, yFormat: (v) => String(+v.toFixed(1)),
+      tip: (d) => `${d.label}: <b>${show(A, d.y)}</b>${who === 'team' ? ` <span class="muted">(${d.n} swimmers)</span>` : ''}`,
+    });
+  } else {
+    const vals = sa.map((p) => Math.abs(p.value ?? 0));
+    const reach = A.kind === 'signed' ? Math.max(10, Math.ceil(Math.max(...vals) / 10) * 10) : undefined;
+    barChart(el, base.map((d, i) => ({ ...d, y: sa[i].value ?? (A.kind === 'signed' ? NaN : 0) })), {
+      signed: A.kind === 'signed', yMin: reach && -reach, yMax: reach ?? A.max,
+      yFormat: (v) => (A.kind === 'signed' && v > 0 ? `+${v}` : String(v)),
+      tip: (d) => `${d.label}: <b>${Number.isFinite(d.y) ? show(A, d.y) : '–'}</b>`,
+    });
+  }
+  root.querySelector('[data-picker-note]').textContent = [`${forWho}, last ${span} days${sessions ? ' (training days, up to today)' : ''}.`, ...notes].join(' ');
+}
+
+// Wire the picker: redraw in place and keep the address up to date.
+function wirePicker(root, athletes, state, { where, base }) {
+  const go = (patch) => {
+    Object.assign(state, patch);
+    const team = state.who === 'team';
+    if (!team && METRICS[state.a].teamOnly) state.a = 'readiness';
+    if (state.b === state.a || (team && state.b === 'team') || (!team && METRICS[state.b]?.teamOnly)) state.b = '';
+    savePicks(where, { a: state.a, b: state.b, ...(where === 'history' ? { who: state.who } : {}) });
+    const q = new URLSearchParams({ t: state.span, a: state.a, b: state.b, ...(where === 'history' ? { who: state.who } : {}) });
+    history.replaceState(null, '', `${location.pathname}${location.search}${base}?${q}`);
+    root.querySelector('.picker-body').innerHTML = pickerHtml(state, { swimmers: root.dataset.swimmers ? JSON.parse(root.dataset.swimmers) : null, team });
+    // Keep the 7 / 14 / 28-day links on the same picks.
+    view.querySelectorAll('.seg a[data-span]').forEach((x) => { x.href = `${base}?${new URLSearchParams({ ...Object.fromEntries(q), t: x.dataset.span })}`; });
+    drawPicker(root, athletes, state);
+  };
+  root.addEventListener('change', (ev) => { if (['a', 'b', 'who'].includes(ev.target.name)) go({ [ev.target.name]: ev.target.value }); });
+  root.addEventListener('click', (ev) => {
+    const p = ev.target.closest('.preset');
+    if (p) go({ a: p.dataset.a, b: p.dataset.b });
+  });
+  requestAnimationFrame(() => drawPicker(root, athletes, state));
+}
+
 // ----------------------------------------------------------------- history
 
 // Light / moderate / heavy days and the readiness change after each.
@@ -346,13 +475,18 @@ function responseTable(b, range, note = '') {
 function renderHistory({ rows, query }) {
   const date = todayISO();
   const span = [14, 28].includes(Number(query.get('t'))) ? Number(query.get('t')) : 7;
+  const athletes = groupByAthlete(rows);
+  const swimmers = [...athletes.values()].map((a) => ({ key: a.key, name: a.name })).sort((x, y) => x.name.localeCompare(y.name));
+  const saved = loadPicks().history || {};
+  const whoQ = query.get('who') || saved.who;
+  const who = athletes.has(whoQ) ? whoQ : 'team';
+  const state = { ...picks(query, 'history', { team: who === 'team' }), who, span };
   const trend = teamTrend(rows, date, span);
   const now = trendSummary(trend);
   const prev = trendSummary(teamTrend(rows, shiftDate(date, -span), span));
   // Training sits on the morning after it (see withWorkouts), so ending a day
   // later covers sessions up to and including today.
-  const sessionTrend = teamTrend(rows, shiftDate(date, 1), span);
-  const sess = trendSummary(sessionTrend);
+  const sess = trendSummary(teamTrend(rows, shiftDate(date, 1), span));
   const sessPrev = trendSummary(teamTrend(rows, shiftDate(date, 1 - span), span));
   const grid = checkinGrid(rows, date, 14);
   const resp = loadResponse(rows, date, { days: span });
@@ -363,34 +497,30 @@ function renderHistory({ rows, query }) {
     const level = c.injury ? 'critical' : c.status || 'good';
     return `<td class="grid-in grid-${level}" title="${c.injury ? 'Injury reported' : 'Checked in'}">${c.injury ? '✕' : '✓'}</td>`;
   };
+  const q = (t) => new URLSearchParams({ t, a: state.a, b: state.b, who: state.who });
 
   view.innerHTML = `
-    <section class="card">
+    <section class="card" id="team-trends">
       <div class="card-head"><h3>Team trends</h3>
-        <span class="seg">${[7, 14, 28].map((n) => `<a href="#history?t=${n}" ${span === n ? 'aria-current="true"' : ''}>${n} days</a>`).join('')}</span></div>
+        <span class="seg">${[7, 14, 28].map((n) => `<a href="#history?${q(n)}" data-span="${n}" ${span === n ? 'aria-current="true"' : ''}>${n} days</a>`).join('')}</span></div>
       <div class="stats small-stats">
         <div><span class="stat-num">${now.avgReadiness ?? '–'}${change(now.avgReadiness, prev.avgReadiness)}</span><span class="stat-label">avg readiness</span></div>
         <div><span class="stat-num">${now.rate ?? '–'}%${change(now.rate, prev.rate, '%')}</span><span class="stat-label">check-in rate</span></div>
         <div><span class="stat-num">${now.avgLoad ?? '–'}${change(now.avgLoad, prev.avgLoad)}</span><span class="stat-label">avg daily load</span></div>
       </div>
       <p class="muted small">Last ${span} days; arrows compare with the ${span} days before.</p>
-      <div class="trend-block" id="ready-load"><h4>Readiness and the day before’s training</h4>
-        <p class="muted small">Each morning’s average readiness, and under it the average load swimmers reported that
-          morning for the day before (rest days count as 0). Days with fewer than 6 swimmers are left out.</p>
-        <div data-t="readyLoad"></div></div>
-      <div class="trend-block" id="vs-usual"><h4>Readiness vs usual</h4>
-        <p class="muted small">Each morning, every swimmer’s readiness minus their own usual (their average over the 7 days
-          before), averaged over the team. Above 0 = the team is fresher than normal for them, below 0 = more tired.
-          Days with fewer than 6 swimmers are left out.</p>
-        <div data-t="vsUsual"></div></div>
-      <div class="trend-block"><h4>Checked in (%)</h4><div data-t="rate"></div></div>
-      ${refreshLine(`#history?t=${span}`)}
     </section>
 
-    <section class="card">
+    <section class="card" id="charts" data-swimmers="${esc(JSON.stringify(swimmers))}">
+      <h3>Charts</h3>
+      <p class="muted small">Pick what to see, and what to compare it with. Tap a chart for each day’s numbers.</p>
+      <div class="picker-body">${pickerHtml(state, { swimmers, team: who === 'team' })}</div>
+      ${refreshLine(`#history?${q(span)}`)}
+    </section>
+
+    <section class="card" id="sessions">
       <h3>How sessions felt</h3>
-      <p class="muted small">Averages (1–10) from swimmers who went to each practice, last ${span} days including today: how hard it was,
-        and how well it went (logged on the Workouts tab).</p>
+      <p class="muted small">Averages (1–10) from swimmers who went, last ${span} days including today.</p>
       <div class="stats two small-stats" id="effort-stats">
         <div><span class="stat-num">${sess.rpeAm ?? '–'}${change(sess.rpeAm, sessPrev.rpeAm)}</span><span class="stat-label">morning effort</span></div>
         <div><span class="stat-num">${sess.rpePm ?? '–'}${change(sess.rpePm, sessPrev.rpePm)}</span><span class="stat-label">doubles effort</span></div>
@@ -400,9 +530,6 @@ function renderHistory({ rows, query }) {
         <div><span class="stat-num">${sess.perfPm ?? '–'}${change(sess.perfPm, sessPrev.perfPm)}</span><span class="stat-label">doubles: how well</span></div>
       </div>
       <p class="small" id="lift-meet">${sess.weights} weights session${sess.weights === 1 ? '' : 's'} · ${sess.meet} meet day${sess.meet === 1 ? '' : 's'} reported</p>
-      <div class="trend-block"><h4>Morning practice</h4><div data-t="rpeAm"></div></div>
-      <div class="trend-block"><h4>Doubles</h4><div data-t="rpePm"></div></div>
-      <p class="muted small">Effort; each bar is the day the session happened.</p>
     </section>
 
     <section class="card" id="load-response">
@@ -428,44 +555,7 @@ function renderHistory({ rows, query }) {
       </table></div>` : '<p class="muted">No check-ins in the last 14 days.</p>'}
     </section>`;
 
-  const series = (k, none = NaN) => trend.map((d) => ({ x: dayIndex(d.date), y: d[k] ?? none, label: shortDate(d.date) }));
-  const $t = (k) => view.querySelector(`[data-t="${k}"]`);
-  requestAnimationFrame(() => {
-    // Readiness axis from a round number below the lowest day, so changes show.
-    const lows = trend.map((d) => d.avgReadiness).filter(Number.isFinite);
-    const lineMin = lows.length ? Math.max(0, Math.floor((Math.min(...lows) - 10) / 25) * 25) : 0;
-    stackedChart($t('readyLoad'), trend.map((d) => ({
-      x: dayIndex(d.date),
-      label: shortDate(d.date),
-      before: shortDate(shiftDate(d.date, -1)),
-      line: d.avgReadiness ?? NaN,
-      bar: d.loadReported,
-    })), {
-      lineMin,
-      lineTitle: 'Readiness',
-      barTitle: 'Load the day before',
-      tip: (d) => `${d.label}: readiness <b>${Number.isFinite(d.line) ? d.line : '–'}</b><br>${d.before} load <b>${d.bar ?? '–'}</b>`,
-    });
-    // Symmetric around 0 in whole tens (at least ±10) so up and down read at the same scale.
-    const reach = Math.max(10, Math.ceil(Math.max(...trend.map((d) => Math.abs(d.vsUsual ?? 0))) / 10) * 10);
-    barChart($t('vsUsual'), series('vsUsual'), {
-      signed: true,
-      yMin: -reach,
-      yMax: reach,
-      yFormat: (v) => (v > 0 ? `+${v}` : String(v)),
-      tip: (d) => `${d.label}: <b>${Number.isFinite(d.y) ? `${d.y > 0 ? '+' : ''}${d.y} points` : 'fewer than 6 swimmers'}</b>`,
-    });
-    barChart($t('rate'), series('rate', 0), { yMax: 100, tip: (d) => `${d.label}: <b>${d.y}%</b>` });
-    // Effort is reported the morning after, so each bar sits on the day the
-    // session happened. No bar = nobody reported that session.
-    const trained = (k) => sessionTrend.map((d) => {
-      const day = shiftDate(d.date, -1);
-      return { x: dayIndex(day), y: d[k] ?? 0, label: shortDate(day) };
-    });
-    for (const k of ['rpeAm', 'rpePm']) {
-      barChart($t(k), trained(k), { yMax: 10, height: 120, tip: (d) => `${d.label}: <b>${d.y ? fmt(d.y, 1) : 'no sessions reported'}</b>` });
-    }
-  });
+  wirePicker(view.querySelector('#charts'), athletes, state, { where: 'history', base: '#history' });
 }
 
 // ---------------------------------------------------------------- swimmers
@@ -487,8 +577,9 @@ function renderSwimmers(ctx) {
     </section>`;
 }
 
-function renderSwimmer({ rows, arg }) {
-  const a = groupByAthlete(rows).get(arg);
+function renderSwimmer({ rows, arg, query }) {
+  const athletes = groupByAthlete(rows);
+  const a = athletes.get(arg);
   if (!a) {
     view.innerHTML = '<section class="card"><p>No data for this swimmer.</p><a href="#swimmers">‹ Swimmers</a></section>';
     return;
@@ -500,9 +591,18 @@ function renderSwimmer({ rows, arg }) {
   const r = ins?.readiness;
   const t = ins?.training;
   const today = trainingOnDay(a.entries, todayISO());
+  const span = [7, 14].includes(Number(query.get('t'))) ? Number(query.get('t')) : 28;
+  const chart = { ...picks(query, 'swimmer', { team: false }), who: a.key, span };
+  // Who's before and after them in the Swimmers list, to go through the group.
+  const order = roster(rows, todayISO()).map((r) => r.key);
+  const at = order.indexOf(a.key);
+  const prevSwimmer = at > 0 ? athletes.get(order[at - 1]) : null;
+  const nextSwimmer = at >= 0 && at < order.length - 1 ? athletes.get(order[at + 1]) : null;
   view.innerHTML = `
     <section class="card">
-      <p><a href="#swimmers">‹ Swimmers</a></p>
+      <div class="swimmer-nav"><a href="#swimmers">‹ Swimmers</a>
+        <span>${[prevSwimmer && `<a href="#swimmers/${encodeURIComponent(prevSwimmer.key)}" aria-label="Previous swimmer">‹ ${esc(first(prevSwimmer.name))}</a>`,
+    nextSwimmer && `<a href="#swimmers/${encodeURIComponent(nextSwimmer.key)}" aria-label="Next swimmer">${esc(first(nextSwimmer.name))} ›</a>`].filter(Boolean).join(' · ')}</span></div>
       <h2>${esc(a.name)}</h2>
       <p class="muted small">Latest check-in ${esc(prettyDate(latest.date))}</p>
       <div class="score-row">
@@ -528,6 +628,13 @@ function renderSwimmer({ rows, arg }) {
     : '<p class="muted">Not logged yet.</p>'}
     </section>
 
+    <section class="card" id="charts">
+      <h3>Charts</h3>
+      <p class="muted small">${esc(first(a.name))}’s days: pick what to see and what to compare it with, including the team average.</p>
+      <div class="seg range">${[7, 14, 28].map((n) => `<a href="#swimmers/${encodeURIComponent(a.key)}?t=${n}" data-span="${n}" ${span === n ? 'aria-current="true"' : ''}>${n} days</a>`).join('')}</div>
+      <div class="picker-body">${pickerHtml(chart, { team: false })}</div>
+    </section>
+
     ${t ? `<section class="card" id="swimmer-training">
       <h3>Training the day before</h3>
       <p class="muted small">${esc(prettyDate(shiftDate(ins.date, -1)))}, reported ${esc(shortDate(ins.date))}.</p>
@@ -545,12 +652,11 @@ function renderSwimmer({ rows, arg }) {
       ${responseTable(ins.response, (x) => `${x[0]}–${x[1]}`, '')}
       <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>
     </section>` : ''}
-    <div id="trends"></div>
     <section class="card"><h3>Recent days</h3>
       <div class="table-wrap"><table>
         <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Sleep</th><th>HR</th><th>HRV</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>Load</th></tr></thead>
-        <tbody>${[...a.entries].reverse().slice(0, 28).map((e) => `
-          <tr>
+        <tbody>${[...a.entries].reverse().slice(0, 28).map((e, i) => `
+          <tr${i >= 7 ? ' class="more-row" hidden' : ''}>
             <td>${esc(shortDate(e.date))}</td>
             <td>${assessDay(a.entries, e.date).score ?? '–'}</td>
             <td>${wellnessScore(e.wellness) ?? '–'}</td>
@@ -560,15 +666,20 @@ function renderSwimmer({ rows, arg }) {
             <td class="effort">${effortCell(e.training)}</td>
             <td>${sessionLoad(e.training) || '–'}</td>
           </tr>
-          ${e.notes || e.pain?.level ? `<tr class="flag-row"><td colspan="8">${[
+          ${e.notes || e.pain?.level ? `<tr class="flag-row${i >= 7 ? ' more-row' : ''}" ${i >= 7 ? 'hidden' : ''}><td colspan="8">${[
     e.pain?.level ? `Injury ${e.pain.level}/3${e.pain.location ? ` (${esc(e.pain.location)})` : ''}` : '',
     e.notes ? `“${esc(e.notes)}”` : '',
   ].filter(Boolean).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
+      ${a.entries.length > 7 ? `<button type="button" class="btn secondary block" id="more-days">Show ${Math.min(28, a.entries.length) - 7} more days</button>` : ''}
       <p class="muted small">HRV = RMSSD in ms. Training is reported the morning after, so each row is the day before’s
         effort (1–10) for morning practice · doubles, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
-  renderTrends(view.querySelector('#trends'), a.entries, { who: 'their' });
+  wirePicker(view.querySelector('#charts'), athletes, chart, { where: 'swimmer', base: `#swimmers/${encodeURIComponent(a.key)}` });
+  view.querySelector('#more-days')?.addEventListener('click', (ev) => {
+    view.querySelectorAll('.more-row').forEach((r) => { r.hidden = false; });
+    ev.target.remove();
+  });
 }
 
 // ---------------------------------------------------------------- messages

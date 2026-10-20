@@ -537,3 +537,24 @@ details.fu-cat summary { color: var(--text); }
 
 /* Today's training in the coach's check-in list. */
 .checkin-table td.trained { font-size: 0.85em; white-space: nowrap; }
+
+/* Coach chart picker: what to show, what to compare it with, and for whom. */
+.picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 12px; margin: 8px 0 4px; }
+.picker .field { margin: 0; font-size: 13px; color: var(--muted); }
+.picker select { width: 100%; margin-top: 4px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.preset { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.preset.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg.range { margin: 4px 0 2px; }
+.chart .series-line.alt { stroke: var(--muted); stroke-dasharray: 5 4; stroke-width: 1.5; }
+.chart .series-dot.alt { fill: var(--muted); }
+[data-t="picker"] { margin-top: 6px; min-height: 120px; }
+
+/* Wider coach dashboard on big screens: charts and tables get the room. */
+@media (min-width: 960px) {
+  body.coach main { max-width: 900px; }
+  body.coach .send-banner { max-width: 868px; }
+}
+.seg a { white-space: nowrap; }
+.swimmer-nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 14px; }

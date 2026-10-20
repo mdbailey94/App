@@ -116,20 +116,14 @@ export function lineChart(container, data, opts = {}) {
     showDots: true, ...opts,
   };
   if (!data.some((d) => Number.isFinite(d.y))) { container.innerHTML = '<p class="muted small">Not enough readings yet.</p>'; return; }
-  const { svg, sx, sy, height } = frame(container, { ...o, data });
-  const pts = data.map((d) => [sx(d.x), Number.isFinite(d.y) ? sy(d.y) : NaN]);
+  // `y2` (optional): a second series on the same scale, drawn dashed
+  // behind the first (e.g. the team average under one swimmer).
+  const both = data.some((d) => Number.isFinite(d.y2));
+  const { svg, sx, sy, height } = frame(container, { ...o, data: both ? data.concat(data.map((d) => ({ ...d, y: d.y2 }))) : data });
+  if (both) drawLine(svg, data.map((d) => [sx(d.x), Number.isFinite(d.y2) ? sy(d.y2) : NaN]), o.showDots && data.length <= 60, 'series-line alt');
   // Break the line at missing values rather than bridging them.
-  let path = '';
-  let pen = false;
-  for (const [x, y] of pts) {
-    if (!Number.isFinite(y)) { pen = false; continue; }
-    path += `${pen ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
-    pen = true;
-  }
-  el('path', { d: path, class: 'series-line' }, svg);
-  if (o.showDots && data.length <= 60) {
-    for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: 'series-dot' }, svg);
-  }
+  const pts = data.map((d) => [sx(d.x), Number.isFinite(d.y) ? sy(d.y) : NaN]);
+  drawLine(svg, pts, o.showDots && data.length <= 60);
   addTooltip(container, svg, data, pts, o.tip, PAD.top, height - PAD.bottom);
 }
 
@@ -198,70 +192,88 @@ export function drawWaveform(canvas, values, peaks = []) {
   }
 }
 
-// Two panels on one shared day axis, for reading one against the other
-// without two scales on one plot: a line on top (e.g. readiness, 0–100) and
-// bars below (e.g. load), each day's bar directly under its point. One
-// crosshair and tooltip cover both.
-// data: [{ x, label, line: number|NaN, bar: number|null }]
-export function stackedChart(container, data, opts = {}) {
-  const o = {
-    topHeight: 130, bottomHeight: 90, gap: 30, lineMin: 0, lineMax: 100,
-    lineTitle: '', barTitle: '', tip: (d) => d.label, ...opts,
-  };
+// Two panels on one shared day axis, for reading one measure against
+// another without two scales on one plot (e.g. readiness on top, the day
+// before's load below), each day's values in line. One crosshair and
+// tooltip cover both.
+// data: [{ x, label, top: number|NaN|null, bottom: number|NaN|null }]
+// top / bottom: { kind: 'line' | 'bar' | 'signed', min, max, title }
+export function pairChart(container, data, opts = {}) {
+  const o = { panelHeight: 110, gap: 30, tip: (d) => d.label, ...opts };
+  const panels = [{ ...o.top, key: 'top' }, { ...o.bottom, key: 'bottom' }];
   container.innerHTML = '';
   container.classList.add('chart');
-  if (!data.length || !data.some((d) => Number.isFinite(d.line) || d.bar > 0)) {
+  const has = (p) => data.some((d) => Number.isFinite(d[p.key]) && (p.kind === 'line' || d[p.key] !== 0));
+  if (!data.length || !panels.some(has)) {
     container.innerHTML = '<p class="muted small">Not enough data yet.</p>';
     return;
   }
+  // Each panel's scale: its fixed range, else from the data (bars from 0,
+  // signed bars symmetric around 0).
+  for (const p of panels) {
+    const vals = data.map((d) => d[p.key]).filter(Number.isFinite);
+    let lo = p.min ?? (vals.length ? Math.min(...vals) : 0);
+    let hi = p.max ?? (vals.length ? Math.max(...vals) : 1);
+    if (p.kind === 'bar') lo = Math.min(0, lo);
+    if (p.kind === 'signed') { const r = Math.max(1, ...vals.map(Math.abs)); lo = -r; hi = r; }
+    if (p.kind === 'line' && p.min === undefined && p.max === undefined) { const pad = Math.max(1, (hi - lo) * 0.15); lo -= pad; hi += pad; }
+    p.ticks = niceTicks(lo, hi, 3);
+    p.lo = Math.min(lo, p.ticks[0]);
+    p.hi = Math.max(hi, p.ticks.at(-1));
+  }
+  const fmtTick = (t) => String(+t.toFixed(2));
   const width = Math.max(260, container.clientWidth || 320);
-  const lineTicks = niceTicks(o.lineMin, o.lineMax);
-  const barHi = Math.max(1, ...data.map((d) => d.bar || 0));
-  const barTicks = niceTicks(0, barHi, 3);
-  const widest = Math.max(...[...lineTicks, ...barTicks].map((t) => String(t).length));
+  const widest = Math.max(...panels.flatMap((p) => p.ticks.map((t) => fmtTick(t).length)));
   const pad = { top: 16, right: 12, bottom: 22, left: Math.max(28, Math.ceil(widest * 6.5) + 10) };
-  const height = pad.top + o.topHeight + o.gap + o.bottomHeight + pad.bottom;
+  const height = pad.top + 2 * o.panelHeight + o.gap + pad.bottom;
   const iw = width - pad.left - pad.right;
   const inset = 13;
   const xs = data.map((d) => d.x);
   const xLo = Math.min(...xs);
   const xHi = Math.max(...xs);
   const sx = (x) => pad.left + inset + (xHi === xLo ? (iw - 2 * inset) / 2 : ((x - xLo) / (xHi - xLo)) * (iw - 2 * inset));
-  const topY0 = pad.top;
-  const botY0 = pad.top + o.topHeight + o.gap;
-  // Tick steps can stop short of the tallest bar: the axis then runs to it.
-  const lLo = lineTicks[0], lHi = lineTicks.at(-1), bHi = Math.max(barTicks.at(-1), barHi);
-  const syLine = (v) => topY0 + o.topHeight - ((v - lLo) / (lHi - lLo)) * o.topHeight;
-  const syBar = (v) => botY0 + o.bottomHeight - (v / bHi) * o.bottomHeight;
+  panels[0].y0 = pad.top;
+  panels[1].y0 = pad.top + o.panelHeight + o.gap;
+  for (const p of panels) p.sy = (v) => p.y0 + o.panelHeight - ((v - p.lo) / (p.hi - p.lo)) * o.panelHeight;
 
-  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': `${o.lineTitle} and ${o.barTitle}` }, container);
-  const axis = (ticks, sy) => {
-    for (const t of ticks) {
-      el('line', { x1: pad.left, x2: width - pad.right, y1: sy(t), y2: sy(t), class: 'grid' }, svg);
-      el('text', { x: pad.left - 6, y: sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, svg).textContent = String(t);
-    }
-  };
-  axis(lineTicks, syLine);
-  axis(barTicks, syBar);
-  el('text', { x: pad.left, y: topY0 - 5, class: 'panel-title' }, svg).textContent = o.lineTitle;
-  el('text', { x: pad.left, y: botY0 - 5, class: 'panel-title' }, svg).textContent = o.barTitle;
-  el('text', { x: pad.left, y: height - 6, class: 'tick' }, svg).textContent = data[0].label;
-  if (data.length > 1) el('text', { x: width - pad.right, y: height - 6, class: 'tick', 'text-anchor': 'end' }, svg).textContent = data.at(-1).label;
-
-  // Bars: rounded tops, square base.
+  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': `${panels[0].title} and ${panels[1].title}` }, container);
   const span = Math.max(1, xHi - xLo + 1);
   const bw = Math.max(2, Math.min(24, iw / span - 2));
-  const base = syBar(0);
-  for (const d of data) {
-    const top = syBar(d.bar || 0);
-    const h = base - top;
-    if (!(h > 0)) continue;
-    const r = Math.min(4, bw / 2, h);
-    const x0 = sx(d.x) - bw / 2;
-    el('path', { d: `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${base}Z`, class: 'series-bar muted-bar' }, svg);
+  let pts = null;
+  for (const p of panels) {
+    for (const t of p.ticks) {
+      el('line', { x1: pad.left, x2: width - pad.right, y1: p.sy(t), y2: p.sy(t), class: t === 0 && p.kind === 'signed' ? 'zero' : 'grid' }, svg);
+      el('text', { x: pad.left - 6, y: p.sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, svg).textContent = fmtTick(t);
+    }
+    el('text', { x: pad.left, y: p.y0 - 5, class: 'panel-title' }, svg).textContent = p.title;
+    if (p.kind === 'line') {
+      const line = data.map((d) => [sx(d.x), Number.isFinite(d[p.key]) ? p.sy(d[p.key]) : NaN]);
+      drawLine(svg, line, data.length <= 60);
+      pts ||= line;
+    } else {
+      const base = p.sy(0);
+      for (const d of data) {
+        const v = d[p.key];
+        if (!Number.isFinite(v) || v === 0) continue;
+        const end = p.sy(v);
+        const dir = end < base ? 1 : -1;
+        const r = Math.min(4, bw / 2, Math.abs(base - end));
+        const x0 = sx(d.x) - bw / 2;
+        el('path', {
+          d: `M${x0},${base}V${end + dir * r}Q${x0},${end} ${x0 + r},${end}H${x0 + bw - r}Q${x0 + bw},${end} ${x0 + bw},${end + dir * r}V${base}Z`,
+          class: `series-bar${p.key === 'bottom' && p.kind === 'bar' ? ' muted-bar' : ''}${p.kind === 'signed' ? (dir > 0 ? ' pos' : ' neg') : ''}`,
+        }, svg);
+      }
+    }
   }
-  // Line, broken where a day has no value.
-  const pts = data.map((d) => [sx(d.x), Number.isFinite(d.line) ? syLine(d.line) : NaN]);
+  el('text', { x: pad.left, y: height - 6, class: 'tick' }, svg).textContent = data[0].label;
+  if (data.length > 1) el('text', { x: width - pad.right, y: height - 6, class: 'tick', 'text-anchor': 'end' }, svg).textContent = data.at(-1).label;
+  pts ||= data.map((d) => [sx(d.x), NaN]);
+  addTooltip(container, svg, data, pts, o.tip, pad.top, height - pad.bottom);
+}
+
+// A line broken where a value is missing, with dots.
+function drawLine(svg, pts, dots, cls = 'series-line') {
   let path = '';
   let pen = false;
   for (const [x, y] of pts) {
@@ -269,7 +281,6 @@ export function stackedChart(container, data, opts = {}) {
     path += `${pen ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
     pen = true;
   }
-  el('path', { d: path, class: 'series-line' }, svg);
-  if (data.length <= 60) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: 'series-dot' }, svg);
-  addTooltip(container, svg, data, pts, o.tip, topY0, base);
+  el('path', { d: path, class: cls }, svg);
+  if (dots) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: cls === 'series-line' ? 'series-dot' : 'series-dot alt' }, svg);
 }
