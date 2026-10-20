@@ -22,7 +22,7 @@ export const FOLLOW_UP = {
   acwr: 1.5, // last 7 days' load against their 4-week average
   hardEffort: 7, // a practice this hard (effort, 1–10)…
   poorPerf: 4, // …that went this poorly (how well they did, 1–10)…
-  mismatches: 2, // …on this many of their last 3 logged practices
+  mismatches: 2, // …on this many different days in the last week
   perfDrop: 2, // how well they did: last 3 practices this far under their usual…
   perfMin: 6, // …once they have logged this many in 4 weeks
   sickDays: 3, // practices missed sick in the last this many days
@@ -137,8 +137,8 @@ export function concernsOn(entries, date, C = FOLLOW_UP) {
   const acwr = workload(upTo, date).acwr;
   if (acwr !== null && acwr > C.acwr) add('recovery', 'warning', `Training load: the last 7 days are ${acwr.toFixed(1)}× their 4-week average.`, 'How is your body handling the extra work this week?');
 
-  // Training response: logged practices that felt hard and went poorly, or
-  // "how well did you do" well under their usual.
+  // Training response: practices that felt hard and went poorly on several
+  // days, or "how well did you do" well under their usual.
   const practices = [];
   for (let i = 1; i <= 28; i++) {
     const d = shiftDate(date, -i + 1);
@@ -146,9 +146,9 @@ export function concernsOn(entries, date, C = FOLLOW_UP) {
     for (const k of [...PRACTICE_KEYS].reverse()) if (t?.[k]?.perf) practices.push({ day: d, rpe: t[k].rpe, perf: t[k].perf });
   }
   const last3 = practices.filter((p) => p.day >= shiftDate(date, -7)).slice(0, 3);
-  const tough = last3.filter((p) => p.rpe >= C.hardEffort && p.perf <= C.poorPerf);
-  if (tough.length >= C.mismatches) {
-    add('response', 'note', `${tough.length} of their last ${last3.length} practices felt hard (${C.hardEffort}+) and went poorly (${C.poorPerf} or less).`,
+  const tough = hardButPoor(entries, date, C);
+  if (tough.flagged) {
+    add('response', 'note', `Practice felt hard (${C.hardEffort}+) but went poorly (${C.poorPerf} or less) on ${tough.days.length} days this week.`,
       'Practices have felt tough lately – what’s getting in the way?');
   } else if (last3.length === 3 && practices.length >= C.perfMin) {
     const usual = avg(practices.slice(3).map((p) => p.perf));
@@ -159,6 +159,19 @@ export function concernsOn(entries, date, C = FOLLOW_UP) {
     }
   }
   return out;
+}
+
+// Days in the week up to `date` with a practice that felt hard (hardEffort+)
+// but went poorly (poorPerf or less), newest first; flagged on `mismatches`
+// or more different days.
+export function hardButPoor(entries, date, C = FOLLOW_UP) {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = shiftDate(date, -i);
+    const t = trainingOnDay(entries, d);
+    if (PRACTICE_KEYS.some((k) => t?.[k]?.perf && t[k].rpe >= C.hardEffort && t[k].perf <= C.poorPerf)) days.push(d);
+  }
+  return { days, flagged: days.length >= C.mismatches };
 }
 
 // Days in a row (before `date`) that `cat` was also flagged, up to trendDays.

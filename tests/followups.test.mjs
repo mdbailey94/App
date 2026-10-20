@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { concernsOn, followUps, followUpsFor } from '../src/followups.js';
+import { concernsOn, followUps, followUpsFor, hardButPoor } from '../src/followups.js';
 import { groupByAthlete } from '../src/group.js';
 import { shiftDate } from '../src/readiness.js';
 
@@ -71,7 +71,12 @@ test('training response: hard practices that went poorly, or how well they did d
   const tough = { am: { durationMin: 120, rpe: 8, perf: 3 }, pm: { none: null }, weights: false, meet: false };
   const rows = [...usual('Hal'), ...[2, 1, 0].map((n) => day('Hal', n, { wellness: W(5), workouts: tough }))];
   const r = concernsOn(groupByAthlete(rows).get('hal').entries, D).response;
-  assert.match(r.reasons[0].text, /3 of their last 3 practices felt hard \(7\+\) and went poorly \(4 or less\)/);
+  assert.match(r.reasons[0].text, /Practice felt hard \(7\+\) but went poorly \(4 or less\) on 3 days this week/);
+  // One such day isn't a pattern.
+  const once = [...usual('Hap'), day('Hap', 0, { wellness: W(5), workouts: tough })];
+  const e = groupByAthlete(once).get('hap').entries;
+  assert.deepEqual(hardButPoor(e, D), { days: [D], flagged: false });
+  assert.equal(concernsOn(e, D).response, undefined);
   // High effort that went well is not a concern.
   const good = { am: { durationMin: 120, rpe: 9, perf: 9 }, pm: { none: null }, weights: false, meet: false };
   const ok = [...usual('Ivy'), ...[2, 1, 0].map((n) => day('Ivy', n, { wellness: W(5), workouts: good }))];

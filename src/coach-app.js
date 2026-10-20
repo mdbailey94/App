@@ -12,7 +12,7 @@ import {
   checkinGrid, groupByAthlete, groupDay, loadResponse, METRICS, metricSeries, MIN_TEAM, recentNotes, reminderText, roster,
   swimmerInsights, teamTrend, trainingCompare, trendSummary,
 } from './group.js';
-import { followUps, followUpsFor } from './followups.js';
+import { followUps, followUpsFor, hardButPoor } from './followups.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
@@ -223,22 +223,15 @@ function wireFollowUp(root) {
   }));
 }
 
-function renderGroup({ rows, query }) {
-  const date = query.get('d') || todayISO();
-  const day = groupDay(rows, date);
-  const athletes = groupByAthlete(rows);
-  // What they logged for this day on the Workouts tab (or not yet).
-  const trainedCell = (key) => {
-    const t = trainingOnDay(athletes.get(key)?.entries || [], date);
-    return t ? `${practicesCell(t)}${sessionTags(t) ? `<br>${sessionTags(t)}` : ''}` : '<span class="muted small">not logged</span>';
-  };
-  const fu = followUps(rows, date);
-  // The day's own training (logged that day; older days: reported the next morning).
-  const tr = trainingCompare(rows, shiftDate(date, 1));
-  const isToday = date === todayISO();
+// One day's training: the team against the same day last week and a usual
+// one for that weekday (the 4 before), then each swimmer's effort, how well
+// they did and load, their load against those same days. Anyone whose
+// practices felt hard but went poorly on 2+ days this week is flagged first.
+function trainingCard(rows, athletes, trainedOn, { id, title, today = false }) {
+  // Training is filed on the morning after (see withWorkouts).
+  const tr = trainingCompare(rows, shiftDate(trainedOn, 1));
   const { now, weekAgo, usual } = tr.team;
-  const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
-  // One row of the team comparison: yesterday, a week ago, the usual.
+  const weekday = new Date(`${trainedOn}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
   const pctOf = (a, b) => (a !== null && b > 0 ? Math.round(((a - b) / b) * 100) : null);
   const compareRow = (label, f, { load = false, sub = false } = {}) => {
     const n = f(now);
@@ -249,7 +242,64 @@ function renderGroup({ rows, query }) {
     };
     return `<tr${sub ? ' class="sub-row"' : ''}><th scope="row">${label}</th><td><b>${num(n)}</b></td>${cell(weekAgo.reported ? weekAgo : null)}${cell(usual)}</tr>`;
   };
-  const weekday = new Date(`${tr.trainedOn}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
+  const swimmers = tr.swimmers
+    .map((s) => ({ ...s, tough: hardButPoor(athletes.get(s.key)?.entries || [], trainedOn) }))
+    .sort((x, y) => y.tough.flagged - x.tough.flagged || y.load - x.load || x.name.localeCompare(y.name));
+  // Morning · doubles values (– = didn't go), or why there was no practice.
+  const perPractice = (t, f) => {
+    if (!('am' in t) && !('pm' in t)) return t.durationMin > 0 ? `<span title="Whole day">${num(f(t))}</span>` : '–';
+    if (!PRACTICE_KEYS.some((k) => t[k]?.durationMin > 0)) return practicesCell(t);
+    return PRACTICE_KEYS.map((k) => (t[k]?.durationMin > 0 ? num(f(t[k])) : '–')).join(' · ');
+  };
+  const when = (d) => (d === todayISO() ? 'today' : d === shiftDate(todayISO(), -1) ? 'yesterday'
+    : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' }));
+  return `
+    <section class="card training-day" id="${id}">
+      <h3>${esc(title)} <span class="muted small">${esc(prettyDate(trainedOn))}</span></h3>
+      ${now.reported ? `<p class="muted small">Against last ${esc(weekday)} (${esc(shortDate(shiftDate(trainedOn, -7)))}) and a usual ${esc(weekday)}
+        (average of the 4 before${usual ? '' : '; needs 2'}).</p>
+      <div class="table-wrap"><table class="group-table compare-table">
+        <thead><tr><th></th><th>${today ? 'Today' : esc(shortDate(trainedOn))}</th><th>Last week</th><th>Avg</th></tr></thead>
+        <tbody>
+          ${compareRow('Logged', (d) => d.reported)}
+          ${compareRow('Morning practice', (d) => d.am.count)}
+          ${compareRow('effort', (d) => d.am.avgRpe, { sub: true })}
+          ${compareRow('how well', (d) => d.am.avgPerf, { sub: true })}
+          ${compareRow('Doubles', (d) => d.pm.count)}
+          ${compareRow('effort', (d) => d.pm.avgRpe, { sub: true })}
+          ${compareRow('how well', (d) => d.pm.avgPerf, { sub: true })}
+          ${compareRow('Lifted', (d) => d.weights)}
+          ${compareRow('Raced', (d) => d.meet)}
+          ${compareRow('Missed: sick', (d) => d.sick)}
+          ${compareRow('Missed: other', (d) => d.missed)}
+          ${compareRow('Avg load', (d) => d.avgLoad, { load: true })}
+        </tbody></table></div>
+      <div class="table-wrap"><table class="group-table day-table">
+        <thead><tr><th>Swimmer</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>How well<br><span class="th-sub">AM · Dbl</span></th><th>Load</th><th>vs last<br>week</th><th>vs<br>avg</th></tr></thead>
+        <tbody>${swimmers.map((s) => `
+          <tr${s.tough.flagged ? ' class="tough"' : ''}>
+            <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
+            <td class="effort">${perPractice(s.training, (p) => p.rpe)}</td>
+            <td class="perf">${perPractice(s.training, (p) => p.perf)}</td>
+            <td><b>${s.load}</b></td>
+            <td>${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
+            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
+          </tr>
+          ${s.tough.flagged ? `<tr class="flag-row tough-row"><td colspan="6">⚑ Felt hard but went poorly on ${s.tough.days.length} days this week (${s.tough.days.map(when).join(', ')})</td></tr>` : ''}`).join('')}
+        </tbody></table></div>
+      <p class="muted small">Effort and how well they did, 1–10. Load = minutes × effort; weights count as 45 min at 5 (meets
+        aren’t counted). Each swimmer’s load is against their own last ${esc(weekday)} and usual ${esc(weekday)}.
+        ⚑ = effort 7+ but how well 4 or less, on 2+ days this week.</p>`
+    : `<p class="muted">No training logged ${today ? 'yet today' : 'for this day'}.</p>`}
+    </section>`;
+}
+
+function renderGroup({ rows, query }) {
+  const date = query.get('d') || todayISO();
+  const day = groupDay(rows, date);
+  const athletes = groupByAthlete(rows);
+  const fu = followUps(rows, date);
+  const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
 
   view.innerHTML = `
     <section class="card" id="checkins">
@@ -265,62 +315,26 @@ function renderGroup({ rows, query }) {
         <div><span class="stat-num">${delta(vsDay(day.avgReadiness, day.readiness7), { big: 5 })}</span><span class="stat-label">vs usual<br><span class="muted">${day.readiness7 ?? '–'}</span></span></div>
       </div>
       ${day.checkedIn.length ? `<div class="table-wrap"><table class="group-table checkin-table">
-        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th><th>Training<br><span class="th-sub">time · effort · how well</span></th></tr></thead>
+        <thead><tr><th>Swimmer</th><th>Ready</th><th>vs yesterday</th><th>vs usual</th></tr></thead>
         <tbody>${day.checkedIn.map((c) => `
           <tr>
             <td class="who">${athleteLink(c.key, c.name)}<br>${statusBadge(c.assessment.status)}</td>
             <td><b>${c.assessment.score ?? '–'}</b></td>
             <td>${delta(c.vsPrev)}${c.prevDate && c.prevDate !== shiftDate(date, -1) ? `<br><span class="muted small">since ${esc(shortDate(c.prevDate))}</span>` : ''}</td>
             <td>${delta(c.vsUsual)}</td>
-            <td class="trained">${trainedCell(c.key)}</td>
           </tr>
-          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="5">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
+          ${c.assessment.flags.length ? `<tr class="flag-row"><td colspan="4">${c.assessment.flags.map((f) => esc(theirs(f.text))).join(' · ')}</td></tr>` : ''}`).join('')}
         </tbody></table></div>
         <p class="muted small">Worst first. vs yesterday = since their previous check-in; vs usual = against their average
-          over the 7 days before (needs 3 check-ins). Training = what they logged for ${date === todayISO() ? 'today' : 'this day'} on the Workouts tab.</p>`
+          over the 7 days before (needs 3 check-ins).</p>`
     : '<p class="muted">No check-ins for this day yet.</p>'}
       ${refreshLine(`#group?d=${date}`)}
     </section>
 
     ${watchLine(fu)}
 
-    <section class="card" id="day-before">
-      <h3>${isToday ? 'Today’s training' : 'Training'}</h3>
-      <p class="muted small">${esc(prettyDate(tr.trainedOn))} against the same day last week (${esc(shortDate(shiftDate(tr.trainedOn, -7)))})
-        and a usual ${esc(weekday)} (average of the 4 before${usual ? '' : '; needs 2'}).</p>
-      ${now.reported ? `<div class="table-wrap"><table class="group-table compare-table">
-        <thead><tr><th></th><th>${isToday ? 'Today' : esc(shortDate(date))}</th><th>Week ago</th><th>Usual</th></tr></thead>
-        <tbody>
-          ${compareRow('Reported', (d) => d.reported)}
-          ${compareRow('Morning practice', (d) => d.am.count)}
-          ${compareRow('time', (d) => (d.am.avgMin === null ? null : shortTime(Math.round(d.am.avgMin))), { sub: true })}
-          ${compareRow('effort', (d) => d.am.avgRpe, { sub: true })}
-          ${compareRow('how well', (d) => d.am.avgPerf, { sub: true })}
-          ${compareRow('Doubles', (d) => d.pm.count)}
-          ${compareRow('time', (d) => (d.pm.avgMin === null ? null : shortTime(Math.round(d.pm.avgMin))), { sub: true })}
-          ${compareRow('effort', (d) => d.pm.avgRpe, { sub: true })}
-          ${compareRow('how well', (d) => d.pm.avgPerf, { sub: true })}
-          ${compareRow('Lifted', (d) => d.weights)}
-          ${compareRow('Raced', (d) => d.meet)}
-          ${compareRow('Missed: sick', (d) => d.sick)}
-          ${compareRow('Missed: other', (d) => d.missed)}
-          ${compareRow('Avg load', (d) => d.avgLoad, { load: true })}
-        </tbody></table></div>
-      <div class="table-wrap"><table class="group-table day-table">
-        <thead><tr><th>Swimmer</th><th>Practice<br><span class="th-sub">time · effort · how well</span></th><th>Load</th><th>vs<br>wk ago</th><th>vs<br>usual</th></tr></thead>
-        <tbody>${tr.swimmers.map((s) => `
-          <tr>
-            <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
-            <td class="effort">${practicesCell(s.training)}</td>
-            <td><b>${s.load}</b></td>
-            <td>${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
-            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
-          </tr>`).join('')}
-        </tbody></table></div>
-      <p class="muted small">Heaviest first. Load = minutes × effort; weights count as 45 min at 5 (meets aren’t counted).
-        Each swimmer is compared with their own load on those days.</p>`
-    : `<p class="muted">No training logged ${isToday ? 'yet today' : 'for this day'}.</p>`}
-    </section>
+    ${trainingCard(rows, athletes, shiftDate(date, -1), { id: 'yesterday-training', title: date === todayISO() ? 'Yesterday’s training' : 'The day before' })}
+    ${trainingCard(rows, athletes, date, { id: 'day-training', title: date === todayISO() ? 'Today’s training' : 'This day’s training', today: date === todayISO() })}
 
     ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
         <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}

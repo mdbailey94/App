@@ -101,6 +101,10 @@ test('logging a day: morning practice (how hard, how well, or why not), doubles,
   // Doubles, weights and meet start on No; morning practice is unanswered.
   for (const name of ['pmDid', 'weights', 'meet']) await expect(page.locator(`input[name=${name}][value=no]`)).toBeChecked();
   await expect(page.locator('input[name=amDid]:checked')).toHaveCount(0);
+  // …and must be answered: the starting answers alone don't save.
+  await page.click('#save-workout');
+  await expect(page.locator('#form-error')).toContainText('Morning practice?');
+  expect((await todayEntry(page))?.workouts).toBeUndefined();
 
   // Missing morning practice asks why.
   await page.click('input[name=amDid][value=no]');

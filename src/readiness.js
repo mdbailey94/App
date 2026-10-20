@@ -86,12 +86,17 @@ export function trainingFromWorkouts(w) {
 export const isSunday = (date) => new Date(`${date}T12:00:00Z`).getUTCDay() === 0;
 export const SUNDAY_OFF = { am: { none: 'off' }, pm: { none: null }, weights: false, meet: false, assumed: true };
 
+// A save with nothing but the form's starting answers (doubles, weights and
+// meet all No, morning practice skipped) says nothing about the day: it
+// counts as not logged, so the swimmer is asked again.
+export const hasWorkouts = (w) => Boolean(w) && ('am' in w || PRACTICE_KEYS.some((k) => w[k]?.durationMin > 0) || w.weights === true || w.meet === true);
+
 // Never saved: for analysis only. Idempotent, so it is safe to apply twice.
 export function withWorkouts(entries) {
   if (!entries.length) return entries;
   const byDate = new Map(entries.map((e) => [e.date, e.training && !isSplit(e.training) ? { ...e, training: asMorning(e.training) } : e]));
   for (const e of entries) {
-    if (!e.workouts) continue;
+    if (!hasWorkouts(e.workouts)) continue;
     const next = shiftDate(e.date, 1);
     byDate.set(next, { ...(byDate.get(next) || { date: next }), training: trainingFromWorkouts(e.workouts) });
   }
@@ -99,7 +104,7 @@ export function withWorkouts(entries) {
   // have a Monday entry).
   for (const [mon, e] of byDate) {
     const sun = shiftDate(mon, -1);
-    if (isSunday(sun) && !e.training && !byDate.get(sun)?.workouts) byDate.set(mon, { ...e, training: trainingFromWorkouts(SUNDAY_OFF) });
+    if (isSunday(sun) && !e.training && !hasWorkouts(byDate.get(sun)?.workouts)) byDate.set(mon, { ...e, training: trainingFromWorkouts(SUNDAY_OFF) });
   }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -109,7 +114,7 @@ export function withWorkouts(entries) {
 // assumed off day. null if none of these.
 export function trainingOnDay(entries, date) {
   const w = entries.find((e) => e.date === date)?.workouts;
-  if (w) return trainingFromWorkouts(w);
+  if (hasWorkouts(w)) return trainingFromWorkouts(w);
   const legacy = entries.find((e) => e.date === shiftDate(date, 1))?.training;
   if (legacy) return asMorning(legacy);
   if (isSunday(date) && entries.some((e) => e.date <= date)) return trainingFromWorkouts(SUNDAY_OFF);
