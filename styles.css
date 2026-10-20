@@ -558,3 +558,7 @@ details.fu-cat summary { color: var(--text); }
 }
 .seg a { white-space: nowrap; }
 .swimmer-nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 14px; }
+/* Group tab: a swimmer whose practices felt hard but went poorly lately. */
+.day-table tr.tough td { background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.day-table tr.tough-row td { color: var(--text); font-weight: 600; }
+.training-day h3 .muted { font-weight: 400; margin-left: 4px; }
