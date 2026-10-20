@@ -155,22 +155,38 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await signIn(page, testInfo);
   await page.goto('/coach.html#history');
 
-  await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(7);
-  // Readiness with the day before's load under it, one bar per day with 6+
-  // swimmers (only 5 checked in today, so today has none).
-  await expect(page.locator('[data-t="readyLoad"] .series-line')).toHaveCount(1);
-  await expect(page.locator('[data-t="readyLoad"] .series-bar')).toHaveCount(6);
-  await expect(page.locator('[data-t="readyLoad"] .panel-title')).toHaveText(['Readiness', 'Load the day before']);
-  // The team against its own usual: bars either side of a zero line.
-  await expect(page.locator('[data-t="vsUsual"] .zero')).toHaveCount(1);
-  expect(await page.locator('[data-t="vsUsual"] .series-bar').count()).toBeGreaterThan(0);
+  // The chart picker. Default: readiness with the day before's load under
+  // it, one bar per day with 6+ swimmers (only 5 checked in today).
+  const chart = page.locator('#charts [data-t="picker"]');
+  await expect(chart.locator('.panel-title')).toHaveText(['Readiness', 'Training load (day before)']);
+  await expect(chart.locator('.series-line')).toHaveCount(1);
+  await expect(chart.locator('.series-bar')).toHaveCount(6);
+  // Quick picks: the team against its own usual (either side of a zero line), check-ins.
+  await page.click('.preset:has-text("Vs usual")');
+  await expect(page).toHaveURL(/a=vsUsual/);
+  await expect(chart.locator('.zero')).toHaveCount(1);
+  expect(await chart.locator('.series-bar').count()).toBeGreaterThan(0);
+  await page.click('.preset:has-text("Check-ins")');
+  await expect(chart.locator('.series-bar')).toHaveCount(7);
+  // The range keeps the picks.
   await page.click('.seg a:has-text("14 days")');
-  await expect(page).toHaveURL(/t=14/);
-  await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(14);
+  await expect(page).toHaveURL(/t=14.*a=rate/);
+  await expect(chart.locator('.series-bar')).toHaveCount(14);
   await page.click('.seg a:has-text("28 days")');
   await expect(page).toHaveURL(/t=28/);
-  await expect(page.locator('[data-t="rate"] .series-bar')).toHaveCount(28);
-
+  await expect(chart.locator('.series-bar')).toHaveCount(28);
+  // One swimmer against the team average.
+  await page.selectOption('#charts select[name=who]', 'sam lee');
+  await page.selectOption('#charts select[name=a]', 'energy');
+  await page.selectOption('#charts select[name=b]', 'team');
+  await expect(chart.locator('.series-line')).toHaveCount(2);
+  await expect(chart.locator('.series-line.alt')).toHaveCount(1);
+  await expect(page.locator('#charts [data-picker-note]')).toContainText('Sam Lee');
+  // Training only: charted on the days the sessions happened.
+  await page.selectOption('#charts select[name=who]', 'team');
+  await page.click('.preset:has-text("Effort & how well")');
+  await expect(chart.locator('.panel-title')).toHaveText(['Morning effort', 'Morning: how well']);
+  await expect(page.locator('#charts [data-picker-note]')).toContainText('training days, up to today');
   // Training vs next-morning readiness: light / moderate / heavy thirds, by
   // load and by load against each swimmer's usual.
   const tables = page.locator('#load-response table');
@@ -192,7 +208,9 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await expect(effort.nth(1)).toHaveText(/^8/);
   await expect(page.locator('#lift-meet')).toHaveText('27 weights sessions · 1 meet day reported');
   await expect(page.locator('#load-response')).toContainText('Last 28 days');
-  await expect(page.locator('[data-t="rpePm"] svg')).toBeVisible();
+  // The picks are remembered next time.
+  await page.goto('/coach.html#history');
+  await expect(page.locator('#charts select[name=a]')).toHaveValue('rpeAm');
 });
 
 test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, testInfo) => {
@@ -210,7 +228,17 @@ test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, 
   await expect(page.locator('h2')).toHaveText('Kai Moana');
   await expect(page.locator('.flags')).toContainText('Injury stopping certain strokes or movements (right shoulder)');
   await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Swimmers');
-  await expect(page.locator('#trends')).toContainText('HRV (ms)');
+  await expect(page.locator('.swimmer-nav')).toContainText('‹ Eli');
+  await expect(page.locator('.swimmer-nav')).toContainText('Leo ›');
+  // Their charts: against the team average by default; heart readings can be picked.
+  await expect(page.locator('#charts select[name=b]')).toHaveValue('team');
+  await expect(page.locator('#charts [data-t="picker"] .series-line')).toHaveCount(2);
+  await expect(page.locator('#charts select[name=a] option', { hasText: 'HRV (ms)' })).toHaveCount(1);
+  await expect(page.locator('#charts select[name=a] option[value=rate]')).toHaveCount(0); // team only
+  // Recent days: a week, then the rest on request.
+  await expect(page.locator('#more-days')).toHaveText('Show 21 more days');
+  await page.click('#more-days');
+  await expect(page.locator('.more-row').first()).toBeVisible();
   // Coach-only insights: change in readiness, the day before's training, watch list, own pattern.
   await expect(page.locator('#swimmer-change .stat-label')).toHaveText([/vs yesterday/, /vs usual/]);
   await expect(page.locator('#swimmer-followup')).toContainText('Injury stopping certain strokes or movements (right shoulder)');

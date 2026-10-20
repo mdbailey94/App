@@ -521,3 +521,80 @@ export function swimmerInsights(rows, key, { days = 28 } = {}) {
     response: loadResponse(rows, date, { days, minPairs: 9, only: key }).absolute,
   };
 }
+
+// ------------------------------------------------------------- chart picker
+// Everything the coach can chart, one value per swimmer per day, for the
+// team (an average) or one swimmer. Morning measures come from the check-in;
+// training measures (`training: true`) from the sessions of the day before,
+// as filed on the morning after (see withWorkouts). `team`: how many
+// swimmers a team average needs. 1–7 answers from older 1–5 check-ins are
+// rescaled to 1–7.
+const WELL = (key, label, high) => ({ label, group: 'Check-in', kind: 'line', min: 1, max: 7, team: MIN_TEAM, unit: '/7', hint: `7 = ${high.toLowerCase()}`, wellness: key });
+export const METRICS = {
+  readiness: { label: 'Readiness', group: 'Readiness', kind: 'line', min: 0, max: 100, team: MIN_TEAM },
+  vsUsual: { label: 'Readiness vs usual', group: 'Readiness', kind: 'signed', team: MIN_TEAM, hint: 'their readiness minus their own 7-day average' },
+  rate: { label: 'Checked in (%)', group: 'Readiness', kind: 'bar', min: 0, max: 100, teamOnly: true, unit: '%' },
+  sleepHours: { label: 'Sleep (hours)', group: 'Check-in', kind: 'line', team: MIN_TEAM, unit: ' h' },
+  sleepQuality: WELL('sleepQuality', 'Sleep quality', 'Excellent'),
+  energy: WELL('energy', 'Energy', 'High'),
+  soreness: WELL('soreness', 'Soreness', 'Not sore'),
+  stress: WELL('stress', 'Stress', 'Very relaxed'),
+  mood: WELL('mood', 'Mood', 'Positive'),
+  motivation: WELL('motivation', 'Motivation', 'High'),
+  load: { label: 'Training load', group: 'Training', kind: 'bar', team: MIN_TEAM, training: true, hint: 'minutes × effort' },
+  minutes: { label: 'Practice time (min)', group: 'Training', kind: 'bar', team: MIN_TEAM, training: true, unit: ' min' },
+  rpeAm: { label: 'Morning effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
+  rpePm: { label: 'Doubles effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
+  perfAm: { label: 'Morning: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
+  perfPm: { label: 'Doubles: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
+  rmssd: { label: 'HRV (ms)', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' ms' },
+  hr: { label: 'Resting heart rate', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' bpm' },
+};
+
+const to7 = (v, max) => (v >= 1 && v <= max ? 1 + ((v - 1) * 6) / (max - 1) : null);
+const practiceMinutes = (t) => PRACTICE_KEYS.reduce((n, k) => n + (t[k]?.durationMin > 0 ? t[k].durationMin : 0), 0);
+
+// One swimmer's value of `key` on the morning of `date` (null = none).
+function metricValue(a, key, date) {
+  const e = a.entries.find((x) => x.date === date);
+  if (!e) return null;
+  const m = METRICS[key];
+  const t = e.training;
+  if (m.training) {
+    if (!t) return null;
+    if (key === 'load') return sessionLoad(t);
+    if (key === 'minutes') return 'am' in t || 'pm' in t ? practiceMinutes(t) : t.durationMin || 0;
+    const k = key.endsWith('Am') ? 'am' : 'pm';
+    const v = key.startsWith('rpe') ? sessionRpe(t, k) : t[k]?.perf;
+    return v > 0 ? v : null;
+  }
+  if (!isCheckIn(e)) return null;
+  if (m.wellness) return to7(e.wellness[m.wellness], e.wellness.scaleMax || 5);
+  if (key === 'sleepHours') return e.wellness.sleepHours > 0 ? e.wellness.sleepHours : null;
+  if (key === 'rmssd') return e.hrv?.rmssd > 0 ? e.hrv.rmssd : null;
+  if (key === 'hr') return e.hrv?.hr > 0 ? e.hrv.hr : null;
+  const score = scoreOn(a.entries, date);
+  if (!Number.isFinite(score)) return null;
+  return key === 'readiness' ? score : readinessMove(a.entries, date, score).vsUsual;
+}
+
+// [{ date, value, n }] for each morning in `dates`: one swimmer's values
+// (`who` = their key) or the team average (`who` = 'team'; null below the
+// metric's minimum number of swimmers). n = how many swimmers it's from.
+export function metricSeries(rows, key, dates, who = 'team') {
+  const athletes = rows instanceof Map ? rows : groupByAthlete(rows);
+  const m = METRICS[key];
+  const round = (v) => (v === null ? null : key === 'readiness' || key === 'load' || key === 'minutes' ? Math.round(v) : +v.toFixed(1));
+  return dates.map((date) => {
+    if (key === 'rate') {
+      const day = dayOf(athletes, date);
+      return { date, value: day.total ? Math.round((day.checkedIn.length / day.total) * 100) : null, n: day.checkedIn.length };
+    }
+    if (who !== 'team') {
+      const a = athletes.get(who);
+      return { date, value: a ? round(metricValue(a, key, date)) : null, n: 1 };
+    }
+    const vals = [...athletes.values()].map((a) => metricValue(a, key, date)).filter((v) => v !== null);
+    return { date, value: vals.length >= (m.team || 1) ? round(avg(vals)) : null, n: vals.length };
+  });
+}
