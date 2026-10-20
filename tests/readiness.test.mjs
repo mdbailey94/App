@@ -232,3 +232,13 @@ test('Sundays with nothing logged are an off day; unloggedDays skips them', () =
   // Yesterday is asked about even for a new swimmer.
   assert.deepEqual(unloggedDays([{ date: '2026-10-14', wellness: {} }], '2026-10-14'), ['2026-10-13']);
 });
+
+test('a save with only the starting answers (no morning practice) counts as not logged', () => {
+  const empty = { pm: { none: null }, weights: false, meet: false, loggedAt: '2026-10-20T08:37:12Z' };
+  const entries = [{ date: '2026-10-16', wellness: {} }, { date: '2026-10-17', workouts: empty }, { date: '2026-10-19', wellness: {} }];
+  assert.equal(trainingOnDay(entries, '2026-10-17'), null);
+  assert.deepEqual(unloggedDays(entries, '2026-10-19'), ['2026-10-17', '2026-10-16']);
+  assert.equal(withWorkouts(entries).find((e) => e.date === '2026-10-18')?.training, undefined);
+  // Weights alone is an answer.
+  assert.equal(trainingOnDay([{ date: '2026-10-17', workouts: { ...empty, weights: true } }], '2026-10-17').weights, true);
+});

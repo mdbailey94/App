@@ -1,7 +1,7 @@
 // The Workouts tab's form for one day's training: for each practice, did
 // they go (how long, how hard, how well they did) or why not (off day,
 // sick, missed, other); then weights and a meet. Swimmers log on the day or later
-// (backfilling), so a practice can be left unanswered and filled in later.
+// (backfilling); doubles can be left unanswered and filled in later.
 
 import { MEET_LEVELS, PRACTICE_KEYS, SKIP_REASONS, sessionLoad, trainingFromWorkouts } from './readiness.js';
 import { esc } from './ui.js';
@@ -99,8 +99,8 @@ export function workoutSections(v = {}, { doubles = true } = {}) {
 }
 
 // Read the form: { missing, missingKeys } for half-answered questions, or
-// { workouts }. A practice left unanswered is fine (fill it in later), but
-// at least one question must be answered.
+// { workouts }. Morning practice must be answered; doubles can be left for
+// later.
 export function readWorkouts(form) {
   const fd = new FormData(form);
   const missing = [];
@@ -126,7 +126,9 @@ export function readWorkouts(form) {
     if (!fd.get('meetLevel')) missing.push({ key: 'meetLevel', label: 'How hard the meet was' });
     else w.meetLevel = fd.get('meetLevel');
   }
-  if (!Object.keys(w).length) missing.push({ key: 'amDid', label: `${PRACTICES[0].title}?` });
+  // Doubles, weights and meet start on No, so morning practice is the one
+  // answer that says the day was actually filled in.
+  if (!w.am) missing.unshift({ key: 'amDid', label: `${PRACTICES[0].title}?` });
   if (missing.length) return { missing: missing.map((m) => m.label), missingKeys: missing.map((m) => m.key) };
   return { workouts: w };
 }
