@@ -527,14 +527,15 @@ export function swimmerInsights(rows, key, { days = 28 } = {}) {
 // team (an average) or one swimmer. Morning measures come from the check-in;
 // training measures (`training: true`) from the sessions of the day before,
 // as filed on the morning after (see withWorkouts). `team`: how many
-// swimmers a team average needs. 1–7 answers from older 1–5 check-ins are
-// rescaled to 1–7.
-const WELL = (key, label, high) => ({ label, group: 'Check-in', kind: 'line', min: 1, max: 7, team: MIN_TEAM, unit: '/7', hint: `7 = ${high.toLowerCase()}`, wellness: key });
+// swimmers a team average needs. `good`: higher is better (colours the
+// heatmap red to green; otherwise light to dark). 1–7 answers from older
+// 1–5 check-ins are rescaled to 1–7.
+const WELL = (key, label, high) => ({ label, group: 'Check-in', kind: 'line', min: 1, max: 7, team: MIN_TEAM, unit: '/7', hint: `7 = ${high.toLowerCase()}`, wellness: key, good: true });
 export const METRICS = {
-  readiness: { label: 'Readiness', group: 'Readiness', kind: 'line', min: 0, max: 100, team: MIN_TEAM },
-  vsUsual: { label: 'Readiness vs usual', group: 'Readiness', kind: 'signed', team: MIN_TEAM, hint: 'their readiness minus their own 7-day average' },
-  rate: { label: 'Checked in (%)', group: 'Readiness', kind: 'bar', min: 0, max: 100, teamOnly: true, unit: '%' },
-  sleepHours: { label: 'Sleep (hours)', group: 'Check-in', kind: 'line', team: MIN_TEAM, unit: ' h' },
+  readiness: { label: 'Readiness', group: 'Readiness', kind: 'line', min: 0, max: 100, team: MIN_TEAM, good: true },
+  vsUsual: { label: 'Readiness vs usual', group: 'Readiness', kind: 'signed', team: MIN_TEAM, hint: 'their readiness minus their own 7-day average', good: true },
+  rate: { label: 'Checked in (%)', group: 'Readiness', kind: 'bar', min: 0, max: 100, teamOnly: true, unit: '%', good: true },
+  sleepHours: { label: 'Sleep (hours)', group: 'Check-in', kind: 'line', team: MIN_TEAM, unit: ' h', good: true },
   sleepQuality: WELL('sleepQuality', 'Sleep quality', 'Excellent'),
   energy: WELL('energy', 'Energy', 'High'),
   soreness: WELL('soreness', 'Soreness', 'Not sore'),
@@ -545,9 +546,9 @@ export const METRICS = {
   minutes: { label: 'Practice time (min)', group: 'Training', kind: 'bar', team: MIN_TEAM, training: true, unit: ' min' },
   rpeAm: { label: 'Morning effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
   rpePm: { label: 'Doubles effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
-  perfAm: { label: 'Morning: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
-  perfPm: { label: 'Doubles: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
-  rmssd: { label: 'HRV (ms)', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' ms' },
+  perfAm: { label: 'Morning: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went', good: true },
+  perfPm: { label: 'Doubles: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went', good: true },
+  rmssd: { label: 'HRV (ms)', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' ms', good: true },
   hr: { label: 'Resting heart rate', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' bpm' },
 };
 
@@ -597,4 +598,44 @@ export function metricSeries(rows, key, dates, who = 'team') {
     const vals = [...athletes.values()].map((a) => metricValue(a, key, date)).filter((v) => v !== null);
     return { date, value: vals.length >= (m.team || 1) ? round(avg(vals)) : null, n: vals.length };
   });
+}
+
+// The Data tab for one measure over the `span` days up to `end`: the days
+// (for training, the days the sessions happened, up to `end`), the team's
+// value each day, and each swimmer's, with averages for this period and the
+// one before. Swimmers: active in the 3 weeks to `end`, or with a value in
+// the period. For check-ins (`rate`) a swimmer's day is 100 if they checked
+// in, else 0 (none before they joined), so their average is their check-in rate.
+// `swimmers: false`: the team only (for the tiles).
+export function dataDashboard(rows, key, end, span = 7, { swimmers: each = true } = {}) {
+  const athletes = groupByAthlete(rows);
+  const m = METRICS[key];
+  const days = Array.from({ length: span }, (_, i) => shiftDate(end, i - span + 1));
+  const prevDays = days.map((d) => shiftDate(d, -span));
+  const mornings = (ds) => (m.training ? ds.map((d) => shiftDate(d, 1)) : ds);
+  const whole = ['readiness', 'rate', 'load', 'minutes'].includes(key);
+  const mean = (vals) => { const v = vals.filter((x) => x !== null); return v.length ? (whole ? Math.round(avg(v)) : round1(avg(v))) : null; };
+  const joined = (who) => athletes.get(who)?.entries.find(isCheckIn)?.date;
+  const series = (who, ds) => (key === 'rate' && who !== 'team'
+    ? metricSeries(athletes, 'readiness', ds, who).map((p) => (p.value !== null ? 100 : p.date < joined(who) ? null : 0))
+    : metricSeries(athletes, key, mornings(ds), who).map((p) => p.value));
+  const active = new Set(each ? roster(rows, end).map((r) => r.key) : []);
+  const swimmers = !each ? [] : [...athletes.values()].map((a) => {
+    const values = series(a.key, days);
+    if (!active.has(a.key) && !values.some((v) => v)) return null;
+    const now = mean(values);
+    const before = mean(series(a.key, prevDays));
+    return {
+      key: a.key,
+      name: a.name,
+      values,
+      avg: now,
+      prevAvg: before,
+      change: now !== null && before !== null ? round1(now - before) : null,
+      latest: [...values].reverse().find((v) => v !== null) ?? null,
+    };
+  }).filter(Boolean).sort((x, y) => x.name.localeCompare(y.name));
+  const team = series('team', days);
+  const teamPrev = series('team', prevDays);
+  return { key, days, team: { values: team, avg: mean(team), prevAvg: mean(teamPrev) }, swimmers };
 }
