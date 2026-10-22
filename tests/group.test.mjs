@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkinGrid, groupByAthlete, groupDay, loadResponse, metricSeries, swimmerInsights, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
+  checkinGrid, dataDashboard, groupByAthlete, groupDay, loadResponse, metricSeries, swimmerInsights, trainingCompare, recentNotes, reminderText, roster, teamTrend, trendSummary,
   watchList,
 } from '../src/group.js';
 import { addressDetails, buildItems, inviteLink, memberAddress, isValidSheetUrl, pendingEntries, stuck } from '../src/team.js';
@@ -361,4 +361,28 @@ test('metricSeries: a team average needs 6+ swimmers; one swimmer; training from
   assert.deepEqual(metricSeries(rows, 'perfAm', ['2026-10-08'], 'a').map((p) => p.value), [8]);
   assert.deepEqual(metricSeries(rows, 'load', ['2026-10-08'], 'a').map((p) => p.value), [720]);
   assert.equal(metricSeries(rows, 'rate', ['2026-10-07'])[0].value, 83);
+});
+
+test('dataDashboard: each swimmer by day with period averages; check-in rate from joining; training by session day', () => {
+  const W7 = (v) => ({ sleepHours: 8, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
+  const T = { am: { durationMin: 120, rpe: 6, perf: 7 }, pm: { none: null }, weights: false, meet: false };
+  const rows = [
+    // Ann: three weeks of check-ins, logging each day's practice.
+    ...Array.from({ length: 21 }, (_, i) => ({ athlete: 'Ann', date: shiftDate('2026-10-14', -i), entry: { wellness: W7(i < 7 ? 4 : 6), workouts: T } })),
+    // Bo joined on the 12th and missed the 13th.
+    ...['2026-10-12', '2026-10-14'].map((date) => ({ athlete: 'Bo', date, entry: { wellness: W7(5) } })),
+  ];
+  const energy = dataDashboard(rows, 'energy', '2026-10-14', 7);
+  assert.equal(energy.days.length, 7);
+  assert.equal(energy.days.at(-1), '2026-10-14');
+  const ann = energy.swimmers.find((r) => r.name === 'Ann');
+  assert.deepEqual([ann.avg, ann.prevAvg, ann.change, ann.latest], [4, 6, -2, 4]);
+  assert.equal(energy.team.avg, null); // fewer than 6 swimmers
+  const rate = dataDashboard(rows, 'rate', '2026-10-14', 7).swimmers.find((r) => r.name === 'Bo');
+  assert.deepEqual(rate.values.slice(-3), [100, 0, 100]);
+  assert.equal(rate.values[0], null); // before joining
+  assert.equal(rate.avg, 67);
+  // Ann's practice on the 14th is in (filed on the morning of the 15th).
+  assert.equal(dataDashboard(rows, 'perfAm', '2026-10-14', 7).swimmers.find((r) => r.name === 'Ann').latest, 7);
+  assert.deepEqual(dataDashboard(rows, 'energy', '2026-10-14', 7, { swimmers: false }).swimmers, []);
 });

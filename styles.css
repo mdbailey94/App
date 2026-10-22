@@ -562,3 +562,36 @@ details.fu-cat summary { color: var(--text); }
 .day-table tr.tough td { background: color-mix(in srgb, var(--warning) 10%, transparent); }
 .day-table tr.tough-row td { color: var(--text); font-weight: 600; }
 .training-day h3 .muted { font-weight: 400; margin-left: 4px; }
+
+/* Coach Data tab: measure tiles, by-swimmer table, day-by-day heatmap. */
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 6px; }
+@media (min-width: 700px) { .tiles { grid-template-columns: repeat(6, 1fr); } }
+.tile { font: inherit; color: var(--text); background: var(--bg); border: 1px solid transparent; border-radius: 12px; padding: 10px 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; text-align: center; }
+.tile .stat-num { font-size: 20px; font-weight: 700; }
+.tile .tile-change { font-size: 12px; min-height: 16px; }
+.tile .stat-label { font-size: 12px; color: var(--muted); }
+.tile.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.tile:focus-visible, .sort:focus-visible, .who-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.small-btn { padding: 6px 12px; font-size: 13px; min-height: 0; }
+.data-table th button.sort { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.data-table th button.sort.on { color: var(--accent); }
+.who-btn { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; }
+.data-table .profile-link { margin-left: 6px; text-decoration: none; color: var(--muted); }
+.data-table tr.team-row td, .heat tr.team-row th { font-weight: 600; }
+.data-table tr.picked td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.spark { display: block; }
+.spark path { fill: none; stroke: var(--series-1); stroke-width: 1.5; stroke-linejoin: round; }
+.spark circle { fill: var(--series-1); }
+.heat { border-collapse: separate; border-spacing: 2px; font-size: 11px; }
+.heat th { font-weight: 500; color: var(--muted); padding: 0 2px; text-align: center; }
+.heat tbody th { text-align: left; color: var(--text); white-space: nowrap; padding-right: 6px; font-size: 13px; }
+.heat td { min-width: 14px; height: 22px; border-radius: 4px; text-align: center; cursor: pointer; background: var(--bg); color: var(--text); padding: 0; }
+.heat.wide td { min-width: 36px; height: 28px; font-size: 12px; }
+.heat thead th { font-size: 11px; }
+#heat-readout { min-height: 1.4em; }
+.card-head.wrap { flex-wrap: wrap; }
+.data-table td.who { white-space: nowrap; }
+@media (max-width: 480px) {
+  .data-table .col-latest { display: none; }
+  .data-table td, .data-table th { padding-left: 4px; padding-right: 4px; }
+}

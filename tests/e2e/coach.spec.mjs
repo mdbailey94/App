@@ -74,7 +74,7 @@ test('coach sign-in checks the password, then shows the Group tab', async ({ pag
   await page.fill('input[name=group]', GROUP_CODE);
   await page.click('#coach-login button[type=submit]');
   await expect(page.locator('.stats').first()).toContainText('5/7');
-  await expect(page.locator('#coach-tabs a')).toHaveText(['Group', 'Watchlist', 'History', 'Swimmers', 'Messages', 'Settings']);
+  await expect(page.locator('#coach-tabs a')).toHaveText(['Group', 'Watchlist', 'Data', 'Swimmers', 'Messages', 'Settings']);
   await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Group');
 });
 
@@ -152,10 +152,10 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   await expect(page).toHaveURL(/#messages/);
 });
 
-test('History tab: 7/14/28-day trends and the check-in record', async ({ page }, testInfo) => {
+test('Data tab: the chart, 7/14/28 days, and the check-in record', async ({ page }, testInfo) => {
   await page.goto('/coach.html');
   await signIn(page, testInfo);
-  await page.goto('/coach.html#history');
+  await page.goto('/coach.html#data');
 
   // The chart picker. Default: readiness with the day before's load under
   // it, one bar per day with 6+ swimmers (only 5 checked in today).
@@ -210,9 +210,59 @@ test('History tab: 7/14/28-day trends and the check-in record', async ({ page },
   await expect(effort.nth(1)).toHaveText(/^8/);
   await expect(page.locator('#lift-meet')).toHaveText('27 weights sessions · 1 meet day reported');
   await expect(page.locator('#load-response')).toContainText('Last 28 days');
-  // The picks are remembered next time.
+  // The picks are remembered next time; the old #history address opens the Data tab.
   await page.goto('/coach.html#history');
+  await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Data');
   await expect(page.locator('#charts select[name=a]')).toHaveValue('rpeAm');
+});
+
+test('Data tab: tiles pick the measure; by swimmer (sortable), day by day, CSV', async ({ page }, testInfo) => {
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  await page.goto('/coach.html#data');
+
+  const tiles = page.locator('.tile');
+  await expect(tiles).toHaveCount(6);
+  await expect(page.locator('.tile.on .stat-label')).toHaveText('Readiness');
+  // A tile switches the whole dashboard to that measure.
+  await page.click('.tile:has-text("Checked in")');
+  await expect(page).toHaveURL(/a=rate/);
+  await expect(page.locator('#by-swimmer h3')).toHaveText('Checked in (%) by swimmer');
+  const rows = page.locator('.data-table tbody tr:not(.team-row)');
+  await expect(rows).toHaveCount(7);
+  await expect(rows.filter({ hasText: 'Leo Park' }).locator('td').nth(1)).toHaveText('57%'); // 4 of the last 7 days
+  // Sort by average: lowest first; again for highest first.
+  await page.click('[data-sort=avg]');
+  await expect(rows.first()).toContainText('Leo Park');
+  await page.click('[data-sort=avg]');
+  await expect(page).toHaveURL(/sort=-avg/);
+  await expect(rows.last()).toContainText('Leo Park');
+
+  // Day by day: a row per swimmer plus the team; tap a square for its value.
+  await page.click('.tile:has-text("Readiness")');
+  const heat = page.locator('.heat tbody tr');
+  await expect(heat).toHaveCount(8);
+  await expect(heat.first().locator('td')).toHaveCount(7);
+  await heat.filter({ hasText: 'Sam' }).locator('td').last().click();
+  await expect(page.locator('#heat-readout')).toContainText('Sam Lee');
+  await expect(page.locator('#heat-readout')).toContainText(/: \d+$/);
+
+  // A name charts that swimmer against the team.
+  await page.click('.who-btn:has-text("Sam Lee")');
+  await expect(page.locator('#charts select[name=who]')).toHaveValue('sam lee');
+  await expect(page.locator('#charts select[name=b]')).toHaveValue('team');
+  await expect(page.locator('#charts [data-t="picker"] .series-line')).toHaveCount(2);
+  await expect(page.locator('.data-table tr.picked')).toContainText('Sam Lee');
+
+  // CSV of what's shown: team first, then each swimmer, a column per day.
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#csv')]);
+  expect(download.suggestedFilename()).toMatch(/^readiness-7-days-to-\d{4}-\d{2}-\d{2}\.csv$/);
+  const csv = (await (await download.createReadStream()).toArray()).join('');
+  const lines = csv.trim().split('\n');
+  expect(lines[0]).toMatch(/^Swimmer,\d{4}-\d{2}-\d{2},/);
+  expect(lines[0]).toMatch(/,Average$/);
+  expect(lines[1]).toMatch(/^Team average,/);
+  expect(lines).toHaveLength(9);
 });
 
 test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, testInfo) => {

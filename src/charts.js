@@ -284,3 +284,21 @@ function drawLine(svg, pts, dots, cls = 'series-line') {
   el('path', { d: path, class: cls }, svg);
   if (dots) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: cls === 'series-line' ? 'series-dot' : 'series-dot alt' }, svg);
 }
+
+// A small trend line for a table cell, as SVG markup; gaps where a value is
+// missing. scale: { lo, hi } (signed measures: ±hi).
+export function sparkline(values, { M, lo, hi }, { width = 72, height = 22 } = {}) {
+  const [a, b] = M?.kind === 'signed' ? [-hi, hi] : [lo, hi];
+  const x = (i) => (values.length > 1 ? 2 + (i / (values.length - 1)) * (width - 4) : width / 2);
+  const y = (v) => 2 + (height - 4) * (1 - (b > a ? (Math.min(b, Math.max(a, v)) - a) / (b - a) : 0.5));
+  let path = '';
+  let pen = false;
+  values.forEach((v, i) => {
+    if (v === null || v === undefined) { pen = false; return; }
+    path += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    pen = true;
+  });
+  const lastI = values.map((v, i) => (v === null || v === undefined ? -1 : i)).filter((i) => i >= 0).at(-1);
+  if (lastI === undefined) return '<span class="muted">–</span>';
+  return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-hidden="true"><path d="${path}"/><circle cx="${x(lastI).toFixed(1)}" cy="${y(values[lastI]).toFixed(1)}" r="2"/></svg>`;
+}
