@@ -103,3 +103,6 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: ${{ steps.cfg.outputs.project }}
           channelId: live
+          # Pinned: firebase-tools 15.34.1 (Oct 21, 2026) broke this deploy;
+          # 15.34.0 deployed fine. Raise it once a newer release works.
+          firebaseToolsVersion: 15.34.0
