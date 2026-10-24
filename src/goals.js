@@ -5,8 +5,8 @@
 // they were swum (`entry.sets`), so both reach the coach like a check-in.
 
 import {
-  AGE_GROUPS, EVENTS, GEARS, IM, MAIN_GEARS, STROKES, ZONES, fatigueFactor, formatTime, gearSet, latestGoals,
-  parseTime, setTrend, timesOf,
+  AGE_GROUPS, EVENTS, GEARS, IM, MAIN_GEARS, STROKES, SUIT, ZONES, fatigueFactor, formatTime, gearSet, latestGoals,
+  parseTime, setTrend, suitPct, timesOf,
 } from './gears.js';
 import { loadEntries, loadSettings, saveSettings, todayISO, upsertEntry } from './storage.js';
 import { lineChart } from './charts.js';
@@ -43,6 +43,7 @@ function readPrefs(query) {
   return { use, per };
 }
 
+const suitLine = (set) => (set.suit ? ` Practice-suit adjustment +${set.suit}%.` : ' No practice-suit adjustment.');
 const refLine = (ref, use) => (ref.estimated
   ? `Estimated 200 (${fmtPace(ref.seconds)}) from your ${use} ${esc(ref.from.label)}.`
   : `From your ${use} ${esc(ref.event.label)}: ${fmtPace(ref.seconds)}.`);
@@ -81,7 +82,7 @@ function renderOverview(view, entries, goals, query) {
       <h2>Goals</h2>
       ${goals ? `
       <p class="muted small">${count} goal time${count === 1 ? '' : 's'} set${goals.updatedAt ? ` ${esc(shortDate(goals.updatedAt.slice(0, 10)))}` : ''}.
-        Fatigue factor ${set.factor.factor.toFixed(3)} (${set.factor.type}${factorFrom(set.factor)}).</p>
+        Fatigue factor ${set.factor.factor.toFixed(3)} (${set.factor.type}${factorFrom(set.factor)}).${suitLine(set)}</p>
       <div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`
     : `<p>Enter your goal times (and best times) and the app works out your training gears: the pace to hold for
         each gear, for every stroke, IM and the IM switches, plus your speed targets.</p>
@@ -118,6 +119,12 @@ export function timesFormHtml(goals) {
         </div>
         <label class="field">Fatigue factor <span class="muted small">(leave blank to work it out from the best 200+ frees; now ${fact.factor.toFixed(3)}${fact.from && fact.from !== 'set by hand' ? `, from the ${esc(fact.from)}` : fact.from ? '' : ', the usual starting point'})</span>
           <input type="text" name="factor" inputmode="decimal" placeholder="e.g. 1.040" value="${g.factor ? g.factor : ''}"></label>
+        <label class="field">Practice-suit adjustment <span class="muted small">(race times are in a tech suit; practice paces are slowed by this. Usual: girls ${SUIT.girls}%, boys ${SUIT.boys}%)</span>
+          <select name="suit">
+            <option value="auto" ${typeof g.suitPct !== 'number' ? 'selected' : ''}>Usual for the group</option>
+            <option value="0" ${g.suitPct === 0 ? 'selected' : ''}>None (times not in a tech suit)</option>
+            ${[0.5, 1, 1.5, 2, 2.5, 3].map((p) => `<option value="${p}" ${g.suitPct === p ? 'selected' : ''}>${p}%</option>`).join('')}
+          </select></label>
         <div class="presets-row">
           <span class="muted small">Set goals from best times:</span>
           ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}">${p}% faster</button>`).join('')}
@@ -148,7 +155,8 @@ export function readTimesForm(form) {
   const factor = factorRaw ? Number(factorRaw) : null;
   if (factorRaw && !(factor >= 1 && factor <= 1.12)) bad.push('fatigue factor (1.00 to 1.12)');
   if (bad.length) return { bad };
-  return { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString() } };
+  const suit = fd.get('suit');
+  return { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString(), ...(suit && suit !== 'auto' ? { suitPct: Number(suit) } : {}) } };
 }
 
 // Wire the presets and the "read as" previews on a times form.
@@ -234,7 +242,7 @@ function renderPage(view, key, goals, query) {
   const g = set.strokes[key];
   view.innerHTML = `
     <section class="card gear-page">
-      ${head(g ? `${refLine(g.reference, use)} Fatigue factor ${set.factor.factor.toFixed(3)}.` : '')}
+      ${head(g ? `${refLine(g.reference, use)} Fatigue factor ${set.factor.factor.toFixed(3)}.${suitLine(set)}` : '')}
       ${g ? `<div class="toggles"><span class="muted small">Pace per</span>${perToggle(per, base)}</div>
       <div class="table-wrap"><table class="gear-table">
         <thead><tr><th>Gear</th><th>Pace /${per}</th><th>Rest</th><th>Effort</th></tr></thead>
@@ -260,7 +268,7 @@ function imPage(set, head, use, per, base, split) {
   const from = r.estimated ? `Estimated 400 IM (${fmtPace(r.seconds)}) from your ${use} ${esc(r.from.label)}` : `From your ${use} 400 IM: ${fmtPace(r.seconds)}`;
   return `
     <section class="card gear-page">
-      ${head(`${from}; 200 IM about ${fmtPace(im.im200)}. Fatigue factor ${set.factor.factor.toFixed(3)}.`)}
+      ${head(`${from}; 200 IM about ${fmtPace(im.im200)}. Fatigue factor ${set.factor.factor.toFixed(3)}.${suitLine(set)}`)}
       <div class="toggles"><span class="muted small">IM pace per</span>${perToggle(per, base)}</div>
       <div class="table-wrap"><table class="gear-table">
         <thead><tr><th>Gear</th><th>IM /${per}</th><th>200 IM</th><th>Rest</th></tr></thead>
@@ -300,7 +308,7 @@ function speedPage(set, head, use) {
   const f2 = (v) => formatTime(v, { dp: 2 });
   return `
     <section class="card gear-page">
-      ${head(strokes.length ? `From your ${use} 50 of each stroke` : '')}
+      ${head(strokes.length ? `From your ${use} 50 of each stroke.${suitLine(set)}` : '')}
       ${strokes.length ? `<p class="muted small">From your ${use} 50 of each stroke: your clean mid-pool speed, and what the start, a push and a 25 should take at it.
         Each stroke has its own start and turn model (freestyle’s is calibrated to elite short course swims; the others are starting points to fit to your own 15 m and 25 times).</p>`
     : `<p class="muted">Add a 50 ${use} time for a stroke to see your speed targets.</p><div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`}
@@ -445,6 +453,6 @@ export function goalsSummary(entries) {
   const rows = [...['free', 'back', 'breast', 'fly'].map((s) => [STROKES[s].short, set.strokes[s]]), ['IM', set.im]]
     .filter(([, g]) => g)
     .map(([label, g]) => ({ label, reference: g.reference, paces: Object.fromEntries(MAIN_GEARS.map((k) => [k, g.gears.find((x) => x.key === k).pace])) }));
-  return { goals, factor: set.factor, rows, trend: null, updated: goals.updatedAt?.slice(0, 10) };
+  return { goals, factor: set.factor, suit: set.suit, rows, trend: null, updated: goals.updatedAt?.slice(0, 10) };
 }
 

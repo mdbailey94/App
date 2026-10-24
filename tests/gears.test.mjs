@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cleanSpeed, fatigueFactor, formatTime, gearPace, gearSet, imGears, latestGoals, parseTime, referenceRace, restFor,
-  riegel, setTrend, speedTargets, strokeGears, gearOf,
+  riegel, setTrend, speedTargets, strokeGears, gearOf, suitPct,
 } from '../src/gears.js';
 
 const close = (a, b, tol = 0.06) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
@@ -188,7 +188,32 @@ test('latestGoals and setTrend: the newest goals win; sets by stroke and distanc
   const tr = setTrend(entries, { stroke: 'free', dist: 100 }, g.strokes.free);
   assert.deepEqual(tr.points.map((p) => p.avg), [72, 71, 70]);
   assert.deepEqual(tr.points.map((p) => p.rolling), [72, 71.5, 71]);
-  close(tr.targets.G3, gearPace(120, 200, 3600, 1.045), 0.1);
+  close(tr.targets.G3, gearPace(120, 200, 3600, 1.045) * 1.015, 0.1); // with the girls' practice-suit adjustment
   assert.equal(setTrend(entries, { stroke: 'free', dist: 50 }).points.length, 1);
   assert.deepEqual(setTrend(entries, { stroke: 'back', dist: 100 }).points, []);
+});
+
+test('practice-suit adjustment: girls 1.5%, boys 1%, off or by hand; every practice pace slows, race predictions stay', () => {
+  const g = { sex: 'boys', factor: 1.05, times: { 'free-200': { goal: 120 }, 'free-50': { goal: 22.49 }, 'im-400': { goal: 240 } } };
+  assert.equal(suitPct(g), 1);
+  assert.equal(suitPct({ ...g, sex: 'girls' }), 1.5);
+  assert.equal(suitPct({ ...g, suitPct: 0 }), 0);
+  assert.equal(suitPct({ ...g, suitPct: 2.5 }), 2.5);
+  assert.equal(suitPct({ ...g, suitPct: 9 }), 1); // out of range: the usual
+  const raw = gearSet({ ...g, suitPct: 0 });
+  const adj = gearSet(g);
+  assert.equal(raw.strokes.free.gears[2].pace, 70.5);
+  assert.equal(adj.strokes.free.gears[2].pace, 71.2);
+  assert.equal(adj.strokes.free.gears[2].rest, 9); // rest from the adjusted pace, with the gear's ratio
+  const g3 = adj.im.gears.find((x) => x.key === 'G3');
+  const r3 = raw.im.gears.find((x) => x.key === 'G3');
+  close(g3.pace, r3.pace * 1.01, 0.06); close(g3.im200, r3.im200 * 1.01, 0.06);
+  close(g3.strokes.fly, r3.strokes.fly * 1.01, 0.06); close(g3.splits(100).breast.time, r3.splits(100).breast.time * 1.01, 0.06);
+  close(g3.switches.flyBack.hundred, r3.switches.flyBack.hundred * 1.01, 0.06);
+  assert.ok(g3.splits(100).breast.rest >= r3.splits(100).breast.rest);
+  close(adj.speed.free.push25, raw.speed.free.push25 * 1.01, 0.011);
+  close(adj.speed.free.zones.S3, raw.speed.free.zones.S3 * 1.01, 0.011);
+  assert.equal(adj.speed.free.fifty, raw.speed.free.fifty); // race times stay race times
+  assert.equal(adj.speed.free.hundred, raw.speed.free.hundred);
+  assert.equal(adj.speed.free.cleanSpeed, raw.speed.free.cleanSpeed);
 });

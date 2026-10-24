@@ -338,6 +338,32 @@ export function speedTargets(t50, sex = 'boys', stroke = 'free') {
   };
 }
 
+// ---- the practice-suit adjustment
+// Race times are swum in a tech suit; practice isn't. Modern textile suits
+// are worth about 1–2% in the studies that compared them with training
+// suits (the 2008–09 polyurethane suits were 2–4%; Berthelot et al. 2010),
+// a little more for women, whose suits cover the torso. Practice paces are
+// slowed by this share; race predictions are left as race times.
+export const SUIT = { girls: 1.5, boys: 1.0, max: 5 };
+export const suitPct = (goals) => {
+  const v = goals?.suitPct;
+  if (v === 0 || (typeof v === 'number' && v >= 0 && v <= SUIT.max)) return v;
+  return SUIT[goals?.sex === 'boys' ? 'boys' : 'girls'];
+};
+
+// Everything in `obj` that is a time, slowed by `pct` (deep; keeps keys
+// that aren't practice times).
+const slowBy = (pct, obj, keep = []) => {
+  const k = 1 + pct / 100;
+  const walk = (o, path) => {
+    if (typeof o === 'number') return +(o * k).toFixed(path.endsWith('_2') ? 2 : 1);
+    if (Array.isArray(o)) return o.map((x) => walk(x, path));
+    if (o && typeof o === 'object') return Object.fromEntries(Object.entries(o).map(([key, v]) => [key, keep.includes(key) ? v : walk(v, key)]));
+    return o;
+  };
+  return walk(obj, '');
+};
+
 // ---- the swimmer's goals and the gear set built from them
 
 // goals: { sex, age, factor (number | null = worked out), times: { 'free-200':
@@ -348,20 +374,61 @@ export const latestGoals = (entries) => entries.filter((e) => e.goals)
 // Which times feed the gears: 'goal' or 'best'.
 export const timesOf = (goals, use = 'goal') => Object.fromEntries(Object.entries(goals?.times || {}).map(([k, t]) => [k, t?.[use] > 0 ? t[use] : null]).filter(([, v]) => v));
 
-// All the gear pages at once: per stroke, IM, speed per stroke with a 50.
+// All the gear pages at once: per stroke, IM, speed per stroke with a 50,
+// with the practice-suit adjustment applied to every practice pace.
 export function gearSet(goals, { use = 'goal', per = 100 } = {}) {
   if (!goals) return null;
   const times = timesOf(goals, use);
   const sex = goals.sex || 'girls';
   const ff = fatigueFactor(timesOf(goals, 'best'), goals.factor);
   const opts = { factor: ff.factor, per };
+  const suit = suitPct(goals);
+  const adjust = (g) => {
+    if (!g) return g;
+    const k = 1 + suit / 100;
+    const gears = g.gears.map((x) => {
+      const def = gearOf(x.key); // the gear's rest ratio, not the seconds already worked out
+      const pace = +(x.pace * k).toFixed(1);
+      const out = { ...x, pace, rest: restFor(def, pace) };
+      if (x.im200) {
+        out.im200 = +(x.im200 * k).toFixed(1);
+        out.strokes = slowBy(suit, x.strokes);
+        out.switches = Object.fromEntries(Object.entries(x.switches).map(([key, v]) => {
+          const fifty = +(v.fifty * k).toFixed(1);
+          const hundred = +(v.hundred * k).toFixed(1);
+          return [key, { fifty, hundred, rest50: restFor(def, fifty), rest100: restFor(def, hundred) }];
+        }));
+        out.splits = (d) => Object.fromEntries(Object.entries(x.splits(d)).map(([st, v]) => {
+          const time = +(v.time * k).toFixed(1);
+          return [st, { time, rest: restFor(def, time) }];
+        }));
+      }
+      return out;
+    });
+    return { ...g, gears };
+  };
   const speed = {};
-  for (const s of ['free', 'back', 'breast', 'fly']) if (times[`${s}-50`] > 0) speed[s] = speedTargets(times[`${s}-50`], sex, s);
+  for (const s of ['free', 'back', 'breast', 'fly']) {
+    if (!(times[`${s}-50`] > 0)) continue;
+    const sp = speedTargets(times[`${s}-50`], sex, s);
+    // Practice measures slow with the suit; the race 50 and 100 stay race times.
+    const k = 1 + suit / 100;
+    const r2 = (v) => +(v * k).toFixed(2);
+    speed[s] = {
+      ...sp,
+      flagToFlag15: r2(sp.flagToFlag15), flagsToWall: r2(sp.flagsToWall), flagsToFeet: r2(sp.flagsToFeet),
+      dive15: { fromStart: r2(sp.dive15.fromStart), fromFeet: r2(sp.dive15.fromFeet) }, push15: r2(sp.push15),
+      toFarFlags20: r2(sp.toFarFlags20), dive25: { fromStart: r2(sp.dive25.fromStart), fromFeet: r2(sp.dive25.fromFeet) }, push25: r2(sp.push25),
+      zones: Object.fromEntries(Object.entries(sp.zones).map(([z, v]) => [z, r2(v)])),
+    };
+    speed[s].zoneRest = Object.fromEntries(ZONES.map((z) => [z.key, z.restFor(speed[s].zones[z.key])]));
+  }
   return {
     use,
     factor: ff,
-    strokes: Object.fromEntries(['free', 'back', 'breast', 'fly'].map((s) => [s, strokeGears(times, s, opts)])),
-    im: imGears(times, { ...opts, sex, age: goals.age || '15-16' }),
+    suit,
+    strokes: Object.fromEntries(['free', 'back', 'breast', 'fly'].map((s) => [s, adjust(strokeGears(times, s, opts))])),
+    im: adjust(imGears(times, { ...opts, sex, age: goals.age || '15-16' })),
     speed,
     hasAny: Object.keys(times).length > 0,
   };

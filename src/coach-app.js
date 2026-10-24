@@ -742,7 +742,7 @@ function goalsCard(a) {
       <div class="card-head"><h3>Goals and gears</h3>
         <span><a class="btn secondary small-btn" href="#gearcard/${encodeURIComponent(a.key)}" ${g?.rows.length ? '' : 'hidden'}>Gear card</a>
         <button type="button" class="btn secondary small-btn" id="edit-goals">${g ? 'Edit times' : 'Enter times'}</button></span></div>
-      ${g ? `<p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}${g.goals.setBy === 'coach' ? ' by you' : ''}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from && g.factor.from !== 'set by hand' ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times.</p>
+      ${g ? `<p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}${g.goals.setBy === 'coach' ? ' by you' : ''}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from && g.factor.from !== 'set by hand' ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times${g.suit ? `, slowed ${g.suit}% for practice suits` : ''}.</p>
       ${g.rows.length ? `<div class="table-wrap"><table class="group-table gear-table">
         <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
         <tbody>${g.rows.map((r) => `<tr><th scope="row">${r.label}</th><td class="small">${r.reference.estimated ? 'est. ' : ''}${esc(r.reference.event.label)} ${fp(r.reference.seconds)}</td>${MAIN_GEARS.map((k) => `<td>${fp(r.paces[k])}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -813,7 +813,7 @@ function teamGearsCard(rows, query) {
   return `
     <section class="card" id="team-gears">
       <h3>Team gears</h3>
-      <p class="muted small">Everyone’s pace at one gear, from their goal times, fastest first. For writing a set.</p>
+      <p class="muted small">Everyone’s pace at one gear, from their goal times with their practice-suit adjustment, fastest first. For writing a set.</p>
       <div class="toggles">
         <span class="seg" role="group" aria-label="Stroke">${strokes.map((s) => `<a href="${q({ stroke: s })}" ${s === stroke ? 'aria-current="true"' : ''}>${STROKES[s].short}</a>`).join('')}</span>
         <span class="seg" role="group" aria-label="Gear">${MAIN_GEARS.map((k) => `<a href="${q({ gear: k })}" ${k === gear ? 'aria-current="true"' : ''}>${k}</a>`).join('')}</span>
@@ -842,7 +842,7 @@ function renderGearCard({ rows, arg }) {
     <section class="card gear-card">
       <div class="card-head no-print"><a href="#swimmers/${encodeURIComponent(a.key)}">‹ ${esc(a.name)}</a><button type="button" class="btn secondary small-btn" id="print-card">Print / save PDF</button></div>
       <h2>${esc(a.name)} <span class="muted small">gears · ${esc(shortDate(todayISO()))}</span></h2>
-      <p class="muted small">Short course yards, from goal times. Fatigue factor ${per100.factor.factor.toFixed(3)}. G2 4-hour pace · G3 1-hour · G4 15-minute · G5 5-minute · G6 2-minute.</p>
+      <p class="muted small">Short course yards, from goal times${per100.suit ? `, slowed ${per100.suit}% for practice suits` : ''}. Fatigue factor ${per100.factor.factor.toFixed(3)}. G2 4-hour pace · G3 1-hour · G4 15-minute · G5 5-minute · G6 2-minute.</p>
       ${strokeRows.length ? `<table class="gear-table print-table">
         <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
         <tbody>${strokeRows.flatMap((s) => [

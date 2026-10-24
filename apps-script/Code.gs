@@ -235,6 +235,7 @@ function setGoals_(req) {
     age: String(g.age || '15-16').slice(0, 5),
     factor: typeof g.factor === 'number' && isFinite(g.factor) ? g.factor : null,
     course: 'SCY',
+    suitPct: typeof g.suitPct === 'number' && g.suitPct >= 0 && g.suitPct <= 5 ? g.suitPct : undefined,
     times: {},
     updatedAt: new Date().toISOString(),
     setBy: 'coach',
