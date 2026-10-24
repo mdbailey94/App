@@ -641,3 +641,56 @@ details.fu-cat summary { color: var(--text); }
 .read-as { display: block; font-size: 11px; color: var(--muted); min-height: 14px; margin-top: 2px; }
 .read-as.bad { color: var(--critical); }
 .times-table td { vertical-align: top; }
+
+/* ---------- polish, round two: one type scale, roomier touch targets, calmer secondary buttons */
+:root { --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px; --fs: 16px; --fs-lg: 18px; --fs-xl: 24px; --fs-2xl: 30px; --space: 16px; }
+body { line-height: 1.5; }
+h2 { font-size: var(--fs-xl); letter-spacing: -0.02em; }
+h3 { font-size: 17px; }
+h4 { font-size: var(--fs-md); }
+.card { padding: 18px 16px; }
+.card > h2:first-child { margin-bottom: 6px; }
+.muted.small, .small.muted, p.muted.small { line-height: 1.45; }
+
+/* Secondary buttons get a soft fill so they read as buttons, not outlines. */
+.btn.secondary { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+.btn.secondary:active { filter: brightness(0.96); }
+.btn.danger { background: transparent; }
+.link { color: var(--accent); }
+
+/* Inputs: a clear focus ring, and a little more height for thumbs. */
+.field input, .field select, .field textarea, .copy-field, .times-table input {
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .times-table input:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.times-table input { min-height: 42px; font-size: var(--fs); }
+.effort-row span { height: 40px; }
+.chips.yn span, .chips.meet-level span, .chips.reasons span { height: 42px; }
+.stroke-strip a { padding: 8px 15px; min-height: 38px; display: inline-flex; align-items: center; }
+.seg a { padding: 6px 12px; min-height: 32px; display: inline-flex; align-items: center; }
+.tabs a[aria-current]::before { width: 58px; height: 32px; }
+
+/* Number tiles: a touch more room. */
+.stats > div { padding: 12px 6px; }
+.stat-num { font-size: 24px; letter-spacing: -0.01em; }
+.stat-label { font-size: var(--fs-xs); margin-top: 2px; display: block; }
+
+/* Today: the last 7 days' load as bars under the numbers. */
+.load-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 56px; margin: 10px 2px 2px; }
+.load-day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.load-bar { display: block; width: 100%; max-width: 28px; min-height: 2px; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.load-day.today .load-bar { background: var(--accent); }
+.load-lbl { font-size: 10px; color: var(--muted); line-height: 1; }
+.load-day.today .load-lbl { color: var(--accent); font-weight: 700; }
+
+/* Workouts: an unlogged recent day invites a tap. */
+.workout-list .wk-none { border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); background: transparent; color: var(--accent); }
+
+/* Tables: softer header, tighter rows on phones. */
+th { letter-spacing: 0.01em; }
+.table-wrap { margin: 0 -4px; padding: 0 4px; }
+.goal-tile { gap: 4px; min-height: 68px; justify-content: center; }
+.goal-tile .tile-line:not(.muted) { font-weight: 600; color: var(--accent); }
+.page-title { margin-top: 2px; }

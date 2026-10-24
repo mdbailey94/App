@@ -51,7 +51,7 @@ export function renderGoals(view, arg, query) {
   const entries = loadEntries();
   const goals = latestGoals(entries);
   if (arg === 'edit') { renderEdit(view, goals); return; }
-  if (arg === 'log') { renderLog(view, entries, goals, query); return; }
+  if (arg === 'log') { location.replace('#goals'); return; } // set logging is off until it becomes test sets
   if (PAGES.some((p) => p.key === arg)) { renderPage(view, arg, goals, query); return; }
   renderOverview(view, entries, goals, query);
 }
@@ -61,7 +61,6 @@ export function renderGoals(view, arg, query) {
 function renderOverview(view, entries, goals, query) {
   const { use, per } = readPrefs(query);
   const set = gearSet(goals, { use, per: 100 });
-  const sets = entries.flatMap((e) => (e.sets || []).map((s) => ({ ...s, date: e.date }))).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const count = Object.values(goals?.times || {}).filter((t) => t?.goal > 0).length;
   const tile = (p) => {
     let line = '';
@@ -81,7 +80,7 @@ function renderOverview(view, entries, goals, query) {
     <section class="card">
       <h2>Goals</h2>
       ${goals ? `
-      <p class="muted small">${count} goal time${count === 1 ? '' : 's'} set${goals.updatedAt ? `, ${esc(shortDate(goals.updatedAt.slice(0, 10)))}` : ''}.
+      <p class="muted small">${count} goal time${count === 1 ? '' : 's'} set${goals.updatedAt ? ` ${esc(shortDate(goals.updatedAt.slice(0, 10)))}` : ''}.
         Fatigue factor ${set.factor.factor.toFixed(3)} (${set.factor.type}${factorFrom(set.factor)}).</p>
       <div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`
     : `<p>Enter your goal times (and best times) and the app works out your training gears: the pace to hold for
@@ -93,13 +92,7 @@ function renderOverview(view, entries, goals, query) {
       <div class="card-head"><h3>Your gears</h3>${useToggle(use, '#goals')}</div>
       <p class="muted small">G2 is the pace you could hold for 4 hours, G3 for 1 hour, G4 for 15 minutes, G5 for 5 and G6 for 2.</p>
       <div class="tiles goal-tiles">${PAGES.map(tile).join('')}</div>
-    </section>` : ''}
-    <section class="card" id="practice-times">
-      <div class="card-head"><h3>Practice times</h3><a class="btn secondary small-btn" href="#goals/log">Log a set</a></div>
-      ${sets.length ? `<ul class="plain set-list">${sets.map((s) => `<li>${esc(shortDate(s.date))} · ${esc(setLabel(s))}</li>`).join('')}</ul>
-      <p class="muted small"><a href="#goals/log">All sets and trends ›</a></p>`
-    : '<p class="muted">Log the average time from a set and see the trend against your gears. Trends matter more than one fast day.</p>'}
-    </section>`;
+    </section>` : ''}`;
 }
 
 const setLabel = (s) => `${s.reps ? `${s.reps} × ` : ''}${s.dist} ${STROKES[s.stroke]?.short.toLowerCase() || s.stroke} ${s.gear && s.gear !== 'other' ? `@ ${s.gear}` : ''} avg ${fmtPace(s.avg)}`;
@@ -435,15 +428,6 @@ export function goalsSummary(entries) {
   const rows = [...['free', 'back', 'breast', 'fly'].map((s) => [STROKES[s].short, set.strokes[s]]), ['IM', set.im]]
     .filter(([, g]) => g)
     .map(([label, g]) => ({ label, reference: g.reference, paces: Object.fromEntries(MAIN_GEARS.map((k) => [k, g.gears.find((x) => x.key === k).pace])) }));
-  const counts = new Map();
-  for (const e of entries) for (const s of e.sets || []) counts.set(`${s.stroke}|${s.dist}`, (counts.get(`${s.stroke}|${s.dist}`) || 0) + 1);
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-  let trend = null;
-  if (top) {
-    const [stroke, dist] = top[0].split('|');
-    const gearsFor = stroke === 'im' ? null : set.strokes[stroke];
-    trend = { stroke, dist: Number(dist), ...setTrend(entries, { stroke, dist: Number(dist) }, gearsFor) };
-  }
-  return { goals, factor: set.factor, rows, trend, updated: goals.updatedAt?.slice(0, 10) };
+  return { goals, factor: set.factor, rows, trend: null, updated: goals.updatedAt?.slice(0, 10) };
 }
 

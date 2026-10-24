@@ -113,39 +113,6 @@ test('goals: IM gears with each stroke and the switches; speed targets from the 
   await expect(back.locator('tr', { hasText: 'Predicted 100' }).locator('td b')).toHaveText('53.54');
 });
 
-test('practice times: log sets, see the trend against the gear, delete one', async ({ page }) => {
-  await setUpGoals(page);
-  await page.goto('/#goals/log');
-  await fill(page, 'date', dayISO(2));
-  await page.selectOption('[name=stroke]', 'free');
-  await page.selectOption('[name=dist]', '100');
-  await page.selectOption('[name=gear]', 'G3');
-  await fill(page, 'reps', '10');
-  await fill(page, 'avg', '1:12.0');
-  await fill(page, 'rest', '10');
-  await page.click('#save-set');
-  await expect(page).toHaveURL(/#goals\/log\?stroke=free&dist=100/);
-  await expect(page.locator('#trend-line')).toContainText('Last 1 sets average 1:12.0 · G3 target 1:10.5 (+1.5 s)');
-  await fill(page, 'date', dayISO(0));
-  await fill(page, 'reps', '10');
-  await fill(page, 'avg', '1:10.0');
-  await page.click('#save-set');
-  await expect(page.locator('#trend-line')).toContainText('Last 2 sets average 1:11.0 · G3 target 1:10.5 (+0.5 s)');
-  await expect(page.locator('[data-c="trend"] .series-dot:not(.alt)')).toHaveCount(2);
-  await expect(page.locator('.targets .target.on')).toHaveText('G3 1:10.5');
-  await expect(page.locator('#recent-sets li')).toHaveCount(2);
-  await expect(page.locator('#recent-sets li').first()).toContainText('10 × 100 free @ G3 avg 1:10.0');
-  // The set is on its day's entry.
-  const entry = await page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k)).find((e) => e.date === d), [ENTRIES, dayISO(2)]);
-  expect(entry.sets[0]).toMatchObject({ stroke: 'free', dist: 100, gear: 'G3', reps: 10, avg: 72, rest: 10 });
-  await page.locator('#recent-sets li').first().locator('[data-del]').click();
-  await expect(page.locator('#recent-sets li')).toHaveCount(1);
-  await expect(page.locator('#trend-line')).toContainText('Last 1 sets average 1:12.0');
-  // The overview lists recent sets.
-  await page.goto('/#goals');
-  await expect(page.locator('#practice-times')).toContainText('10 × 100 free @ G3 avg 1:12.0');
-});
-
 test('coach: a swimmer’s goals, gears and practice-time trend on their page', async ({ page, request }, testInfo) => {
   const W = (v) => ({ sleepHours: 8, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
   const entries = [
@@ -167,6 +134,5 @@ test('coach: a swimmer’s goals, gears and practice-time trend on their page', 
   const free = card.locator('tbody tr', { hasText: 'Free' });
   await expect(free.locator('td')).toHaveText(['200 free 2:00.0', '1:15.4', '1:10.5', '1:06.0', '1:02.7', '1:00.0']);
   await expect(card.locator('tbody tr', { hasText: 'Fly' }).locator('td').first()).toContainText('est. 200 fly');
-  await expect(card).toContainText('2 sets logged; last 3 average 1:11.5 vs G3 target 1:10.5');
-  await expect(card.locator('[data-c="goal-trend"] svg')).toBeVisible();
+  await expect(card).not.toContainText('sets logged'); // set logging is off for now
 });

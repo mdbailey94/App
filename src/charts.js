@@ -33,11 +33,22 @@ function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zer
   let lo = yMin ?? Math.min(...ys);
   let hi = yMax ?? Math.max(...ys);
   if (zeroBased) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
+  // All but identical values (a flat week): give the axis a unit either side
+  // rather than ticks a millionth apart.
+  if (hi - lo < Math.max(1e-9, Math.abs(hi) * 1e-6)) { lo -= 1; hi += 1; }
   const ticks = niceTicks(lo, hi);
   lo = Math.min(lo, ticks[0]);
   hi = Math.max(hi, ticks[ticks.length - 1]);
+  // A formatter that rounds can print the same label twice on a tight axis
+  // (flat HRV, say); then show one decimal, and never the same label twice.
+  const labels = ticks.map(yFormat);
+  if (new Set(labels).size < labels.length) {
+    const fine = (t) => String(+t.toFixed(2));
+    const seen = new Set();
+    ticks.forEach((t, i) => { const l = fine(t); labels[i] = seen.has(l) ? '' : l; seen.add(l); });
+  }
   // Make room for the widest y-axis label (~6.5 px per character at 11 px).
-  const widest = Math.max(...ticks.map((t) => yFormat(t).length));
+  const widest = Math.max(...labels.map((l) => l.length));
   PAD = { ...BASE_PAD, left: Math.max(28, Math.ceil(widest * 6.5) + 10) };
 
   const xs = data.map((d) => d.x);
@@ -50,11 +61,11 @@ function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zer
   const sy = (y) => PAD.top + ih - ((y - lo) / (hi - lo)) * ih;
 
   const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' }, container);
-  for (const t of ticks) {
+  ticks.forEach((t, i) => {
     el('line', { x1: PAD.left, x2: width - PAD.right, y1: sy(t), y2: sy(t), class: 'grid' }, svg);
     const label = el('text', { x: PAD.left - 6, y: sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, svg);
-    label.textContent = yFormat(t);
-  }
+    label.textContent = labels[i];
+  });
   if (band) {
     el('rect', {
       x: PAD.left, width: iw, y: sy(band.hi), height: Math.max(1, sy(band.lo) - sy(band.hi)), class: 'band',

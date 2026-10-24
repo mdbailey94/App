@@ -88,7 +88,7 @@ test('Workouts tab: today and yesterday first, then earlier days with their stat
   // An older check-in reported the day before it (day 4): shown as such.
   const rows = page.locator('.workout-list li');
   await expect(rows).toHaveCount(19);
-  await expect(rows.nth(0).locator('.wk-status')).toHaveText('Not logged'); // Monday
+  await expect(rows.nth(0).locator('.wk-status')).toHaveText('Fill in'); // Monday, recent: invites a tap
   await expect(rows.nth(1).locator('.wk-status')).toHaveText('Off (Sunday)');
   await expect(rows.nth(2).locator('.wk-status')).toHaveText('From check-in'); // Saturday, reported Sunday
 });
