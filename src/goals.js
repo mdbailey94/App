@@ -176,7 +176,12 @@ function renderPage(view, key, goals, query) {
   const set = gearSet(goals, { use, per });
   const head = `${nav}<div class="card-head"><h2>${page.label}</h2>${useToggle(use, base)}</div>`;
   if (key === 'speed') { view.innerHTML = speedPage(set, head, use); wire(view, base); return; }
-  if (key === 'im') { view.innerHTML = imPage(set, head, use, per, base); wire(view, base); return; }
+  if (key === 'im') {
+    const split = SPLITS.includes(Number(query.get('split'))) ? Number(query.get('split')) : 100;
+    view.innerHTML = imPage(set, head, use, per, base, split);
+    wire(view, base);
+    return;
+  }
   const g = set.strokes[key];
   view.innerHTML = `
     <section class="card gear-page">
@@ -196,7 +201,8 @@ function renderPage(view, key, goals, query) {
   wire(view, base);
 }
 
-function imPage(set, head, use, per, base) {
+const SPLITS = [25, 50, 100];
+function imPage(set, head, use, per, base, split) {
   const im = set.im;
   if (!im) {
     return `<section class="card gear-page">${head}<p class="muted">Add a 400 IM, a 200 IM, or a 200 back, breast or fly ${use} time to see your IM gears.</p>
@@ -216,22 +222,28 @@ function imPage(set, head, use, per, base) {
           <td class="pace"><b>${fmtPace(x.pace)}</b></td><td>${fmtPace(x.im200)}</td><td>${restText(x.rest)}</td></tr>`).join('')}
         </tbody></table></div>
     </section>
-    <section class="card">
-      <h3>Each stroke in a 200 IM</h3>
-      <p class="muted small">The 50 of each stroke inside a 200 IM at that gear (elite stroke shares; your own 400 IM splits may differ).</p>
+    <section class="card" id="im-strokes">
+      <div class="card-head"><h3>Each stroke</h3><span class="seg split-seg" role="group" aria-label="Per stroke distance">
+        ${SPLITS.map((d) => `<a href="${base}?split=${d}" data-split="${d}" ${split === d ? 'aria-current="true"' : ''}>${d}s</a>`).join('')}</span></div>
+      <p class="muted small">${split === 100 ? 'The 100 of each stroke inside a 400 IM' : split === 50 ? 'The 50 of each stroke inside a 200 IM' : 'One length of each stroke, as it sits inside an IM'} at that gear
+        (elite stroke shares; your own IM splits may differ). Rest is for one ${split} of that stroke.</p>
       <div class="table-wrap"><table class="gear-table im-strokes">
-        <thead><tr><th>Gear</th><th>Fly</th><th>Back</th><th>Breast</th><th>Free</th></tr></thead>
-        <tbody>${im.gears.filter((x) => !isHalf(x)).map((x) => `<tr data-gear="${x.key}"><th scope="row"><b>${x.key}</b></th>
-          ${['fly', 'back', 'breast', 'free'].map((s) => `<td>${fmtPace(x.strokes[s])}</td>`).join('')}</tr>`).join('')}
+        <thead><tr><th>Gear</th><th>Fly</th><th>Back</th><th>Breast</th><th>Free</th><th>Rest</th></tr></thead>
+        <tbody>${im.gears.filter((x) => !isHalf(x)).map((x) => {
+    const sp = x.splits(split);
+    return `<tr data-gear="${x.key}"><th scope="row"><b>${x.key}</b></th>
+          ${['fly', 'back', 'breast', 'free'].map((st) => `<td>${fmtPace(sp[st].time)}</td>`).join('')}<td class="muted">${restText(sp.breast.rest)}</td></tr>`;
+  }).join('')}
         </tbody></table></div>
     </section>
     <section class="card" id="im-switches">
       <h3>IM switches</h3>
-      <p class="muted small">Switch 50s (25 + 25) and 100s (50 + 50): the two strokes at that gear, back to back.</p>
+      <p class="muted small">Switch 50s (25 + 25) and 100s (50 + 50): the two strokes at that gear, back to back. Rest shown for the 50 · the 100.</p>
       <div class="table-wrap"><table class="gear-table im-switches">
-        <thead><tr><th>Gear</th>${IM.switches.map((sw) => `<th>${sw.label}<br><span class="th-sub">50</span></th>`).join('')}</tr></thead>
+        <thead><tr><th>Gear</th>${IM.switches.map((sw) => `<th>${sw.label}<br><span class="th-sub">50 · 100</span></th>`).join('')}<th>Rest</th></tr></thead>
         <tbody>${im.gears.filter((x) => !isHalf(x)).map((x) => `<tr data-gear="${x.key}"><th scope="row"><b>${x.key}</b></th>
-          ${IM.switches.map((sw) => `<td><b>${fmtPace(x.switches[sw.key].fifty)}</b><br><span class="th-sub">100: ${fmtPace(x.switches[sw.key].hundred)}</span></td>`).join('')}</tr>`).join('')}
+          ${IM.switches.map((sw) => `<td><b>${fmtPace(x.switches[sw.key].fifty)}</b><br><span class="th-sub">${fmtPace(x.switches[sw.key].hundred)}</span></td>`).join('')}
+          <td class="muted small">${restText(x.switches.flyBack.rest50)} · ${restText(x.switches.flyBack.rest100)}</td></tr>`).join('')}
         </tbody></table></div>
     </section>`;
 }
@@ -243,7 +255,7 @@ function speedPage(set, head, use) {
     <section class="card gear-page">
       ${head}
       ${strokes.length ? `<p class="muted small">From your ${use} 50 of each stroke: your clean mid-pool speed, and what the start, a push and a 25 should take at it.
-        The factors are calibrated to freestyle; for the other strokes they are a starting point.</p>`
+        Each stroke has its own start and turn model (freestyle’s is calibrated to elite short course swims; the others are starting points to fit to your own 15 m and 25 times).</p>`
     : `<p class="muted">Add a 50 ${use} time for a stroke to see your speed targets.</p><div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`}
     </section>
     ${strokes.map(([s, sp]) => `
@@ -252,8 +264,8 @@ function speedPage(set, head, use) {
       <table class="gear-table speed-table">
         <tbody>
           ${[
-    ['15 m dive', 'from the start', sp.dive15.fromStart], ['', 'from feet leaving the block', sp.dive15.fromFeet],
-    ['25 dive', 'from the start', sp.dive25.fromStart], ['', 'from feet leaving the block', sp.dive25.fromFeet],
+    [s === 'back' ? '15 m start' : '15 m dive', sp.labels.start, sp.dive15.fromStart], ['', sp.labels.feet, sp.dive15.fromFeet],
+    [s === 'back' ? '25 from the start' : '25 dive', sp.labels.start, sp.dive25.fromStart], ['', sp.labels.feet, sp.dive25.fromFeet],
     ['15 m push', 'from feet leaving the wall', sp.push15], ['25 push', 'from feet leaving the wall', sp.push25],
     ['Flag to flag', '15 yd at clean speed', sp.flagToFlag15], ['Start to far flags', '20 yd', sp.toFarFlags20],
     ['Predicted 100', 'at this speed', sp.hundred],
@@ -262,7 +274,7 @@ function speedPage(set, head, use) {
       <h4>Speed zones: 25 push</h4>
       <table class="gear-table zone-table">
         <tbody>${ZONES.map((z) => `<tr data-zone="${z.key}"><th scope="row"><b>${z.key}</b> ${z.label}<br><span class="th-sub">${z.pct} of clean speed</span></th>
-          <td class="pace"><b>${f2(sp.zones[z.key])}</b></td></tr>
+          <td class="pace"><b>${f2(sp.zones[z.key])}</b><br><span class="th-sub">rest ${sp.zoneRest[z.key]} s</span></td></tr>
           <tr class="flag-row"><td colspan="2">${z.trains}: ${z.work}. Rest ${z.rest}.</td></tr>`).join('')}
         </tbody></table>
     </section>`).join('')}`;
@@ -270,11 +282,12 @@ function speedPage(set, head, use) {
 
 // The pills change the address, which re-renders; keep it on one history entry.
 function wire(view, base) {
-  view.querySelectorAll('.use-seg a, .per-seg a').forEach((a) => a.addEventListener('click', (ev) => {
+  view.querySelectorAll('.use-seg a, .per-seg a, .split-seg a').forEach((a) => a.addEventListener('click', (ev) => {
     ev.preventDefault();
     const q = new URLSearchParams(location.hash.split('?')[1] || '');
     if (a.dataset.use) q.set('use', a.dataset.use);
     if (a.dataset.per) q.set('per', a.dataset.per);
+    if (a.dataset.split) q.set('split', a.dataset.split);
     location.hash = `${base}?${q}`;
   }));
 }

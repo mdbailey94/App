@@ -54,13 +54,20 @@ test('goals: IM gears with each stroke and the switches; speed targets from the 
   const pace = (gear) => page.locator(`.gear-page tr[data-gear="${gear}"] td.pace`);
   await expect(pace('G2')).toHaveText('1:12.9');
   await expect(pace('G3')).toHaveText('1:08.3');
-  // Each stroke of a 200 IM at G3 (boys' shares) and the switches that add two of them.
+  // Each stroke as 100s (its share of a 400 IM at G3, boys' shares) with rest; then as single lengths.
   const g3 = page.locator('.im-strokes tr[data-gear="G3"] td');
-  await expect(g3).toHaveText(['31.7', '34.1', '38.2', '32.5']);
-  await expect(page.locator('.im-switches thead th')).toHaveText(['Gear', /Fly–back/, /Back–breast/, /Breast–free/]);
+  await expect(page.locator('.split-seg a[aria-current]')).toHaveText('100s');
+  await expect(g3).toHaveText(['1:03.3', '1:08.3', '1:16.4', '1:05.0', '10 s']);
+  await page.click('.split-seg a:has-text("25s")');
+  await expect(page).toHaveURL(/split=25/);
+  await expect(g3).toHaveText(['15.8', '17.1', '19.1', '16.2', '1 s']);
+  await page.click('.split-seg a:has-text("50s")');
+  await expect(g3).toHaveText(['31.7', '34.1', '38.2', '32.5', '4 s']);
+  await expect(page.locator('.im-switches thead th')).toHaveText(['Gear', /Fly–back/, /Back–breast/, /Breast–free/, 'Rest']);
   const flyBack = page.locator('.im-switches tr[data-gear="G3"] td').first();
   await expect(flyBack).toContainText('32.9');
-  await expect(flyBack).toContainText('100: 1:05.8');
+  await expect(flyBack).toContainText('1:05.8');
+  await expect(page.locator('.im-switches tr[data-gear="G3"] td').last()).toHaveText('3 s · 8 s');
 
   await page.goto('/#goals/speed');
   const free = page.locator('.speed-card[data-stroke=free]');
@@ -68,8 +75,18 @@ test('goals: IM gears with each stroke and the switches; speed targets from the 
   await expect(free.locator('tr', { hasText: '15 m dive' }).first().locator('td b')).toHaveText('6.36');
   await expect(free.locator('tr', { hasText: '25 push' }).locator('td b')).toHaveText('10.62');
   await expect(free.locator('tr', { hasText: 'Predicted 100' }).locator('td b')).toHaveText('49.12');
-  await expect(free.locator('tr[data-zone=S3] td.pace')).toHaveText('12.07');
+  await expect(free.locator('tr[data-zone=S3] td.pace')).toContainText('12.07');
+  await expect(free.locator('tr[data-zone=S2] td.pace')).toContainText('rest 44 s');
   await expect(page.locator('.speed-card')).toHaveCount(1); // only the free has a 50
+  // Backstroke has its own model: starts in the water.
+  await page.goto('/#goals/edit');
+  await fill(page, 'goal-back-50', '24.5');
+  await page.click('#save-goals');
+  await page.goto('/#goals/speed');
+  const back = page.locator('.speed-card[data-stroke=back]');
+  await expect(back.locator('tr').first()).toContainText('15 m start');
+  await expect(back.locator('tr').first()).toContainText('from the signal');
+  await expect(back.locator('tr', { hasText: 'Predicted 100' }).locator('td b')).toHaveText('53.54');
 });
 
 test('practice times: log sets, see the trend against the gear, delete one', async ({ page }) => {

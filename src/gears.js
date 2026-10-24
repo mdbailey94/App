@@ -183,12 +183,18 @@ export function imGears(times, { factor = FACTOR.default, per = 100, sex = 'girl
     gears: gears.map((g) => {
       const per100 = gearPace(ref.seconds, 400, g.T, factor, 100);
       const im200 = per100 * 2;
+      // Each stroke's 50 inside a 200 IM; `splits(per)` gives its 25, 50 or
+      // 100 (the 100 is its share of a 400 IM at this gear) with rest.
       const strokes = Object.fromEntries(Object.entries(shares).map(([s, sh]) => [s, +(im200 * sh).toFixed(1)]));
+      const splits = (d) => Object.fromEntries(Object.entries(shares).map(([s, sh]) => {
+        const t = (im200 * sh * d) / 50;
+        return [s, { time: +t.toFixed(1), rest: restFor(g, t) }];
+      }));
       const switches = Object.fromEntries(IM.switches.map((sw) => {
         const hundred = sw.strokes.reduce((n, s) => n + im200 * shares[s], 0);
-        return [sw.key, { fifty: +(hundred / 2).toFixed(1), hundred: +hundred.toFixed(1) }];
+        return [sw.key, { fifty: +(hundred / 2).toFixed(1), hundred: +hundred.toFixed(1), rest50: restFor(g, hundred / 2), rest100: restFor(g, hundred) }];
       }));
-      return { ...g, pace: +((per100 / 100) * per).toFixed(1), rest: restFor(g, (per100 / 100) * per), im200: +im200.toFixed(1), strokes, switches };
+      return { ...g, pace: +((per100 / 100) * per).toFixed(1), rest: restFor(g, (per100 / 100) * per), im200: +im200.toFixed(1), strokes, splits, switches };
     }),
   };
 }
@@ -205,38 +211,65 @@ export const STANDARD_RATIOS = {
 };
 export const AGE_GROUPS = ['13-14', '15-16', '17-18'];
 
-// ---- speed (the sheet's Speed Table)
+// ---- speed (the sheet's Speed Table, one factor set per stroke)
 
-// Factors by sex: block time and the dive start differ; the rest is shared.
-// Calibrated to elite short course swims; high school swimmers usually need
-// slower dive and turn factors. `inUse` can override any of them.
+// Factors by stroke. The freestyle set is the sheet's (calibrated to elite
+// NCAA splits and a European short course study). The other strokes keep
+// the same model with factors set from how each stroke starts and turns:
+//   back    starts in the water (no block; `block` is the reaction and
+//           push), a backstroke flip turn, strong underwater kick
+//   breast  one pullout to 15 m (fast against a slow surface speed), an
+//           open two-hand turn (no flip, longer on the wall)
+//   fly     the same block start as free, underwater kick to 15 m, an
+//           open two-hand turn, a bigger fade on the second 25
+// They are starting points: fit them to each swimmer with their own
+// 15 m, flag and 25 times. `block` and `dive` differ by sex.
 export const SPEED_FACTORS = {
-  boys: { block: 0.63, dive: 0.72 },
-  girls: { block: 0.70, dive: 0.79 },
-  push: 0.84, // fresh practice push: 15 m time as a share of 15 m at clean speed
-  turnPush: 0.88, // race turn push-off, tired
-  rotation: 0.20, // extra time on the incoming length for the flip
-  contact: 0.30, // feet on the wall
-  reach: 0.5, // the hand touches this far ahead of the head
-  fade: 0.955, // clean speed on the second 25 of a 50, as a share of the first
-  firstLength: 0.91, // surface speed on the first length of a 100
-  firstShare: 0.227, // the first 25 as a share of the 100
-  dive100: 0.72,
+  free: {
+    boys: { block: 0.63, dive: 0.72 }, girls: { block: 0.70, dive: 0.79 },
+    push: 0.84, turnPush: 0.88, rotation: 0.20, contact: 0.30, reach: 0.5, fade: 0.955,
+    firstLength: 0.91, firstShare: 0.227, dive100: 0.72,
+    start: 'from the start', feet: 'from feet leaving the block',
+  },
+  back: {
+    boys: { block: 0.58, dive: 0.78 }, girls: { block: 0.62, dive: 0.84 },
+    push: 0.82, turnPush: 0.86, rotation: 0.25, contact: 0.30, reach: 0.4, fade: 0.96,
+    firstLength: 0.92, firstShare: 0.232, dive100: 0.78,
+    start: 'from the signal', feet: 'from feet leaving the wall',
+  },
+  breast: {
+    boys: { block: 0.63, dive: 0.68 }, girls: { block: 0.70, dive: 0.74 },
+    push: 0.78, turnPush: 0.82, rotation: 0, contact: 0.45, reach: 0.5, fade: 0.95,
+    firstLength: 0.92, firstShare: 0.224, dive100: 0.68,
+    start: 'from the start', feet: 'from feet leaving the block',
+  },
+  fly: {
+    boys: { block: 0.63, dive: 0.70 }, girls: { block: 0.70, dive: 0.77 },
+    push: 0.80, turnPush: 0.85, rotation: 0, contact: 0.45, reach: 0.5, fade: 0.95,
+    firstLength: 0.92, firstShare: 0.221, dive100: 0.70,
+    start: 'from the start', feet: 'from feet leaving the block',
+  },
   zones: { S2: 0.96, S3: 0.88, S4: 0.82 }, // 50, 100 and 200 race pace as shares of clean speed
 };
 export const YD15M = 16.4; // 15 m in yards
+// Speed zones, with the rest that goes with them (Rushall's USRPT work and
+// the sheet's notes): S1 near full recovery, S2 about 1:4, S3 25s on about
+// 15 s, S4 50s on about 20 s.
 export const ZONES = [
-  { key: 'S1', label: 'Max speed', pct: '98–100%', trains: 'alactic power', work: '15 yd flag to flag, 12.5s, 15 m dives; under about 10 s', rest: 'near full recovery' },
-  { key: 'S2', label: '50 race pace', pct: '96%', trains: '50 speed and stroke rate', work: '25s from a push; broken 50s', rest: 'about 1:4' },
-  { key: 'S3', label: '100 race pace', pct: '88%', trains: 'speed endurance for the 100', work: '25s at 100 pace', rest: '25s on about 15 s (roughly 1:1)' },
-  { key: 'S4', label: '200 race pace', pct: '82%', trains: 'speed endurance for the 200', work: '50s at 200 pace', rest: '50s on about 20 s' },
+  { key: 'S1', label: 'Max speed', pct: '98–100%', trains: 'alactic power', work: '15 yd flag to flag, 12.5s, 15 m dives; under about 10 s', rest: 'near full recovery', restFor: (swim) => Math.max(60, Math.round(swim * 6)) },
+  { key: 'S2', label: '50 race pace', pct: '96%', trains: '50 speed and stroke rate', work: '25s from a push; broken 50s', rest: 'about 1:4', restFor: (swim) => Math.round(swim * 4) },
+  { key: 'S3', label: '100 race pace', pct: '88%', trains: 'speed endurance for the 100', work: '25s at 100 pace', rest: '25s on about 15 s (roughly 1:1)', restFor: () => 15 },
+  { key: 'S4', label: '200 race pace', pct: '82%', trains: 'speed endurance for the 200', work: '50s at 200 pace', rest: '50s on about 20 s', restFor: () => 20 },
 ];
 
-const factorsFor = (sex) => ({ ...SPEED_FACTORS, ...(SPEED_FACTORS[sex] || SPEED_FACTORS.boys) });
+const factorsFor = (stroke, sex) => {
+  const f = SPEED_FACTORS[stroke] || SPEED_FACTORS.free;
+  return { ...f, ...(f[sex] || f.boys), zones: SPEED_FACTORS.zones };
+};
 
 // A 50 from clean speed v (yd/s): start, first length, turn, tired second length.
-export function fiftyFrom(v, sex = 'boys') {
-  const F = factorsFor(sex);
+export function fiftyFrom(v, sex = 'boys', stroke = 'free') {
+  const F = factorsFor(stroke, sex);
   const first = F.block + (F.dive * YD15M) / v + (25 - YD15M) / v + F.rotation;
   const v2 = v * F.fade;
   const second = F.contact + (F.turnPush * YD15M) / v2 + (25 - YD15M - F.reach) / v2;
@@ -244,29 +277,32 @@ export function fiftyFrom(v, sex = 'boys') {
 }
 
 // Clean speed from a 50 time (bisection: a faster 50 means a faster v).
-export function cleanSpeed(t50, sex = 'boys') {
-  let lo = 0.8;
+export function cleanSpeed(t50, sex = 'boys', stroke = 'free') {
+  let lo = 0.6;
   let hi = 4;
   for (let i = 0; i < 60; i++) {
     const mid = (lo + hi) / 2;
-    if (fiftyFrom(mid, sex) > t50) lo = mid; else hi = mid;
+    if (fiftyFrom(mid, sex, stroke) > t50) lo = mid; else hi = mid;
   }
   return +((lo + hi) / 2).toFixed(3);
 }
 
 // Everything the Speed Table shows for one 50 time: the start, push and
-// 25 benchmarks and the zone targets, all in seconds (2 decimals).
-export function speedTargets(t50, sex = 'boys') {
+// 25 benchmarks and the zone targets with their rest, all in seconds.
+export function speedTargets(t50, sex = 'boys', stroke = 'free') {
   if (!(t50 > 0)) return null;
-  const F = factorsFor(sex);
-  const v = cleanSpeed(t50, sex);
+  const F = factorsFor(stroke, sex);
+  const v = cleanSpeed(t50, sex, stroke);
   const r = (x) => +x.toFixed(2);
   const dive15feet = (F.dive * YD15M) / v;
   const push15 = (F.push * YD15M) / v;
   const toWall25 = (25 - YD15M - F.reach) / v;
   const first25 = F.block + (F.dive100 * YD15M) / v + (25 - YD15M) / (F.firstLength * v) + F.rotation;
   const push25At = (k) => (F.push * YD15M) / (k * v) + (25 - YD15M - F.reach) / (k * v);
+  const zones = { S1: r(push25At(1)), S2: r(push25At(F.zones.S2)), S3: r(push25At(F.zones.S3)), S4: r(push25At(F.zones.S4)) };
   return {
+    stroke,
+    labels: { start: F.start, feet: F.feet },
     cleanSpeed: v,
     flagToFlag15: r(15 / v),
     flagsToWall: r(4.5 / v),
@@ -276,9 +312,10 @@ export function speedTargets(t50, sex = 'boys') {
     toFarFlags20: r(F.block + dive15feet + (20 - YD15M) / v),
     dive25: { fromStart: r(F.block + dive15feet + toWall25), fromFeet: r(dive15feet + toWall25) },
     push25: r(push15 + toWall25),
-    fifty: r(fiftyFrom(v, sex)),
+    fifty: r(fiftyFrom(v, sex, stroke)),
     hundred: r(first25 / F.firstShare),
-    zones: { S1: r(push25At(1)), S2: r(push25At(F.zones.S2)), S3: r(push25At(F.zones.S3)), S4: r(push25At(F.zones.S4)) },
+    zones,
+    zoneRest: Object.fromEntries(ZONES.map((z) => [z.key, z.restFor(zones[z.key])])),
   };
 }
 
@@ -299,7 +336,7 @@ export function gearSet(goals, { use = 'goal', per = 100 } = {}) {
   const ff = fatigueFactor(timesOf(goals, 'best'), goals.factor);
   const opts = { factor: ff.factor, per };
   const speed = {};
-  for (const s of ['free', 'back', 'breast', 'fly']) if (times[`${s}-50`] > 0) speed[s] = speedTargets(times[`${s}-50`], sex);
+  for (const s of ['free', 'back', 'breast', 'fly']) if (times[`${s}-50`] > 0) speed[s] = speedTargets(times[`${s}-50`], sex, s);
   return {
     use,
     factor: ff,

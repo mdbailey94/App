@@ -96,6 +96,12 @@ test('IM Zones row: a 4:00 400 IM at F 1.04 (girls): IM pace, 200 IM, stroke 50s
   close(g2.switches.flyBack.hundred, g2.strokes.fly + g2.strokes.back, 0.11);
   close(g2.switches.flyBack.fifty, (g2.strokes.fly + g2.strokes.back) / 2, 0.11);
   close(g3.switches.breastFree.hundred, g3.strokes.breast + g3.strokes.free, 0.11);
+  // Splits per 25 / 50 / 100 (the 100 is the stroke's share of a 400 IM), each with rest.
+  close(g3.splits(100).fly.time, g3.strokes.fly * 2, 0.11);
+  close(g3.splits(25).breast.time, g3.strokes.breast / 2, 0.06);
+  assert.equal(g3.splits(50).back.time, g3.strokes.back);
+  assert.ok(g3.splits(100).breast.rest > g3.splits(25).breast.rest);
+  assert.ok(g3.switches.flyBack.rest100 > g3.switches.flyBack.rest50);
   // From a 200 IM alone, or a 200 back with the standards ratio.
   assert.equal(imGears({ 'im-200': 111.63 }, {}).reference.estimated, true);
   close(imGears({ 'im-200': 111.63 }, {}).reference.seconds, 240, 0.1);
@@ -117,6 +123,22 @@ test('Speed Table row: a 22.49 50 free (men) is a clean speed of 2.06 yd/s and s
   // Women: a longer block time and slower dive for the same clean speed.
   assert.ok(speedTargets(22.49, 'girls').cleanSpeed > 2.06);
   assert.equal(speedTargets(0), null);
+  // Rest that goes with each zone: near full recovery, 1:4, 15 s, 20 s.
+  assert.deepEqual(s.zoneRest, { S1: 64, S2: 44, S3: 15, S4: 20 });
+});
+
+test('other strokes have their own start and turn models', () => {
+  const back = speedTargets(24.5, 'boys', 'back');
+  const fly = speedTargets(24.5, 'boys', 'fly');
+  const breast = speedTargets(28.5, 'boys', 'breast');
+  assert.equal(back.labels.start, 'from the signal');
+  assert.equal(fly.labels.feet, 'from feet leaving the block');
+  // Each model reproduces the 50 it was given and predicts a plausible 100.
+  for (const [s, t] of [[back, 24.5], [fly, 24.5], [breast, 28.5]]) { close(s.fifty, t, 0.02); assert.ok(s.hundred > 2.15 * t && s.hundred < 2.25 * t); }
+  // Breaststroke's pullout is fast against its stroke speed: the 15 m push is a smaller share of 15 m at clean speed.
+  assert.ok(breast.push15 * breast.cleanSpeed / 16.4 < fly.push15 * fly.cleanSpeed / 16.4);
+  // The freestyle model is the default, and unchanged.
+  close(speedTargets(22.49, 'boys', 'free').push25, 10.62);
 });
 
 test('gearSet: goal or best times, the factor from their best races, speed only with a 50', () => {
