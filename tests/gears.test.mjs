@@ -15,6 +15,14 @@ test('parseTime and formatTime', () => {
   assert.equal(t('18:00.0'), 1080);
   assert.equal(t('2:00'), 120);
   assert.equal(t('1:75'), null);
+  // Phone keypads have no colon: minutes typed straight on, or with a dot.
+  assert.equal(t('148.0'), 108);
+  assert.equal(t('1748'), 1068);
+  assert.equal(t('1.48.0'), 108);
+  assert.equal(t('148'), 108);
+  assert.equal(t('22.49'), 22.49);
+  assert.equal(t('1800.0'), 1080);
+  assert.equal(t('175'), null); // 1:75 isn't a time
   assert.equal(t('abc'), null);
   assert.equal(t(''), null);
   assert.equal(formatTime(112.34), '1:52.3');

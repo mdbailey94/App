@@ -13,7 +13,11 @@ async function setUpGoals(page) {
   await fill(page, 'factor', '1.050'); // the 200 Chart's factor, so the numbers match the sheet
   await fill(page, 'best-free-50', '23.5');
   await fill(page, 'goal-free-50', '22.49');
-  await fill(page, 'goal-free-200', '2:00.0');
+  await fill(page, 'goal-free-200', '200.0'); // no colon on a phone keypad: 2:00.0
+  await expect(page.locator('[name="goal-free-200"] + .read-as')).toHaveText('= 2:00.0');
+  await fill(page, 'best-free-100', '175');
+  await expect(page.locator('[name="best-free-100"] + .read-as')).toHaveText('?'); // 1:75 isn't a time
+  await fill(page, 'best-free-100', '');
   await fill(page, 'best-free-500', '5:30.0');
   await fill(page, 'goal-im-400', '4:00');
   await fill(page, 'goal-back-200', '2:00');

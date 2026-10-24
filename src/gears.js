@@ -52,17 +52,25 @@ export const swimmerType = (f) => (f <= FACTOR.distance ? 'Distance' : f >= FACT
 
 // ---- times
 
-// "1:52.3", "1:52", "52.3", "18:00.0" → seconds; null if it isn't a time.
+// A typed time → seconds; null if it isn't one. Phone keypads often have no
+// colon, so minutes can also be typed straight on: "148.0" is 1:48.0,
+// "1748" is 17:48, "1.48.0" is 1:48.0. Three or more digits before the
+// decimal point mean minutes then two digits of seconds.
 export function parseTime(text) {
   const s = String(text ?? '').trim().replace(/\s+/g, '');
   if (!s) return null;
-  const m = /^(?:(\d{1,2}):)?(\d{1,2})(?:[.,](\d{1,2}))?$/.exec(s);
-  if (!m) return null;
-  const min = Number(m[1] || 0);
-  const sec = Number(m[2]);
-  const frac = m[3] ? Number(`0.${m[3]}`) : 0;
-  if (m[1] && sec >= 60) return null;
-  const t = min * 60 + sec + frac;
+  // 1:48.0, 1:48, or with dots for the colon: 1.48.0 (a single dot is seconds: 22.49).
+  let m = /^(\d{1,2}):(\d{2})(?:[.,](\d{1,2}))?$/.exec(s) || /^(\d{1,2})\.(\d{2})\.(\d{1,2})$/.exec(s);
+  let min; let sec; let frac;
+  if (m) { [, min, sec, frac] = m; } else {
+    m = /^(\d{1,4})(?:[.,](\d{1,2}))?$/.exec(s); // 48.0, 148.0, 1748
+    if (!m) return null;
+    const digits = m[1];
+    if (digits.length >= 3) { min = digits.slice(0, -2); sec = digits.slice(-2); } else { min = '0'; sec = digits; }
+    frac = m[2];
+  }
+  if (Number(sec) >= 60 && Number(min) > 0) return null;
+  const t = Number(min) * 60 + Number(sec) + (frac ? Number(`0.${frac}`) : 0);
   return t > 0 ? +t.toFixed(2) : null;
 }
 

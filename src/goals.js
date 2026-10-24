@@ -112,15 +112,16 @@ function renderEdit(view, goals) {
   const row = (e) => {
     const t = g.times?.[e.key] || {};
     return `<tr><th scope="row">${esc(e.label)}</th>
-      <td><input type="text" name="best-${e.key}" inputmode="decimal" placeholder="m:ss.s" value="${t.best ? fmtPace(t.best) : ''}" aria-label="${esc(e.label)} best"></td>
-      <td><input type="text" name="goal-${e.key}" inputmode="decimal" placeholder="m:ss.s" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"></td></tr>`;
+      <td><input type="text" name="best-${e.key}" inputmode="decimal" placeholder="148.0" value="${t.best ? fmtPace(t.best) : ''}" aria-label="${esc(e.label)} best"><span class="read-as" aria-live="polite"></span></td>
+      <td><input type="text" name="goal-${e.key}" inputmode="decimal" placeholder="148.0" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"><span class="read-as" aria-live="polite"></span></td></tr>`;
   };
   const group = (stroke) => `<tr class="stroke-row"><th colspan="3">${STROKES[stroke].label}</th></tr>${EVENTS.filter((e) => e.stroke === stroke).map(row).join('')}`;
   view.innerHTML = `
     <form id="goals-form" class="stack" novalidate>
       <section class="card"><p><a href="#goals">‹ Goals</a></p>
         <h2>Your times</h2>
-        <p class="muted small">Short course yards. Fill in what you have; the gears use the longest race you give for each stroke.</p>
+        <p class="muted small">Short course yards. Fill in what you have; the gears use the longest race you give for each stroke.
+          No colon needed: type <b>148.0</b> for 1:48.0, <b>1748</b> for 17:48, <b>22.49</b> for a 50. The app shows what it read as you type.</p>
         <div class="row">
           <label class="field">Group <select name="sex"><option value="girls" ${g.sex !== 'boys' ? 'selected' : ''}>Girls</option><option value="boys" ${g.sex === 'boys' ? 'selected' : ''}>Boys</option></select></label>
           <label class="field">Age group <select name="age">${AGE_GROUPS.map((a) => `<option ${a === (g.age || '15-16') ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
@@ -137,6 +138,7 @@ function renderEdit(view, goals) {
         <div class="save-bar"><button class="btn block" type="submit" id="save-goals">Save</button></div>
       </section>
     </form>`;
+  wireReadAs(view.querySelector('#goals-form'));
   view.querySelector('#goals-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
@@ -156,10 +158,24 @@ function renderEdit(view, goals) {
     const factor = factorRaw ? Number(factorRaw) : null;
     if (factorRaw && !(factor >= 1 && factor <= 1.12)) bad.push('fatigue factor (1.00 to 1.12)');
     const err = view.querySelector('#form-error');
-    if (bad.length) { err.textContent = `Please check: ${bad.join(', ')}. Times look like 1:52.3 or 52.3.`; err.hidden = false; return; }
+    if (bad.length) { err.textContent = `Please check: ${bad.join(', ')}. Type times like 152.3 (1:52.3) or 52.3.`; err.hidden = false; return; }
     upsertEntry(todayISO(), { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString() } });
     location.hash = '#goals';
   });
+}
+
+// Under each time field, what the app read ("= 1:48.0"), as they type.
+function wireReadAs(form) {
+  const show = (input) => {
+    const out = input.nextElementSibling;
+    if (!out?.classList.contains('read-as')) return;
+    const raw = input.value.trim();
+    const sec = parseTime(raw);
+    out.textContent = !raw ? '' : sec === null ? '?' : `= ${formatTime(sec, { dp: raw.includes('.') && /\.\d{2}$/.test(raw) ? 2 : 1 })}`;
+    out.classList.toggle('bad', Boolean(raw) && sec === null);
+  };
+  form.addEventListener('input', (ev) => { if (ev.target.matches('input[type=text]')) show(ev.target); });
+  form.querySelectorAll('input[type=text]').forEach(show);
 }
 
 // ---- a gear page
@@ -321,7 +337,7 @@ function renderLog(view, entries, goals, query) {
         </div>
         <div class="row">
           <label class="field">Reps <input type="number" name="reps" inputmode="numeric" min="1" max="100" placeholder="10"></label>
-          <label class="field">Average time <input type="text" name="avg" inputmode="decimal" placeholder="1:10.5" required></label>
+          <label class="field">Average time <input type="text" name="avg" inputmode="decimal" placeholder="110.5" required><span class="read-as" aria-live="polite"></span></label>
           <label class="field">Rest (s) <input type="number" name="rest" inputmode="numeric" min="0" max="600" placeholder="10"></label>
         </div>
         <label class="field">Note <span class="muted small">(optional)</span><input type="text" name="note" maxlength="80" placeholder="e.g. held it, last two faded"></label>
@@ -348,13 +364,14 @@ function renderLog(view, entries, goals, query) {
         <button type="button" class="link small" data-del="${esc(s.id)}" data-date="${s.date}" aria-label="Delete this set">Delete</button></li>`).join('')}</ul>` : '<p class="muted">Nothing yet.</p>'}
     </section>`;
 
+  wireReadAs(view.querySelector('#set-form'));
   view.querySelector('#set-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
     const avg = parseTime(fd.get('avg'));
     const date = String(fd.get('date'));
     const err = view.querySelector('#form-error');
-    if (!avg || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) { err.textContent = 'Please give the date and the average time (like 1:10.5).'; err.hidden = false; return; }
+    if (!avg || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) { err.textContent = 'Please give the date and the average time (type 110.5 for 1:10.5).'; err.hidden = false; return; }
     const s = {
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       stroke: fd.get('stroke'), dist: Number(fd.get('dist')), gear: fd.get('gear'), avg,

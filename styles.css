@@ -630,3 +630,6 @@ details.fu-cat summary { color: var(--text); }
 .speed-table tr.cont th br { display: none; }
 .zone-table .flag-row td { padding-bottom: 10px; }
 .gear-table .flag-row td { text-align: left; }
+.read-as { display: block; font-size: 11px; color: var(--muted); min-height: 14px; margin-top: 2px; }
+.read-as.bad { color: var(--critical); }
+.times-table td { vertical-align: top; }
