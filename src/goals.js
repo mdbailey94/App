@@ -99,7 +99,9 @@ const setLabel = (s) => `${s.reps ? `${s.reps} × ` : ''}${s.dist} ${STROKES[s.s
 
 // ---- entering times
 
-function renderEdit(view, goals) {
+// The times form's fields: group, age group, factor and the best/goal table
+// with the 1–3% presets. Shared with the coach dashboard.
+export function timesFormHtml(goals) {
   const g = goals || { sex: 'girls', age: '15-16', factor: null, times: {} };
   const fact = fatigueFactor(timesOf(g, 'best'), g.factor);
   const row = (e) => {
@@ -109,20 +111,13 @@ function renderEdit(view, goals) {
       <td><input type="text" name="goal-${e.key}" inputmode="decimal" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"><span class="read-as" aria-live="polite"></span></td></tr>`;
   };
   const group = (stroke) => `<tr class="stroke-row"><th colspan="3">${STROKES[stroke].label}</th></tr>${EVENTS.filter((e) => e.stroke === stroke).map(row).join('')}`;
-  view.innerHTML = `
-    <form id="goals-form" class="stack" novalidate>
-      <section class="card"><p><a href="#goals">‹ Goals</a></p>
-        <h2>Your times</h2>
-        <p class="muted small">Short course yards. Fill in what you have; the gears use the longest race you give for each stroke.
-          No colon needed: type <b>148.0</b> for 1:48.0, <b>1748</b> for 17:48, <b>22.49</b> for a 50. The app shows what it read as you type.</p>
+  return `
         <div class="row">
           <label class="field">Group <select name="sex"><option value="girls" ${g.sex !== 'boys' ? 'selected' : ''}>Girls</option><option value="boys" ${g.sex === 'boys' ? 'selected' : ''}>Boys</option></select></label>
           <label class="field">Age group <select name="age">${AGE_GROUPS.map((a) => `<option ${a === (g.age || '15-16') ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
         </div>
-        <label class="field">Fatigue factor <span class="muted small">(leave blank to work it out from your best 200+ frees; now ${fact.factor.toFixed(3)}${fact.from ? `, from your ${esc(fact.from)}` : ', the usual starting point'})</span>
+        <label class="field">Fatigue factor <span class="muted small">(leave blank to work it out from the best 200+ frees; now ${fact.factor.toFixed(3)}${fact.from && fact.from !== 'set by hand' ? `, from the ${esc(fact.from)}` : fact.from ? '' : ', the usual starting point'})</span>
           <input type="text" name="factor" inputmode="decimal" placeholder="e.g. 1.040" value="${g.factor ? g.factor : ''}"></label>
-      </section>
-      <section class="card">
         <div class="presets-row">
           <span class="muted small">Set goals from best times:</span>
           ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}">${p}% faster</button>`).join('')}
@@ -131,49 +126,71 @@ function renderEdit(view, goals) {
         <div class="table-wrap"><table class="times-table">
           <thead><tr><th>Event</th><th>Best</th><th>Goal</th></tr></thead>
           <tbody>${['free', 'back', 'breast', 'fly', 'im'].map(group).join('')}</tbody>
-        </table></div>
-        <p class="form-error" id="form-error" role="alert" hidden></p>
-        <div class="save-bar"><button class="btn block" type="submit" id="save-goals">Save</button></div>
-      </section>
-    </form>`;
-  wireReadAs(view.querySelector('#goals-form'));
-  // Presets: every goal with a best becomes that much faster (editable after).
-  view.querySelectorAll('[data-faster]').forEach((b) => b.addEventListener('click', () => {
+        </table></div>`;
+}
+
+// Read the times form: { goals } ready to save, or { bad: [what to check] }.
+export function readTimesForm(form) {
+  const fd = new FormData(form);
+  const bad = [];
+  const times = {};
+  for (const e of EVENTS) {
+    const t = {};
+    for (const k of ['best', 'goal']) {
+      const raw = String(fd.get(`${k}-${e.key}`) || '').trim();
+      if (!raw) continue;
+      const sec = parseTime(raw);
+      if (sec === null) bad.push(`${e.label} ${k}`); else t[k] = sec;
+    }
+    if (Object.keys(t).length) times[e.key] = t;
+  }
+  const factorRaw = String(fd.get('factor') || '').trim();
+  const factor = factorRaw ? Number(factorRaw) : null;
+  if (factorRaw && !(factor >= 1 && factor <= 1.12)) bad.push('fatigue factor (1.00 to 1.12)');
+  if (bad.length) return { bad };
+  return { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString() } };
+}
+
+// Wire the presets and the "read as" previews on a times form.
+export function wireTimesForm(form) {
+  wireReadAs(form);
+  form.querySelectorAll('[data-faster]').forEach((b) => b.addEventListener('click', () => {
     const pct = Number(b.dataset.faster);
     let n = 0;
     for (const e of EVENTS) {
-      const best = parseTime(view.querySelector(`[name="best-${e.key}"]`).value);
+      const best = parseTime(form.querySelector(`[name="best-${e.key}"]`).value);
       if (!best) continue;
-      const goal = view.querySelector(`[name="goal-${e.key}"]`);
+      const goal = form.querySelector(`[name="goal-${e.key}"]`);
       goal.value = formatTime(best * (1 - pct / 100), { dp: best < 60 ? 2 : 1 });
       goal.dispatchEvent(new Event('input', { bubbles: true }));
       n++;
     }
-    const note = view.querySelector('#preset-note');
-    note.textContent = n ? `${n} goal${n === 1 ? '' : 's'} set ${pct}% faster than your best. Change any of them.` : 'Enter some best times first.';
+    const note = form.querySelector('#preset-note');
+    note.textContent = n ? `${n} goal${n === 1 ? '' : 's'} set ${pct}% faster than the best. Change any of them.` : 'Enter some best times first.';
     note.hidden = false;
   }));
-  view.querySelector('#goals-form').addEventListener('submit', (ev) => {
+}
+
+function renderEdit(view, goals) {
+  view.innerHTML = `
+    <form id="goals-form" class="stack" novalidate>
+      <section class="card"><p><a href="#goals">‹ Goals</a></p>
+        <h2>Your times</h2>
+        <p class="muted small">Short course yards. Fill in what you have; the gears use the longest race you give for each stroke.
+          No colon needed: type <b>148.0</b> for 1:48.0, <b>1748</b> for 17:48, <b>22.49</b> for a 50. The app shows what it read as you type.</p>
+        ${timesFormHtml(goals)}
+        <p class="form-error" id="form-error" role="alert" hidden></p>
+        <div class="save-bar"><button class="btn block" type="submit" id="save-goals">Save</button></div>
+      </section>
+    </form>`;
+  const form = view.querySelector('#goals-form');
+  wireTimesForm(form);
+  form.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const fd = new FormData(ev.target);
-    const bad = [];
-    const times = {};
-    for (const e of EVENTS) {
-      const t = {};
-      for (const k of ['best', 'goal']) {
-        const raw = String(fd.get(`${k}-${e.key}`) || '').trim();
-        if (!raw) continue;
-        const sec = parseTime(raw);
-        if (sec === null) bad.push(`${e.label} ${k}`); else t[k] = sec;
-      }
-      if (Object.keys(t).length) times[e.key] = t;
-    }
-    const factorRaw = String(fd.get('factor') || '').trim();
-    const factor = factorRaw ? Number(factorRaw) : null;
-    if (factorRaw && !(factor >= 1 && factor <= 1.12)) bad.push('fatigue factor (1.00 to 1.12)');
+    const out = readTimesForm(form);
     const err = view.querySelector('#form-error');
-    if (bad.length) { err.textContent = `Please check: ${bad.join(', ')}. Type times like 152.3 (1:52.3) or 52.3.`; err.hidden = false; return; }
-    upsertEntry(todayISO(), { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString() } });
+    if (out.bad) { err.textContent = `Please check: ${out.bad.join(', ')}. Type times like 152.3 (1:52.3) or 52.3.`; err.hidden = false; return; }
+    upsertEntry(todayISO(), { goals: out.goals });
     location.hash = '#goals';
   });
 }

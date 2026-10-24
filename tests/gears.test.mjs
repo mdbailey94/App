@@ -177,6 +177,9 @@ test('latestGoals and setTrend: the newest goals win; sets by stroke and distanc
     { date: '2026-10-09', sets: [{ stroke: 'free', dist: 100, gear: 'G3', reps: 10, avg: 70.0 }] },
   ];
   assert.equal(latestGoals(entries).times['free-200'].goal, 120);
+  // Set later (by the coach, say) wins over a later date.
+  const coachSet = [...entries, { date: '2026-10-02', goals: { times: { 'free-200': { goal: 110 } }, updatedAt: '2026-10-09T12:00:00Z' } }];
+  assert.equal(latestGoals(coachSet).times['free-200'].goal, 110);
   const g = gearSet(latestGoals(entries), { per: 100 });
   const tr = setTrend(entries, { stroke: 'free', dist: 100 }, g.strokes.free);
   assert.deepEqual(tr.points.map((p) => p.avg), [72, 71, 70]);

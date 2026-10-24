@@ -35,7 +35,9 @@ a **practice group**, in which case each day's check-in is also sent to a Google
   back–breast, breast–free); and from a 50, the speed targets (15 m dive and push, 25 dive and push, flag to
   flag, predicted 100, and the S1–S4 zone 25s from the clean-speed model). The fatigue factor is worked out
   from two best 200+ freestyles or set by hand. Practice times: log a set's average and see the trend (last
-  3 sets) against the gear target. Goals and sets are stored on the day and sent to the coach like a check-in.
+  3 sets) against the gear target (off for now; it becomes test sets). Goals are stored on the day and sent to
+  the coach like a check-in. The coach can set or change a swimmer's times from the dashboard (sheet script
+  version 2): they go into the sheet and the phone picks them up with its next send.
 - **History** — trend charts (readiness, HRV in ms with your normal band, resting HR, wellness,
   daily load), the entry table, export/import.
 

@@ -33,6 +33,8 @@ class Sheet {
         });
         return range;
       },
+      getValue() { return range.getValues()[0][0]; },
+      setValue(v) { return range.setValues([[v]]); },
       setFontWeight() { return range; },
     };
     return range;

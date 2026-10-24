@@ -694,3 +694,20 @@ th { letter-spacing: 0.01em; }
 .goal-tile { gap: 4px; min-height: 68px; justify-content: center; }
 .goal-tile .tile-line:not(.muted) { font-weight: 600; color: var(--accent); }
 .page-title { margin-top: 2px; }
+
+/* Coach: editing a swimmer's times, team gears, the printable gear card. */
+.coach-goals { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.team-gears td.pace { font-size: 15px; }
+.gear-card h2 .muted { font-weight: 400; }
+.print-table { font-size: 13px; }
+.print-table td, .print-table th { padding: 6px 5px; }
+.print-table tr.sub td { color: var(--muted); border-bottom-width: 2px; padding-top: 0; }
+.print-table tr:has(+ tr.sub) td { border-bottom: 0; padding-bottom: 2px; }
+@media print {
+  .tabs, .topbar, .no-print, .send-banner { display: none !important; }
+  body { background: #fff; color: #000; padding: 0; font-size: 12px; }
+  main { max-width: none; padding: 0; }
+  .card { box-shadow: none; border: 0; padding: 0; margin: 0; }
+  .print-table { font-size: 11px; }
+  .print-table td, .print-table th { padding: 3px 4px; }
+}

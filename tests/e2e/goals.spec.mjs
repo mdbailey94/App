@@ -1,6 +1,6 @@
 // The Goals tab: times in, gears out (checked against the coach's Gears
 // sheet), practice times logged against them, and what the coach sees.
-import { test, expect, seed, dayISO, GROUP_CODE, COACH_PASSWORD, sheetFor, ENTRIES } from './helpers.mjs';
+import { test, expect, seed, dayISO, GROUP_CODE, COACH_PASSWORD, sheetFor, ENTRIES, answerAll, finishCheckin } from './helpers.mjs';
 import { buildItems } from '../../src/team.js';
 
 const fill = async (page, name, value) => page.fill(`[name="${name}"]`, value);
@@ -33,7 +33,7 @@ test('goal presets: every goal with a best becomes 1, 2 or 3% faster; the stroke
   await expect(page.locator('[name="goal-free-50"]')).toHaveValue('23.03');
   await expect(page.locator('[name="goal-free-200"]')).toHaveValue('1:57.6');
   await expect(page.locator('[name="goal-free-100"]')).toHaveValue('');
-  await expect(page.locator('#preset-note')).toHaveText('2 goals set 2% faster than your best. Change any of them.');
+  await expect(page.locator('#preset-note')).toHaveText('2 goals set 2% faster than the best. Change any of them.');
   await page.click('[data-faster="3"]');
   await expect(page.locator('[name="goal-free-200"]')).toHaveValue('1:56.4');
   await page.click('#save-goals');
@@ -131,8 +131,55 @@ test('coach: a swimmer’s goals, gears and practice-time trend on their page', 
   await page.goto('/coach.html#swimmers/pia%20novak');
   const card = page.locator('#swimmer-goals');
   await expect(card).toContainText('Fatigue factor 1.050');
-  const free = card.locator('tbody tr', { hasText: 'Free' });
+  const free = card.locator('.gear-table tbody tr', { hasText: 'Free' });
   await expect(free.locator('td')).toHaveText(['200 free 2:00.0', '1:15.4', '1:10.5', '1:06.0', '1:02.7', '1:00.0']);
-  await expect(card.locator('tbody tr', { hasText: 'Fly' }).locator('td').first()).toContainText('est. 200 fly');
+  await expect(card.locator('.gear-table tbody tr', { hasText: 'Fly' }).locator('td').first()).toContainText('est. 200 fly');
   await expect(card).not.toContainText('sets logged'); // set logging is off for now
+
+  // The coach changes the 200 free goal to 1:56.0: the gears follow, saved to the sheet.
+  await page.click('#edit-goals');
+  await expect(page.locator('#goals-form')).toBeVisible();
+  await expect(page.locator('[name="goal-free-200"]')).toHaveValue('2:00.0');
+  await fill(page, 'goal-free-200', '156.0');
+  await page.click('#save-goals');
+  await expect(card).toContainText('by you');
+  await expect(card.locator('.gear-table tbody tr', { hasText: 'Free' }).locator('td')).toHaveText(['200 free 1:56.0', '1:13.0', '1:08.3', '1:03.9', '1:00.7', '58.1']);
+  const sheet = await request.post(sheetFor(testInfo).url, { headers: { 'Content-Type': 'text/plain' }, data: JSON.stringify({ action: 'dashboard', coachPassword: COACH_PASSWORD }) });
+  const rows = (await sheet.json()).rows.filter((r) => r.athlete === 'Pia Novak' && r.entry.goals);
+  expect(rows.some((r) => r.entry.goals.setBy === 'coach' && r.entry.goals.times['free-200'].goal === 116)).toBe(true);
+
+  // Team gears: everyone's pace at a gear, fastest first; and the printable card.
+  await page.goto('/coach.html#swimmers?stroke=free&gear=G3&per=100');
+  const team = page.locator('#team-gears');
+  await expect(team.locator('tbody tr').first()).toContainText('Pia Novak');
+  await expect(team.locator('tbody tr').first().locator('td.pace')).toHaveText('1:08.3');
+  await page.click('#team-gears .seg a:has-text("G5")');
+  await expect(team.locator('tbody tr').first().locator('td.pace')).toHaveText('1:00.7');
+  await page.goto('/coach.html#gearcard/pia%20novak');
+  await expect(page.locator('.gear-card h2')).toContainText('Pia Novak');
+  await expect(page.locator('.gear-card .print-table').first().locator('tbody tr').first()).toContainText('Free');
+  await expect(page.locator('#print-card')).toBeVisible();
+  await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Swimmers');
+
+  // Settings says the sheet script is current.
+  await page.goto('/coach.html#settings');
+  await expect(page.locator('#script-version')).toContainText('Sheet script version 2');
+});
+
+test('a swimmer’s phone picks up goal times the coach set, with its next send', async ({ page, request }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await seed(page, { hash: '#today' });
+  await page.evaluate(([k, t]) => localStorage.setItem(k, JSON.stringify(t)), ['athlete-readiness/team/v1', { url: sheet.url, group: GROUP_CODE, athlete: 'Lee Park', joinedAt: '2026-10-01T00:00:00Z' }]);
+  const res = await request.post(sheet.url, { headers: { 'Content-Type': 'text/plain' }, data: JSON.stringify({ action: 'setGoals', coachPassword: COACH_PASSWORD, athlete: 'Lee Park', goals: { sex: 'boys', age: '15-16', factor: 1.05, times: { 'free-200': { goal: 120 } } } }) });
+  expect((await res.json()).ok).toBe(true);
+  // Nothing to send yet, so nothing comes back; a check-in sends, and the goals ride the reply.
+  await page.goto('/#goals');
+  await expect(page.locator('#setup-goals')).toBeVisible();
+  await page.goto('/#morning');
+  await answerAll(page);
+  await page.click('#save');
+  await finishCheckin(page);
+  await expect.poll(async () => page.evaluate((k) => (JSON.parse(localStorage.getItem(k)) || []).some((e) => e.goals?.setBy === 'coach'), 'athlete-readiness/entries/v1')).toBe(true);
+  await page.goto('/#goals');
+  await expect(page.locator('.goal-tile', { hasText: 'Freestyle' })).toContainText('G3 1:10.5 /100');
 });

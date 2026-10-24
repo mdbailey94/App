@@ -13,8 +13,8 @@ import {
   swimmerInsights, teamTrend, trainingCompare, trendSummary,
 } from './group.js';
 import { followUps, followUpsFor, hardButPoor } from './followups.js';
-import { goalsSummary } from './goals.js';
-import { formatTime, MAIN_GEARS } from './gears.js';
+import { goalsSummary, readTimesForm, timesFormHtml, wireTimesForm } from './goals.js';
+import { formatTime, gearSet, latestGoals, MAIN_GEARS, STROKES } from './gears.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
@@ -122,14 +122,14 @@ function signOut() {
 
 // ------------------------------------------------------------------ router
 
-const SCREENS = { group: renderGroup, watchlist: renderWatchlist, data: renderData, swimmers: renderSwimmers, messages: renderMessages, settings: renderSettings };
+const SCREENS = { group: renderGroup, watchlist: renderWatchlist, data: renderData, swimmers: renderSwimmers, gearcard: renderGearCard, messages: renderMessages, settings: renderSettings };
 
 function route() {
   const [path, qs] = (location.hash.slice(1) || 'group').split('?');
   const [name, arg] = path.split('/');
   const screen = name === 'history' ? 'data' : SCREENS[name] ? name : 'group'; // #history: the tab's old name
   const query = new URLSearchParams(qs || '');
-  tabs.querySelectorAll('a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === screen));
+  tabs.querySelectorAll('a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === (screen === 'gearcard' ? 'swimmers' : screen)));
   window.scrollTo(0, 0);
 
   const coach = loadCoach();
@@ -732,31 +732,143 @@ function moreHtml(rows, date, span) {
 // ---------------------------------------------------------------- swimmers
 
 // A swimmer's goals and gears (Goals tab in their app): G2–G6 per 100 for
-// each stroke they gave a time for, and the trend of the set they log most.
+// each stroke they have a time for, and a form to set or change the times
+// from here (they reach the phone with its next send; needs sheet script 2).
 function goalsCard(a) {
   const g = goalsSummary(a.entries);
-  if (!g) return '';
   const fp = (v) => formatTime(v, { dp: 1 });
-  const t = g.trend;
-  const latest = t?.points.at(-1);
-  const target = latest?.gear && t.targets[latest.gear];
   return `
     <section class="card" id="swimmer-goals">
-      <h3>Goals and gears</h3>
-      <p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times.</p>
+      <div class="card-head"><h3>Goals and gears</h3>
+        <span><a class="btn secondary small-btn" href="#gearcard/${encodeURIComponent(a.key)}" ${g?.rows.length ? '' : 'hidden'}>Gear card</a>
+        <button type="button" class="btn secondary small-btn" id="edit-goals">${g ? 'Edit times' : 'Enter times'}</button></span></div>
+      ${g ? `<p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}${g.goals.setBy === 'coach' ? ' by you' : ''}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from && g.factor.from !== 'set by hand' ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times.</p>
       ${g.rows.length ? `<div class="table-wrap"><table class="group-table gear-table">
         <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
         <tbody>${g.rows.map((r) => `<tr><th scope="row">${r.label}</th><td class="small">${r.reference.estimated ? 'est. ' : ''}${esc(r.reference.event.label)} ${fp(r.reference.seconds)}</td>${MAIN_GEARS.map((k) => `<td>${fp(r.paces[k])}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table></div>` : '<p class="muted">Goal times set, but none long enough for gears yet.</p>'}
-      ${t?.points.length ? `<h4>Practice times: ${t.dist} ${esc(t.stroke)}</h4>
-      <p class="small">${t.points.length} set${t.points.length === 1 ? '' : 's'} logged; last 3 average <b>${fp(latest.rolling)}</b>${target ? ` vs ${latest.gear} target ${fp(target)}` : ''}.</p>
-      <div data-c="goal-trend"></div>` : ''}
+      </table></div>` : '<p class="muted">Goal times set, but none long enough for gears yet.</p>'}`
+    : '<p class="muted">No goal times yet. They can enter them on the Goals tab, or you can here.</p>'}
+      <form id="goals-form" class="stack coach-goals" hidden novalidate>
+        <p class="muted small">Short course yards. No colon needed: 148.0 is 1:48.0. Saved to the sheet; ${esc(first(a.name))}’s phone picks them up with its next send.</p>
+        ${timesFormHtml(g?.goals)}
+        <p class="form-error" id="goals-error" role="alert" hidden></p>
+        <div class="actions"><button class="btn" type="submit" id="save-goals">Save times</button><button class="btn secondary" type="button" id="cancel-goals">Cancel</button></div>
+      </form>
     </section>`;
+}
+
+function wireGoalsCard(view, coach, a) {
+  const card = view.querySelector('#swimmer-goals');
+  const form = card.querySelector('#goals-form');
+  wireTimesForm(form);
+  card.querySelector('#edit-goals').addEventListener('click', () => { form.hidden = !form.hidden; if (!form.hidden) form.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  card.querySelector('#cancel-goals').addEventListener('click', () => { form.hidden = true; });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = form.querySelector('#goals-error');
+    err.hidden = true;
+    const out = readTimesForm(form);
+    if (out.bad) { err.textContent = `Please check: ${out.bad.join(', ')}.`; err.hidden = false; return; }
+    const btn = form.querySelector('#save-goals');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const date = todayISO();
+      const res = await callSheet(coach.url, { action: 'setGoals', coachPassword: coach.password, athlete: a.name, date, goals: out.goals });
+      // Put it in the loaded rows too, so the page updates without a refetch.
+      if (cache) {
+        const row = cache.rows.find((r) => r.athlete.toLowerCase() === a.key && r.date === date);
+        if (row) row.entry = { ...row.entry, goals: res.goals };
+        else cache.rows.push({ athlete: a.name, date, entry: { date, goals: res.goals } });
+      }
+      route();
+    } catch (e) {
+      err.textContent = /Unknown action/.test(e.message)
+        ? 'Your sheet script is older than this dashboard. Open Settings, copy the script into Apps Script, then Deploy → Manage deployments → Edit → New version.'
+        : e.message;
+      err.hidden = false;
+      btn.disabled = false; btn.textContent = 'Save times';
+    }
+  });
+}
+
+// Everyone's pace at one gear, for writing a set: pick the stroke and gear.
+function teamGearsCard(rows, query) {
+  const athletes = groupByAthlete(rows);
+  const strokes = ['free', 'back', 'breast', 'fly', 'im'];
+  const stroke = strokes.includes(query.get('stroke')) ? query.get('stroke') : 'free';
+  const gear = MAIN_GEARS.includes(query.get('gear')) ? query.get('gear') : 'G3';
+  const per = [50, 100].includes(Number(query.get('per'))) ? Number(query.get('per')) : 100;
+  const fp = (v) => formatTime(v, { dp: 1 });
+  const list = [];
+  const none = [];
+  for (const a of athletes.values()) {
+    const goals = latestGoals(a.entries);
+    const set = goals && gearSet(goals, { use: 'goal', per });
+    const g = set && (stroke === 'im' ? set.im : set.strokes[stroke]);
+    if (g) list.push({ name: a.name, key: a.key, pace: g.gears.find((x) => x.key === gear).pace, ref: g.reference });
+    else none.push(a.name);
+  }
+  list.sort((x, y) => x.pace - y.pace || x.name.localeCompare(y.name));
+  const q = (patch) => `#swimmers?${new URLSearchParams({ stroke, gear, per, ...patch })}`;
+  return `
+    <section class="card" id="team-gears">
+      <h3>Team gears</h3>
+      <p class="muted small">Everyone’s pace at one gear, from their goal times, fastest first. For writing a set.</p>
+      <div class="toggles">
+        <span class="seg" role="group" aria-label="Stroke">${strokes.map((s) => `<a href="${q({ stroke: s })}" ${s === stroke ? 'aria-current="true"' : ''}>${STROKES[s].short}</a>`).join('')}</span>
+        <span class="seg" role="group" aria-label="Gear">${MAIN_GEARS.map((k) => `<a href="${q({ gear: k })}" ${k === gear ? 'aria-current="true"' : ''}>${k}</a>`).join('')}</span>
+        <span class="seg" role="group" aria-label="Per">${[50, 100].map((p) => `<a href="${q({ per: p })}" ${p === per ? 'aria-current="true"' : ''}>/${p}</a>`).join('')}</span>
+      </div>
+      ${list.length ? `<div class="table-wrap"><table class="group-table gear-table team-gears">
+        <thead><tr><th>Swimmer</th><th>${gear} /${per}</th><th>From</th></tr></thead>
+        <tbody>${list.map((r) => `<tr><td class="who">${athleteLink(r.key, r.name)}</td><td class="pace"><b>${fp(r.pace)}</b></td><td class="small muted">${r.ref.estimated ? 'est. ' : ''}${esc(r.ref.event.label)} ${fp(r.ref.seconds)}</td></tr>`).join('')}</tbody>
+      </table></div>` : '<p class="muted">Nobody has a goal time for this stroke yet.</p>'}
+      ${none.length ? `<p class="muted small">No ${esc(STROKES[stroke].short.toLowerCase())} time yet: ${none.map(esc).join(', ')}.</p>` : ''}
+    </section>`;
+}
+
+// A printable gear card for one swimmer: every stroke's G2–G6 per 100 and
+// per 50, the IM strokes as 100s with the switches, and the speed targets.
+function renderGearCard({ rows, arg }) {
+  const a = groupByAthlete(rows).get(arg);
+  const goals = a && latestGoals(a.entries);
+  if (!goals) { view.innerHTML = '<section class="card"><p>No goal times for this swimmer.</p><a href="#swimmers">‹ Swimmers</a></section>'; return; }
+  const per100 = gearSet(goals, { use: 'goal', per: 100 });
+  const per50 = gearSet(goals, { use: 'goal', per: 50 });
+  const fp = (v) => formatTime(v, { dp: 1 });
+  const f2 = (v) => formatTime(v, { dp: 2 });
+  const strokeRows = ['free', 'back', 'breast', 'fly'].filter((s) => per100.strokes[s]);
+  view.innerHTML = `
+    <section class="card gear-card">
+      <div class="card-head no-print"><a href="#swimmers/${encodeURIComponent(a.key)}">‹ ${esc(a.name)}</a><button type="button" class="btn secondary small-btn" id="print-card">Print / save PDF</button></div>
+      <h2>${esc(a.name)} <span class="muted small">gears · ${esc(shortDate(todayISO()))}</span></h2>
+      <p class="muted small">Short course yards, from goal times. Fatigue factor ${per100.factor.factor.toFixed(3)}. G2 4-hour pace · G3 1-hour · G4 15-minute · G5 5-minute · G6 2-minute.</p>
+      ${strokeRows.length ? `<table class="gear-table print-table">
+        <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
+        <tbody>${strokeRows.flatMap((s) => [
+    `<tr><th scope="row" rowspan="2">${STROKES[s].short}</th><td class="small" rowspan="2">${per100.strokes[s].reference.estimated ? 'est. ' : ''}${esc(per100.strokes[s].reference.event.label)} ${fp(per100.strokes[s].reference.seconds)}</td>${MAIN_GEARS.map((k) => `<td><b>${fp(per100.strokes[s].gears.find((x) => x.key === k).pace)}</b> <span class="th-sub">/100</span></td>`).join('')}</tr>`,
+    `<tr class="sub">${MAIN_GEARS.map((k) => `<td>${fp(per50.strokes[s].gears.find((x) => x.key === k).pace)} <span class="th-sub">/50</span></td>`).join('')}</tr>`,
+  ]).join('')}</tbody></table>` : ''}
+      ${per100.im ? `<h3>IM</h3>
+      <p class="muted small">${per100.im.reference.estimated ? 'Estimated 400 IM' : 'From the 400 IM'} ${fp(per100.im.reference.seconds)}. IM pace per 100, then each stroke’s 100 inside a 400 IM, and the switch 50s.</p>
+      <table class="gear-table print-table">
+        <thead><tr><th>Gear</th><th>IM /100</th><th>Fly</th><th>Back</th><th>Breast</th><th>Free</th><th>Fly–back 50</th><th>Back–breast 50</th><th>Breast–free 50</th></tr></thead>
+        <tbody>${per100.im.gears.filter((x) => MAIN_GEARS.includes(x.key)).map((x) => { const sp = x.splits(100); return `<tr><th scope="row">${x.key}</th><td><b>${fp(x.pace)}</b></td>${['fly', 'back', 'breast', 'free'].map((st) => `<td>${fp(sp[st].time)}</td>`).join('')}<td>${fp(x.switches.flyBack.fifty)}</td><td>${fp(x.switches.backBreast.fifty)}</td><td>${fp(x.switches.breastFree.fifty)}</td></tr>`; }).join('')}</tbody>
+      </table>` : ''}
+      ${Object.keys(per100.speed).length ? `<h3>Speed</h3>
+      <table class="gear-table print-table">
+        <thead><tr><th>Stroke</th><th>50</th><th>15 m dive</th><th>25 dive</th><th>15 m push</th><th>25 push</th><th>S2 25</th><th>S3 25</th><th>S4 25</th></tr></thead>
+        <tbody>${Object.entries(per100.speed).map(([st, sp]) => `<tr><th scope="row">${STROKES[st].short}</th><td>${f2(sp.fifty)}</td><td>${f2(sp.dive15.fromStart)}</td><td>${f2(sp.dive25.fromStart)}</td><td>${f2(sp.push15)}</td><td>${f2(sp.push25)}</td><td>${f2(sp.zones.S2)}</td><td>${f2(sp.zones.S3)}</td><td>${f2(sp.zones.S4)}</td></tr>`).join('')}</tbody>
+      </table>
+      <p class="muted small">Dives from the start signal; pushes from feet leaving the wall. S2 50 pace, S3 100 pace, S4 200 pace.</p>` : ''}
+    </section>`;
+  view.querySelector('#print-card').addEventListener('click', () => window.print());
 }
 
 function renderSwimmers(ctx) {
   if (ctx.arg) { renderSwimmer(ctx); return; }
   const list = roster(ctx.rows, todayISO());
+  const gearsCard = teamGearsCard(ctx.rows, ctx.query);
   view.innerHTML = `
     <section class="card">
       <h2>Swimmers</h2>
@@ -768,10 +880,11 @@ function renderSwimmers(ctx) {
             <span class="muted small">${s.checkins7}/7 days${s.avg7 !== null ? ` · avg ${s.avg7}` : ''} · last ${esc(shortDate(s.lastDate))}</span></span>
         </a></li>`).join('')}</ul>` : '<p class="muted">Nobody has checked in yet. Invite your swimmers from the Messages tab.</p>'}
       ${refreshLine('#swimmers')}
-    </section>`;
+    </section>
+    ${gearsCard}`;
 }
 
-function renderSwimmer({ rows, arg, query }) {
+function renderSwimmer({ coach, rows, arg, query }) {
   const athletes = groupByAthlete(rows);
   const a = athletes.get(arg);
   if (!a) {
@@ -872,12 +985,7 @@ function renderSwimmer({ rows, arg, query }) {
         effort (1–10) for morning practice · doubles, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
   wirePicker(view.querySelector('#charts'), athletes, chart, { where: 'swimmer', base: `#swimmers/${encodeURIComponent(a.key)}` });
-  const gt = goalsSummary(a.entries)?.trend;
-  const gtEl = view.querySelector('[data-c="goal-trend"]');
-  if (gt?.points.length && gtEl) {
-    requestAnimationFrame(() => lineChart(gtEl, gt.points.map((p) => ({ x: dayIndex(p.date), y: p.avg, y2: p.rolling, label: `${shortDate(p.date)}${p.gear ? ` · ${p.gear}` : ''}` })),
-      { yFormat: (v) => formatTime(v, { dp: 1 }), tip: (d) => `${esc(d.label)}: <b>${formatTime(d.y, { dp: 1 })}</b>` }));
-  }
+  wireGoalsCard(view, coach, a);
   view.querySelector('#more-days')?.addEventListener('click', (ev) => {
     view.querySelectorAll('.more-row').forEach((r) => { r.hidden = false; });
     ev.target.remove();
@@ -960,6 +1068,8 @@ function renderSettings(coach) {
         <b>Today</b> tab lists today’s check-ins, lowest readiness first.</p>
       <p class="muted small">If you edit the script, use <b>Deploy → Manage deployments → Edit → New version</b>.
         A <i>new deployment</i> changes the link, and swimmers’ check-ins would stop arriving.</p>
+      <p class="small" id="script-version">Checking the sheet script…</p>
+      <button class="btn secondary small-btn" id="copy-script-settings" type="button">Copy the latest script</button>
     </section>
 
     <section class="card">
@@ -988,7 +1098,21 @@ function renderSettings(coach) {
     }
   });
   view.querySelector('#signout').onclick = signOut;
+  // Which version of the script the sheet runs; the dashboard needs 2 for goal times.
+  const line = view.querySelector('#script-version');
+  callSheet(coach.url, { action: 'ping', coachPassword: coach.password }).then((r) => {
+    const v = r.version || 1;
+    line.innerHTML = v >= SCRIPT_NEEDED ? `${statusBadge({ level: 'good', label: `Sheet script version ${v}` })} Up to date.`
+      : `${statusBadge({ level: 'warning', label: `Sheet script version ${v}` })} This dashboard needs version ${SCRIPT_NEEDED} to set swimmers’ goal times. Copy the latest script below, paste it over the old one in Apps Script (keep your GROUP_CODE and COACH_PASSWORD), then Deploy → Manage deployments → Edit → New version.`;
+  }).catch((e) => { line.textContent = `Couldn’t reach the sheet: ${e.message}`; });
+  view.querySelector('#copy-script-settings').addEventListener('click', async (ev) => {
+    const text = await (await fetch('apps-script/Code.gs')).text();
+    if (await shareOrCopy(text) === 'copied') ev.target.textContent = 'Copied';
+  });
 }
+
+// The sheet script version this dashboard was built for.
+const SCRIPT_NEEDED = 2;
 
 // ------------------------------------------------------------------- login
 

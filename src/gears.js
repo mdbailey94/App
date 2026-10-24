@@ -331,7 +331,8 @@ export function speedTargets(t50, sex = 'boys', stroke = 'free') {
 
 // goals: { sex, age, factor (number | null = worked out), times: { 'free-200':
 // { best, goal } }, updatedAt }. The latest entry carrying `goals` wins.
-export const latestGoals = (entries) => [...entries].sort((a, b) => b.date.localeCompare(a.date)).find((e) => e.goals)?.goals ?? null;
+export const latestGoals = (entries) => entries.filter((e) => e.goals)
+  .sort((a, b) => String(b.goals.updatedAt || '').localeCompare(String(a.goals.updatedAt || '')) || b.date.localeCompare(a.date))[0]?.goals ?? null;
 
 // Which times feed the gears: 'goal' or 'best'.
 export const timesOf = (goals, use = 'goal') => Object.fromEntries(Object.entries(goals?.times || {}).map(([k, t]) => [k, t?.[use] > 0 ? t[use] : null]).filter(([, v]) => v));

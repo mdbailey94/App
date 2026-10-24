@@ -42,7 +42,7 @@ test('submit creates the sheets, writes rows and updates by athlete + date', () 
     { entry: entry('2026-09-26'), summary },
     { entry: entry('2026-09-27'), summary },
   ] });
-  assert.deepEqual(r1, { ok: true, saved: ['2026-09-26', '2026-09-27'] });
+  assert.deepEqual(r1, { ok: true, saved: ['2026-09-26', '2026-09-27'], version: 2 });
   const sh = app.sheets.get('Entries');
   assert.equal(sh.rows.length, 3); // header + 2
   assert.ok(app.sheets.get('Today').formulas.A1.startsWith('=QUERY('));
@@ -110,4 +110,38 @@ test('dashboard needs the coach password and returns recent entries', () => {
   assert.equal(d.ok, true);
   assert.deepEqual(d.rows.map((r) => [r.athlete, r.date]), [['Sam', today]]);
   assert.equal(d.rows[0].entry.hrv.rmssd, 88.123);
+});
+
+test('goal times: the coach sets them, a phone that resends keeps them, and every send returns the newest', () => {
+  const app = loadAppsScript();
+  const today = new Date().toISOString().slice(0, 10);
+  app.post({ action: 'submit', group: 'EAGLES', athlete: 'Sam Lee', items: [{ entry: entry(today), summary }] });
+  // Only the coach can set goals.
+  assert.equal(app.post({ action: 'setGoals', coachPassword: 'nope', athlete: 'Sam Lee', goals: { times: {} } }).ok, false);
+  assert.equal(app.post({ action: 'setGoals', coachPassword: 'secret', athlete: 'Sam Lee' }).ok, false);
+  const set = app.post({ action: 'setGoals', coachPassword: 'secret', athlete: 'sam lee', date: today, goals: { sex: 'boys', age: '15-16', factor: 1.05, times: { 'free-200': { goal: 120, best: 125 }, 'junk key': { goal: 1 }, 'free-50': { goal: -1 } } } });
+  assert.equal(set.ok, true);
+  assert.equal(set.goals.setBy, 'coach');
+  assert.deepEqual(Object.keys(set.goals.times), ['free-200']);
+  const sh = app.sheets.get('Entries');
+  assert.equal(sh.rows.length, 2); // merged into the day's row, not a new one
+  const data = () => JSON.parse(sh.rows[1][sh.rows[0].indexOf('Data')]);
+  assert.equal(data().goals.times['free-200'].goal, 120);
+  assert.equal(data().wellness.energy, 4); // the check-in is still there
+  // The phone resends the day without goals (it hasn't heard yet): the coach's goals survive, and come back.
+  const re = app.post({ action: 'submit', group: 'EAGLES', athlete: 'Sam Lee', items: [{ entry: entry(today, { notes: 'later' }), summary }] });
+  assert.equal(data().notes, 'later');
+  assert.equal(data().goals.times['free-200'].goal, 120);
+  assert.equal(re.goals.times['free-200'].goal, 120);
+  // The swimmer sets newer goals on their phone: those win.
+  const newer = { sex: 'boys', age: '15-16', factor: null, times: { 'free-200': { goal: 118 } }, updatedAt: new Date(Date.now() + 1000).toISOString() };
+  const r3 = app.post({ action: 'submit', group: 'EAGLES', athlete: 'Sam Lee', items: [{ entry: entry(today, { goals: newer }), summary }] });
+  assert.equal(data().goals.times['free-200'].goal, 118);
+  assert.equal(r3.goals.times['free-200'].goal, 118);
+  // No row for the day yet: setGoals makes one.
+  const r4 = app.post({ action: 'setGoals', coachPassword: 'secret', athlete: 'Ana', goals: { times: { 'back-200': { goal: 130 } } } });
+  assert.equal(r4.ok, true);
+  assert.equal(sh.rows.length, 3);
+  assert.equal(app.post({ action: 'dashboard', coachPassword: 'secret' }).rows.find((r) => r.athlete === 'Ana').entry.goals.times['back-200'].goal, 130);
+  assert.equal(app.post({ action: 'ping', coachPassword: 'secret' }).version, 2);
 });
