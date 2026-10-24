@@ -75,7 +75,7 @@ test('logging yesterday right after the check-in, and the streak grows', async (
 test('Workouts tab: today and yesterday first, then earlier days with their status', async ({ page }) => {
   await page.clock.setFixedTime(atDay(WEEK.wed));
   await seed(page, { entries: [{ date: WEEK.sun, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } }, { date: WEEK.tue, workouts: LOGGED }], hash: '#workouts' });
-  await expect(page.locator('.tabs a')).toHaveText(['Today', 'Check-in', 'Workouts', 'History', 'Team']);
+  await expect(page.locator('.tabs a')).toHaveText(['Today', 'Check-in', 'Workouts', 'Goals', 'History', 'Team']);
   await expect(page.locator('.tabs a[aria-current]')).toHaveText('Workouts');
 
   const days = page.locator('.workout-day');
@@ -88,7 +88,7 @@ test('Workouts tab: today and yesterday first, then earlier days with their stat
   // An older check-in reported the day before it (day 4): shown as such.
   const rows = page.locator('.workout-list li');
   await expect(rows).toHaveCount(19);
-  await expect(rows.nth(0).locator('.wk-status')).toHaveText('Not logged'); // Monday
+  await expect(rows.nth(0).locator('.wk-status')).toHaveText('Fill in'); // Monday, recent: invites a tap
   await expect(rows.nth(1).locator('.wk-status')).toHaveText('Off (Sunday)');
   await expect(rows.nth(2).locator('.wk-status')).toHaveText('From check-in'); // Saturday, reported Sunday
 });

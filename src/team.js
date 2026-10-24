@@ -1,7 +1,8 @@
 // Talking to the group's Google Sheet (see apps-script/Code.gs).
 
 import { assessDay, sessionLoad, wellnessScore, withWorkouts } from './readiness.js';
-import { loadEntries, loadTeam, markSynced, saveTeam } from './storage.js';
+import { loadEntries, loadTeam, markSynced, saveTeam, todayISO, upsertEntry } from './storage.js';
+import { latestGoals } from './gears.js';
 
 // Apps Script web apps accept a plain-text POST without a CORS preflight and
 // answer with JSON after a redirect.
@@ -63,6 +64,16 @@ export function buildItems(allEntries, entries) {
   });
 }
 
+// Goal times the coach set from the dashboard come back with each send:
+// keep them when they are newer than what this phone has.
+export function adoptGoals(goals) {
+  if (!goals?.times || !goals.updatedAt) return false;
+  const mine = latestGoals(loadEntries());
+  if (mine && String(mine.updatedAt || '') >= goals.updatedAt) return false;
+  upsertEntry(todayISO(), { goals });
+  return true;
+}
+
 let inflight = null;
 
 // Send anything new or edited. Safe to call often: does nothing when there is
@@ -85,6 +96,7 @@ export function syncPending(opts = {}) {
           action: 'submit', group: team.group, athlete: team.athlete, items: items.slice(i, i + 100),
         }, opts);
         markSynced(res.saved || [], stamp);
+        if (res.goals) adoptGoals(res.goals);
       }
       saveTeam({ ...loadTeam(), lastSync: stamp, lastError: null, failingSince: null });
       return { state: 'synced' };

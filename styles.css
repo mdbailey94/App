@@ -595,3 +595,144 @@ details.fu-cat summary { color: var(--text); }
   .data-table .col-latest { display: none; }
   .data-table td, .data-table th { padding-left: 4px; padding-right: 4px; }
 }
+
+/* Goals tab: gear pages, times form, practice-time trend. */
+.goal-tiles { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 700px) { .goal-tiles { grid-template-columns: repeat(3, 1fr); } }
+.goal-tile { text-decoration: none; align-items: flex-start; text-align: left; padding: 12px; }
+.goal-tile .stat-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.goal-tile .tile-line { font-size: 13px; }
+.back-link { display: inline-block; font-size: 13px; margin-bottom: 8px; }
+/* One row of stroke pills that scrolls sideways on a phone. */
+.stroke-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px 10px; padding: 2px 16px; -webkit-overflow-scrolling: touch; }
+.stroke-strip::-webkit-scrollbar { display: none; }
+.stroke-strip a { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-size: 14px; font-weight: 500; }
+.stroke-strip a[aria-current] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.page-title h2 { margin: 0; }
+.page-title p { margin: 2px 0 0; }
+.toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 4px; }
+.gear-page h2 { margin: 0; }
+.presets-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.gear-table { font-size: 14px; }
+.gear-table th, .gear-table td { padding: 8px 6px; }
+.gear-table tbody th { text-align: left; font-weight: 500; }
+.gear-table td.pace { font-size: 16px; }
+.gear-table tr.half { color: var(--muted); font-size: 13px; }
+.gear-table tr.half td.pace { font-size: 13px; }
+.im-strokes td, .im-switches td { white-space: nowrap; }
+.speed-table th { width: 32%; }
+.speed-card h3 .muted { font-weight: 400; }
+.zone-table td.small, .zone-table th .th-sub { white-space: normal; }
+.times-table input { width: 100%; min-width: 72px; font: inherit; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.times-table tr.stroke-row th { background: var(--bg); font-weight: 600; color: var(--text); padding-top: 12px; }
+.times-table th, .times-table td { padding: 4px 4px; }
+.set-list li { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 14px; }
+.set-list .link.small { font-size: 12px; }
+.row.compact { gap: 6px; }
+.row.compact select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.targets .target { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg); margin: 2px 0; }
+.targets .target.on { background: var(--accent); color: var(--accent-ink); }
+.use-seg, .per-seg { flex-shrink: 0; }
+.speed-table th { width: 60%; }
+.speed-table tr.cont th { padding-top: 0; }
+.speed-table tr.cont th br { display: none; }
+.zone-table .flag-row td { padding-bottom: 10px; }
+.gear-table .flag-row td { text-align: left; }
+.read-as { display: block; font-size: 11px; color: var(--muted); min-height: 14px; margin-top: 2px; }
+.read-as.bad { color: var(--critical); }
+.times-table td { vertical-align: top; }
+
+/* ---------- polish, round two: one type scale, roomier touch targets, calmer secondary buttons */
+:root { --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px; --fs: 16px; --fs-lg: 18px; --fs-xl: 24px; --fs-2xl: 30px; --space: 16px; }
+body { line-height: 1.5; }
+h2 { font-size: var(--fs-xl); letter-spacing: -0.02em; }
+h3 { font-size: 17px; }
+h4 { font-size: var(--fs-md); }
+.card { padding: 18px 16px; }
+.card > h2:first-child { margin-bottom: 6px; }
+.muted.small, .small.muted, p.muted.small { line-height: 1.45; }
+
+/* Secondary buttons get a soft fill so they read as buttons, not outlines. */
+.btn.secondary { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+.btn.secondary:active { filter: brightness(0.96); }
+.btn.danger { background: transparent; }
+.link { color: var(--accent); }
+
+/* Inputs: a clear focus ring, and a little more height for thumbs. */
+.field input, .field select, .field textarea, .copy-field, .times-table input {
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .times-table input:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.times-table input { min-height: 42px; font-size: var(--fs); }
+.effort-row span { height: 40px; }
+.chips.yn span, .chips.meet-level span, .chips.reasons span { height: 42px; }
+.stroke-strip a { padding: 8px 15px; min-height: 38px; display: inline-flex; align-items: center; }
+.seg a { padding: 6px 12px; min-height: 32px; display: inline-flex; align-items: center; }
+.tabs a[aria-current]::before { width: 58px; height: 32px; }
+
+/* Number tiles: a touch more room. */
+.stats > div { padding: 12px 6px; }
+.stat-num { font-size: 24px; letter-spacing: -0.01em; }
+.stat-label { font-size: var(--fs-xs); margin-top: 2px; display: block; }
+
+/* Today: the last 7 days' load as bars under the numbers. */
+.load-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 56px; margin: 10px 2px 2px; }
+.load-day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.load-bar { display: block; width: 100%; max-width: 28px; min-height: 2px; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.load-day.today .load-bar { background: var(--accent); }
+.load-lbl { font-size: 10px; color: var(--muted); line-height: 1; }
+.load-day.today .load-lbl { color: var(--accent); font-weight: 700; }
+
+/* Workouts: an unlogged recent day invites a tap. */
+.workout-list .wk-none { border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); background: transparent; color: var(--accent); }
+
+/* Tables: softer header, tighter rows on phones. */
+th { letter-spacing: 0.01em; }
+.table-wrap { margin: 0 -4px; padding: 0 4px; }
+.goal-tile { gap: 4px; min-height: 68px; justify-content: center; }
+.goal-tile .tile-line:not(.muted) { font-weight: 600; color: var(--accent); }
+.page-title { margin-top: 2px; }
+
+/* Coach: editing a swimmer's times, team gears, the printable gear card. */
+.coach-goals { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.team-gears td.pace { font-size: 15px; }
+.gear-card h2 .muted { font-weight: 400; }
+.print-table { font-size: 13px; }
+.print-table td, .print-table th { padding: 6px 5px; }
+.print-table tr.sub td { color: var(--muted); border-bottom-width: 2px; padding-top: 0; }
+.print-table tr:has(+ tr.sub) td { border-bottom: 0; padding-bottom: 2px; }
+@media print {
+  .tabs, .topbar, .no-print, .send-banner { display: none !important; }
+  body { background: #fff; color: #000; padding: 0; font-size: 12px; }
+  main { max-width: none; padding: 0; }
+  .card { box-shadow: none; border: 0; padding: 0; margin: 0; }
+  .print-table { font-size: 11px; }
+  .print-table td, .print-table th { padding: 3px 4px; }
+}
+
+/* ---------- coach dashboard polish */
+.coach-status { margin-left: auto; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.coach-status .link { font-size: 18px; line-height: 1; padding: 2px 6px; min-width: 32px; min-height: 32px; }
+.skeleton { pointer-events: none; }
+.sk-line, .sk-tiles > div { background: linear-gradient(90deg, var(--bg) 25%, color-mix(in srgb, var(--border) 60%, var(--bg)) 50%, var(--bg) 75%); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; border-radius: 8px; }
+.sk-line { height: 14px; margin: 12px 0; }
+.sk-line.w40 { width: 40%; height: 20px; }
+.sk-line.w70 { width: 70%; }
+.sk-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.sk-tiles > div { height: 64px; border-radius: 12px; }
+@keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk-line, .sk-tiles > div { animation: none; } }
+.search { display: block; width: 100%; min-height: 44px; padding: 8px 14px; margin: 8px 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text); font: inherit; }
+.search:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.roster a:focus-visible, .group-table a:focus-visible, .fu-list a:focus-visible, .watch-line a:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 6px; }
+.group-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+/* Group tab on a wide screen: check-ins on the left, the day's training on the right. */
+@media (min-width: 960px) {
+  body.coach main { max-width: 1120px; }
+  body.coach .send-banner { max-width: 1088px; }
+  .coach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: start; }
+  .coach-grid .col { min-width: 0; }
+}
+@media (max-width: 520px) { .coach-status .muted { display: none; } }

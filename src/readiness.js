@@ -163,21 +163,57 @@ export function baseline(values, { minCount = 5, window = 30 } = {}) {
   return { mean: mean(v), sd: sd > 0 ? sd : 1e-9, count: v.length };
 }
 
-// Acute:chronic workload ratio from daily loads keyed by YYYY-MM-DD.
+// Training load over time, from daily loads (minutes × session RPE; a day
+// with nothing logged counts as 0):
+//   acute7, weeklyAvg28   the last 7 days, and the average week of the last 4
+//   acwr                  acute:chronic ratio, 7-day total over the 28-day
+//                         weekly average (the coupled ratio, kept for reference)
+//   ewmaAcwr              the same idea with exponentially weighted averages
+//                         (7-day and 28-day time constants), which weight
+//                         recent days more and tracked injury risk better in
+//                         Williams et al. 2017; this is the one the flags use
+//   monotony, strain      Foster 1998: monotony = mean ÷ SD of the last 7
+//                         daily loads (over 2 = every day much the same);
+//                         strain = weekly load × monotony. Noted when
+//                         monotony is high and the week is 10%+ above usual
+// Ratios need 3 weeks of data. The ratio is a prompt to look, not a
+// prediction (Impellizzeri et al. 2020): a spike with poor wellness is worth
+// a conversation.
+export const LOAD = { acwrSpike: 1.5, monotonyHigh: 2.0, monotonyWeek: 1.1, minDays: 21 };
 export function workload(entries, today) {
   entries = withWorkouts(entries);
   const byDate = new Map(entries.map((e) => [e.date, sessionLoad(e.training)]));
+  const loadOn = (d) => byDate.get(d) || 0;
   const sumDays = (n) => {
     let s = 0;
-    for (let i = 0; i < n; i++) s += byDate.get(shiftDate(today, -i)) || 0;
+    for (let i = 0; i < n; i++) s += loadOn(shiftDate(today, -i));
     return s;
   };
   const acute7 = sumDays(7);
   const chronic28 = sumDays(28);
   const first = entries.map((e) => e.date).sort()[0];
   const daysOfData = first ? daysBetween(first, today) + 1 : 0;
-  const acwr = daysOfData >= 21 && chronic28 > 0 ? acute7 / (chronic28 / 4) : null;
-  return { acute7, weeklyAvg28: Math.round(chronic28 / 4), acwr, daysOfData };
+  const enough = daysOfData >= LOAD.minDays;
+  const acwr = enough && chronic28 > 0 ? acute7 / (chronic28 / 4) : null;
+  // EWMA from their first day: load_t × λ + ewma_(t-1) × (1 − λ), λ = 2 / (N + 1).
+  let ewmaA = 0;
+  let ewmaC = 0;
+  if (first) {
+    for (let d = first; d <= today; d = shiftDate(d, 1)) {
+      const l = loadOn(d);
+      ewmaA = l * (2 / 8) + ewmaA * (1 - 2 / 8);
+      ewmaC = l * (2 / 29) + ewmaC * (1 - 2 / 29);
+    }
+  }
+  const ewmaAcwr = enough && ewmaC > 0 ? ewmaA / ewmaC : null;
+  const week = Array.from({ length: 7 }, (_, i) => loadOn(shiftDate(today, -i)));
+  const sd = std(week);
+  const monotony = enough && acute7 > 0 && sd > 0 ? mean(week) / sd : null;
+  return {
+    acute7, weeklyAvg28: Math.round(chronic28 / 4), acwr, ewmaAcwr, daysOfData,
+    monotony: monotony === null ? null : +monotony.toFixed(2),
+    strain: monotony === null ? null : Math.round(acute7 * monotony),
+  };
 }
 
 export function shiftDate(date, days) {
@@ -190,9 +226,61 @@ export function daysBetween(a, b) {
   return Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86400000);
 }
 
+// ---- the athlete's own baseline
+// Subjective wellness is most useful against the athlete's own usual, not a
+// fixed scale (Saw, Main & Gastin 2016; Gallo et al. 2017): the same answer
+// means different things for different swimmers. Each answer, sleep hours
+// and the wellness score are compared with that athlete's check-ins over the
+// `days` before (needs `minCheckIns`) as z-scores, with a floor on the SD so
+// a swimmer who always answers the same number isn't flagged by a one-point
+// change. Answers are put on the 1–7 scale first (older 1–5 check-ins too).
+export const BASELINE = {
+  days: 28, minCheckIns: 5,
+  watch: -1, // wellness score this many SDs under their usual: at least "Moderate"
+  low: -1.5, // this far under: at least "Low"
+  itemLow: -2, // any one answer this far under: at least "Moderate"
+  sdFloor: { item: 0.75, sleepHours: 0.75, score: 6 },
+};
+const to7 = (w, k) => { const s = share(w, k); return s === null ? null : 1 + s * 6; };
+const share = (w, k) => {
+  const max = scaleMaxOf(w);
+  const v = w?.[k];
+  return v >= 1 && v <= max ? (v - 1) / (max - 1) : null;
+};
+
+// { ready, remaining } until there is a baseline; then { ready: true, count,
+// z, usual, items: { key: { value, usual, sd, z } } } where `z` is the
+// wellness score against their usual and `items` holds each answer plus
+// sleepHours. `date` must have a check-in; null otherwise.
+export function personalBaseline(entries, date, C = BASELINE) {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const today = sorted.find((e) => e.date === date);
+  if (!today?.wellness) return null;
+  const prior = sorted.filter((e) => e.wellness && e.date < date && e.date >= shiftDate(date, -C.days));
+  if (prior.length < C.minCheckIns) return { ready: false, remaining: C.minCheckIns - prior.length };
+  const zOf = (value, past, floor) => {
+    const v = past.filter(Number.isFinite);
+    if (value === null || !Number.isFinite(value) || v.length < C.minCheckIns) return null;
+    const usual = mean(v);
+    const sd = Math.max(std(v), floor);
+    return { value: +value.toFixed(1), usual: +usual.toFixed(1), sd: +sd.toFixed(2), z: +((value - usual) / sd).toFixed(2) };
+  };
+  const items = {};
+  for (const { key } of WELLNESS_ITEMS) {
+    const r = zOf(to7(today.wellness, key), prior.map((e) => to7(e.wellness, key)), C.sdFloor.item);
+    if (r) items[key] = r;
+  }
+  const sleep = zOf(today.wellness.sleepHours > 0 ? today.wellness.sleepHours : null, prior.map((e) => (e.wellness.sleepHours > 0 ? e.wellness.sleepHours : NaN)), C.sdFloor.sleepHours);
+  if (sleep) items.sleepHours = sleep;
+  const score = zOf(wellnessScore(today.wellness), prior.map((e) => wellnessScore(e.wellness)), C.sdFloor.score);
+  return { ready: true, count: prior.length, z: score?.z ?? null, usual: score?.usual ?? null, items };
+}
+
 // Combine everything for the entry on `date`, given the full history.
 // `heart: false` leaves HRV and resting HR out of the score and flags: the
 // athlete's own view, so one noisy morning reading can't colour their day.
+// The score is the day's answers on a fixed 0–100 scale (plus heart, for the
+// coach); the status also takes the athlete's own baseline into account.
 export function assessDay(entries, date, { heart = true } = {}) {
   const sorted = [...withWorkouts(entries)].sort((a, b) => a.date.localeCompare(b.date));
   const today = sorted.find((e) => e.date === date);
@@ -203,15 +291,20 @@ export function assessDay(entries, date, { heart = true } = {}) {
   const wellness = wellnessScore(today?.wellness);
   if (wellness !== null) components.wellness = wellness;
 
+  // HRV: the 7-day rolling average of ln RMSSD against the baseline, with
+  // the single reading as a fallback. Day-to-day HRV is noisy; the weekly
+  // average tracks training status far better (Plews et al. 2013).
   const hrv = heart ? today?.hrv : null;
   const hrvBase = baseline(prior.map((e) => e.hrv?.lnRmssd));
   const hrBase = baseline(prior.map((e) => e.hrv?.hr));
   let hrvZ = null;
   let hrZ = null;
   if (hrv && Number.isFinite(hrv.lnRmssd) && hrvBase) {
-    hrvZ = (hrv.lnRmssd - hrvBase.mean) / hrvBase.sd;
+    const week = sorted.filter((e) => e.date > shiftDate(date, -7) && e.date <= date).map((e) => e.hrv?.lnRmssd).filter(Number.isFinite);
+    const value = week.length >= 3 ? mean(week) : hrv.lnRmssd;
+    hrvZ = (value - hrvBase.mean) / hrvBase.sd;
     components.hrv = Math.round(clamp(50 + hrvZ * 25));
-    if (hrvZ < -1) flags.push({ level: 'warning', text: 'HRV is well below your normal range.' });
+    if (hrvZ < -1) flags.push({ level: 'warning', text: `HRV ${week.length >= 3 ? '(7-day average) ' : ''}is well below your normal range.` });
   }
   if (hrv && Number.isFinite(hrv.hr) && hrBase) {
     hrZ = (hrv.hr - hrBase.mean) / hrBase.sd;
@@ -231,8 +324,11 @@ export function assessDay(entries, date, { heart = true } = {}) {
     });
   }
   const load = workload(sorted.filter((e) => e.date <= date), date);
-  if (load.acwr !== null && load.acwr > 1.5) {
-    flags.push({ level: 'warning', text: `Training load spike (acute:chronic ${load.acwr.toFixed(2)}).` });
+  if (load.ewmaAcwr !== null && load.ewmaAcwr > LOAD.acwrSpike) {
+    flags.push({ level: 'warning', text: `Training load spike (acute:chronic ${load.ewmaAcwr.toFixed(2)}).` });
+  }
+  if (load.monotony !== null && load.monotony >= LOAD.monotonyHigh && load.acute7 > load.weeklyAvg28 * LOAD.monotonyWeek) {
+    flags.push({ level: 'note', text: `Training is much the same every day (monotony ${load.monotony.toFixed(1)}) and above your usual week.` });
   }
 
   // Weighted blend of whatever components are available.
@@ -242,18 +338,36 @@ export function assessDay(entries, date, { heart = true } = {}) {
   for (const [k, v] of Object.entries(components)) { total += v * weights[k]; wsum += weights[k]; }
   const score = wsum ? Math.round(total / wsum) : null;
 
+  // Status: the score on the fixed scale, then the athlete's own baseline
+  // can only make it worse (well under their usual is a reason to look even
+  // when the number itself is fine).
+  const STATUS = {
+    good: { level: 'good', label: 'Ready', advice: 'Train as planned.' },
+    warning: { level: 'warning', label: 'Moderate', advice: 'Train, but consider trimming volume or intensity.' },
+    serious: { level: 'serious', label: 'Low', advice: 'Prioritise recovery or a light session today.' },
+  };
   let status = null;
+  const own = personalBaseline(sorted, date);
+  let ownLevel = null;
   if (score !== null) {
-    if (score >= 70) status = { level: 'good', label: 'Ready', advice: 'Train as planned.' };
-    else if (score >= 50) status = { level: 'warning', label: 'Moderate', advice: 'Train, but consider trimming volume or intensity.' };
-    else status = { level: 'serious', label: 'Low', advice: 'Prioritise recovery or a light session today.' };
+    status = score >= 70 ? STATUS.good : score >= 50 ? STATUS.warning : STATUS.serious;
+    if (own?.ready && own.z !== null) {
+      const items = Object.values(own.items);
+      if (own.z <= BASELINE.low) ownLevel = 'serious';
+      else if (own.z <= BASELINE.watch || items.some((i) => i.z <= BASELINE.itemLow)) ownLevel = 'warning';
+      const rank = { good: 0, warning: 1, serious: 2 };
+      if (ownLevel && rank[ownLevel] > rank[status.level]) {
+        status = STATUS[ownLevel];
+        flags.push({ level: 'warning', text: `Well below your usual (answers score ${wellness}, usually about ${Math.round(own.usual)}).` });
+      }
+    }
   }
   if (today?.pain?.level >= 3) {
     status = { level: 'critical', label: 'Check in', advice: 'Talk to your coach or medical staff before training.' };
   }
 
   return {
-    date, score, status, components, flags, load,
+    date, score, status, components, flags, load, own, ownLevel,
     hrvZ, hrZ, hrvBaseline: hrvBase, hrBaseline: hrBase,
     baselineReadingsNeeded: hrvBase ? 0 : Math.max(0, 5 - prior.filter((e) => Number.isFinite(e.hrv?.lnRmssd)).length),
   };

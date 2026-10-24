@@ -16,6 +16,7 @@ import {
 } from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
+import { renderGoals } from './goals.js';
 import { stuck, syncPending, syncStatus } from './team.js';
 
 const view = document.getElementById('view');
@@ -30,6 +31,7 @@ const routes = {
   workouts: (arg, query) => renderWorkouts(arg, query),
   saturday: () => location.replace('#workouts'), // older links: the Monday question about Saturday
   history: renderHistory,
+  goals: (arg, query) => renderGoals(view, arg, query),
   team: (arg, query) => renderTeam(view, query, route),
 };
 let cleanup = null;
@@ -73,6 +75,21 @@ function compareLine(c) {
   }
   const [label, line] = USUAL[c.level];
   return `<p class="usual usual-${c.level}"><b>${label}</b></p><p class="muted small">${line}</p>`;
+}
+
+const greeting = (h = new Date().getHours()) => (h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening');
+
+// The last 7 days' load as small bars (today on the right), each labelled
+// with its weekday; a bar's height is against the heaviest of the 7.
+function loadStrip(entries, date) {
+  const all = withWorkouts(entries);
+  const days = Array.from({ length: 7 }, (_, i) => shiftDate(date, i - 6));
+  const loads = days.map((d) => sessionLoad(all.find((e) => e.date === shiftDate(d, 1))?.training));
+  const top = Math.max(1, ...loads);
+  return `<div class="load-strip" aria-label="Training load, last 7 days">${days.map((d, i) => `
+    <div class="load-day${d === date ? ' today' : ''}" title="${esc(prettyDate(d))}: ${loads[i]}">
+      <span class="load-bar" style="height:${Math.round((loads[i] / top) * 100)}%"></span>
+      <span class="load-lbl">${WEEKDAYS[new Date(`${d}T12:00:00Z`).getUTCDay()][0]}</span></div>`).join('')}</div>`;
 }
 
 // An injury that changes how they swim is the one thing worth raising today.
@@ -124,7 +141,7 @@ function renderToday() {
         </div>
         <p class="small heart-link"><a href="#measure">${heartDone ? 'Redo heart reading' : 'Add a heart reading'}</a> <span class="muted">(optional)</span></p>
         ${status.joined ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}` : `
-        <h2>Good morning</h2>
+        <h2>Good ${greeting()}${first ? `, ${esc(first)}` : ''}</h2>
         <p class="muted">About a minute: a few quick questions.</p>
         ${streakLine}
         <a class="btn block" href="#morning">Start my morning check-in</a>`}
@@ -144,9 +161,10 @@ function renderToday() {
       <div class="stats">
         <div><span class="stat-num">${a.load.acute7}</span><span class="stat-label">last 7 days</span></div>
         <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">usual week</span></div>
-        <div><span class="stat-num">${a.load.acwr !== null ? `${a.load.acwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
+        <div><span class="stat-num">${a.load.ewmaAcwr !== null ? `${a.load.ewmaAcwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
       </div>
-      <p class="muted small">Load = training minutes × effort. “Vs usual” compares the last 7 days with your 4-week weekly average: around 1× is a normal week.${a.load.acwr === null ? ' It appears after 3 weeks of check-ins.' : ''}</p>
+      ${loadStrip(entries, date)}
+      <p class="muted small">Load = training minutes × effort. “Vs usual” weighs your last week against your last 4 weeks, recent days counting most: around 1× is a normal week.${a.load.ewmaAcwr === null ? ' It appears after 3 weeks of logged training.' : ''}${a.load.monotony !== null ? ` Variety: ${a.load.monotony < 1.5 ? 'a good mix of harder and easier days' : a.load.monotony < 2 ? 'days are fairly similar' : 'every day is much the same'} (monotony ${a.load.monotony.toFixed(1)}).` : ''}</p>
     </section>
 
     ${status.joined && !answered ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}
@@ -298,12 +316,12 @@ function renderWorkouts(arg, query) {
     ${card(shiftDate(today, -1))}
     <section class="card"><h3>Earlier</h3>
       <p class="muted small">Time, then effort · how well it went.</p>
-      <ul class="workout-list">${earlier.map((d) => {
+      <ul class="workout-list">${earlier.map((d, i) => {
     const st = workoutStatus(entries, d, { short: true });
     return `<li><a href="#workouts/${d}">
           <span class="wl-date">${esc(prettyDate(d))}</span>
           <span class="wl-sum muted small">${esc(st.summary || '')}</span>
-          <span class="wk-status wk-${st.state}">${st.label}</span></a></li>`;
+          <span class="wk-status wk-${st.state}">${st.state === 'none' && i < 7 ? 'Fill in' : st.label}</span></a></li>`;
   }).join('')}</ul>
       <form id="other-day" class="row other-day">
         <label class="field">Another day <input type="date" name="d" max="${today}" required></label>

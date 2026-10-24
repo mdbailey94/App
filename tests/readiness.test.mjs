@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assessDay, baseline, checkInStreak, trainingOnDay, unloggedDays, withWorkouts, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
+  assessDay, baseline, checkInStreak, personalBaseline, trainingOnDay, unloggedDays, withWorkouts, compareToUsual, sessionRpe, trainingFrom, isReadingDay, nextReadingDay, rollingMean, sessionLoad, shiftDate, wellnessScore, workload,
 } from '../src/readiness.js';
 
 const perfect = { sleepQuality: 5, energy: 5, soreness: 5, stress: 5, mood: 5, motivation: 5, sleepHours: 8 };
@@ -30,7 +30,7 @@ test('shiftDate crosses month boundaries', () => {
   assert.equal(shiftDate('2026-03-01', -1), '2026-02-28');
 });
 
-test('workload computes ACWR only with ≥3 weeks of data', () => {
+test('workload: coupled and EWMA acute:chronic ratios, monotony and strain, only with ≥3 weeks of data', () => {
   const entries = [];
   for (let i = 0; i < 28; i++) {
     entries.push({ date: shiftDate('2026-09-27', -i), training: { durationMin: 60, rpe: i < 7 ? 8 : 4 } });
@@ -38,7 +38,68 @@ test('workload computes ACWR only with ≥3 weeks of data', () => {
   const w = workload(entries, '2026-09-27');
   assert.equal(w.acute7, 7 * 480);
   assert.ok(Math.abs(w.acwr - 3360 / ((3360 + 21 * 240) / 4)) < 1e-9);
-  assert.equal(workload(entries.slice(0, 7), '2026-09-27').acwr, null);
+  // EWMA weights recent days more, so a week-old step up hasn't fully reached the 7-day average yet.
+  assert.ok(w.ewmaAcwr > 1.3 && w.ewmaAcwr < w.acwr);
+  // Seven identical days: no variation to measure.
+  assert.equal(w.monotony, null);
+  const short = workload(entries.slice(0, 7), '2026-09-27');
+  assert.deepEqual([short.acwr, short.ewmaAcwr, short.monotony], [null, null, null]);
+  // Six hard days and one off: high monotony; one hard day in an easy week: low.
+  const flat = Array.from({ length: 28 }, (_, i) => ({ date: shiftDate('2026-09-27', -i), training: { durationMin: 120, rpe: i % 7 === 6 ? 0 : 6 } }));
+  const m = workload(flat, '2026-09-27');
+  assert.ok(m.monotony > 2);
+  assert.ok(Math.abs(m.strain - m.acute7 * m.monotony) < m.acute7 * 0.01); // monotony is shown rounded
+  const varied = Array.from({ length: 28 }, (_, i) => ({ date: shiftDate('2026-09-27', -i), training: { durationMin: 60, rpe: [8, 2, 6, 3, 7, 1, 0][i % 7] } }));
+  assert.ok(workload(varied, '2026-09-27').monotony < 1.5);
+});
+
+test('personalBaseline: each answer, sleep and the score against the athlete\'s own last 28 days', () => {
+  const W7 = (v, sleep = 8) => ({ sleepHours: sleep, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
+  const day = (n, w) => ({ date: shiftDate('2026-10-20', -n), wellness: w });
+  const steady = [1, 2, 3, 4, 5, 6, 7].map((n) => day(n, W7(5)));
+  assert.deepEqual(personalBaseline([...steady.slice(0, 3), day(0, W7(5))], '2026-10-20'), { ready: false, remaining: 2 });
+  assert.equal(personalBaseline(steady, '2026-10-20'), null); // no check-in that day
+  const same = personalBaseline([...steady, day(0, W7(5))], '2026-10-20');
+  assert.equal(same.ready, true);
+  assert.equal(same.z, 0);
+  assert.equal(same.items.energy.z, 0);
+  // One answer two points down on a steady swimmer: a big deviation (SD floor keeps it finite).
+  const dip = personalBaseline([...steady, day(0, { ...W7(5), energy: 3 })], '2026-10-20');
+  assert.equal(dip.items.energy.usual, 5);
+  assert.ok(dip.items.energy.z <= -2);
+  assert.ok(dip.z < 0 && dip.z > -2);
+  // Short sleep against their usual 8 h.
+  assert.ok(personalBaseline([...steady, day(0, W7(5, 5.5))], '2026-10-20').items.sleepHours.z < -2);
+  // Older 1–5 check-ins are put on the 1–7 scale first.
+  const old5 = (v) => ({ sleepHours: 8, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
+  const mixed = personalBaseline([...[1, 2, 3, 4, 5].map((n) => day(n, old5(3))), day(0, W7(4))], '2026-10-20');
+  assert.equal(mixed.items.energy.z, 0); // 3/5 and 4/7 are both the midpoint
+  // Only the last 28 days count.
+  const ancient = [30, 31, 32, 33, 34].map((n) => day(n, W7(2)));
+  assert.equal(personalBaseline([...ancient, ...steady, day(0, W7(5))], '2026-10-20').items.energy.usual, 5);
+});
+
+test('assessDay: well under their own usual lowers the status, never the score', () => {
+  const W7 = (v) => ({ sleepHours: 8, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
+  const day = (n, w) => ({ date: shiftDate('2026-10-20', -n), wellness: w });
+  const high = [1, 2, 3, 4, 5, 6, 7].map((n) => day(n, W7(7)));
+  // 5/7 everywhere scores 71 (Ready on the fixed scale) but is far under a swimmer who always answers 7.
+  const r = assessDay([...high, day(0, W7(5))], '2026-10-20');
+  assert.equal(r.score, 71);
+  assert.equal(r.status.label, 'Low');
+  assert.equal(r.ownLevel, 'serious');
+  assert.ok(r.flags.some((f) => /Well below your usual \(answers score 71, usually about 100\)/.test(f.text)));
+  // One answer well down (energy 4 after always 7): Moderate.
+  const r2 = assessDay([...high, day(0, { ...W7(7), energy: 4 })], '2026-10-20');
+  assert.equal(r2.status.label, 'Moderate');
+  assert.equal(r2.ownLevel, 'warning');
+  // Two answers one point down: within a normal swing.
+  assert.equal(assessDay([...high, day(0, { ...W7(7), energy: 6, mood: 6 })], '2026-10-20').ownLevel, null);
+  // The same answers with no history: judged on the fixed scale only.
+  assert.equal(assessDay([day(0, W7(5))], '2026-10-20').status.label, 'Ready');
+  // Their usual can never make a low day look better.
+  const lowUsual = [1, 2, 3, 4, 5, 6, 7].map((n) => day(n, W7(2)));
+  assert.equal(assessDay([...lowUsual, day(0, W7(2))], '2026-10-20').status.label, 'Low');
 });
 
 test('assessDay: wellness-only score and status', () => {
@@ -55,10 +116,11 @@ test('assessDay: low HRV vs baseline lowers score and raises a flag', () => {
   }
   entries.push({ date: '2026-09-27', wellness: perfect, hrv: { lnRmssd: 3.8, hr: 58 } });
   const r = assessDay(entries, '2026-09-27');
-  assert.ok(r.hrvZ < -1);
-  assert.equal(r.components.hrv, 0);
+  // Judged on the 7-day average (today's 3.8 with six days near 4.2), not the one reading.
+  assert.ok(r.hrvZ < -1 && r.hrvZ > -8);
+  assert.ok(r.components.hrv > 0 && r.components.hrv < 50);
   assert.ok(r.score < 100);
-  assert.ok(r.flags.some((f) => /HRV/.test(f.text)));
+  assert.ok(r.flags.some((f) => /HRV \(7-day average\) is well below/.test(f.text)));
   assert.ok(r.flags.some((f) => /Resting heart rate/.test(f.text)));
 });
 
