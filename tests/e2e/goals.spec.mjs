@@ -25,6 +25,26 @@ async function setUpGoals(page) {
   await expect(page).toHaveURL(/#goals$/);
 }
 
+test('goal presets: every goal with a best becomes 1, 2 or 3% faster; the stroke strip moves between pages', async ({ page }) => {
+  await seed(page, { hash: '#goals/edit' });
+  await fill(page, 'best-free-50', '23.50');
+  await fill(page, 'best-free-200', '2:00.0');
+  await page.click('[data-faster="2"]');
+  await expect(page.locator('[name="goal-free-50"]')).toHaveValue('23.03');
+  await expect(page.locator('[name="goal-free-200"]')).toHaveValue('1:57.6');
+  await expect(page.locator('[name="goal-free-100"]')).toHaveValue('');
+  await expect(page.locator('#preset-note')).toHaveText('2 goals set 2% faster than your best. Change any of them.');
+  await page.click('[data-faster="3"]');
+  await expect(page.locator('[name="goal-free-200"]')).toHaveValue('1:56.4');
+  await page.click('#save-goals');
+  await page.goto('/#goals/free');
+  await expect(page.locator('.stroke-strip a[aria-current]')).toHaveText('Free');
+  await expect(page.locator('.stroke-strip a')).toHaveText(['Free', 'Back', 'Breast', 'Fly', 'IM', 'Speed']);
+  await page.click('.stroke-strip a:has-text("Speed")');
+  await expect(page).toHaveURL(/#goals\/speed/);
+  await expect(page.locator('.page-title h2')).toHaveText('Speed');
+});
+
 test('goals: times in, then the freestyle gears per 100 and per 50 match the 200 Chart', async ({ page }) => {
   await setUpGoals(page);
   await expect(page.locator('.goal-tile', { hasText: 'Freestyle' })).toContainText('G3 1:10.5 /100');

@@ -602,9 +602,17 @@ details.fu-cat summary { color: var(--text); }
 .goal-tile { text-decoration: none; align-items: flex-start; text-align: left; padding: 12px; }
 .goal-tile .stat-label { font-size: 14px; font-weight: 600; color: var(--text); }
 .goal-tile .tile-line { font-size: 13px; }
-.goal-nav { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
-.goal-nav a { margin-right: 2px; }
+.back-link { display: inline-block; font-size: 13px; margin-bottom: 8px; }
+/* One row of stroke pills that scrolls sideways on a phone. */
+.stroke-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px 10px; padding: 2px 16px; -webkit-overflow-scrolling: touch; }
+.stroke-strip::-webkit-scrollbar { display: none; }
+.stroke-strip a { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-size: 14px; font-weight: 500; }
+.stroke-strip a[aria-current] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.page-title h2 { margin: 0; }
+.page-title p { margin: 2px 0 0; }
+.toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 4px; }
 .gear-page h2 { margin: 0; }
+.presets-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
 .gear-table { font-size: 14px; }
 .gear-table th, .gear-table td { padding: 8px 6px; }
 .gear-table tbody th { text-align: left; font-weight: 500; }

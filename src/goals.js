@@ -112,8 +112,8 @@ function renderEdit(view, goals) {
   const row = (e) => {
     const t = g.times?.[e.key] || {};
     return `<tr><th scope="row">${esc(e.label)}</th>
-      <td><input type="text" name="best-${e.key}" inputmode="decimal" placeholder="148.0" value="${t.best ? fmtPace(t.best) : ''}" aria-label="${esc(e.label)} best"><span class="read-as" aria-live="polite"></span></td>
-      <td><input type="text" name="goal-${e.key}" inputmode="decimal" placeholder="148.0" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"><span class="read-as" aria-live="polite"></span></td></tr>`;
+      <td><input type="text" name="best-${e.key}" inputmode="decimal" value="${t.best ? fmtPace(t.best) : ''}" aria-label="${esc(e.label)} best"><span class="read-as" aria-live="polite"></span></td>
+      <td><input type="text" name="goal-${e.key}" inputmode="decimal" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"><span class="read-as" aria-live="polite"></span></td></tr>`;
   };
   const group = (stroke) => `<tr class="stroke-row"><th colspan="3">${STROKES[stroke].label}</th></tr>${EVENTS.filter((e) => e.stroke === stroke).map(row).join('')}`;
   view.innerHTML = `
@@ -130,6 +130,11 @@ function renderEdit(view, goals) {
           <input type="text" name="factor" inputmode="decimal" placeholder="e.g. 1.040" value="${g.factor ? g.factor : ''}"></label>
       </section>
       <section class="card">
+        <div class="presets-row">
+          <span class="muted small">Set goals from best times:</span>
+          ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}">${p}% faster</button>`).join('')}
+        </div>
+        <p class="muted small" id="preset-note" hidden></p>
         <div class="table-wrap"><table class="times-table">
           <thead><tr><th>Event</th><th>Best</th><th>Goal</th></tr></thead>
           <tbody>${['free', 'back', 'breast', 'fly', 'im'].map(group).join('')}</tbody>
@@ -139,6 +144,22 @@ function renderEdit(view, goals) {
       </section>
     </form>`;
   wireReadAs(view.querySelector('#goals-form'));
+  // Presets: every goal with a best becomes that much faster (editable after).
+  view.querySelectorAll('[data-faster]').forEach((b) => b.addEventListener('click', () => {
+    const pct = Number(b.dataset.faster);
+    let n = 0;
+    for (const e of EVENTS) {
+      const best = parseTime(view.querySelector(`[name="best-${e.key}"]`).value);
+      if (!best) continue;
+      const goal = view.querySelector(`[name="goal-${e.key}"]`);
+      goal.value = formatTime(best * (1 - pct / 100), { dp: best < 60 ? 2 : 1 });
+      goal.dispatchEvent(new Event('input', { bubbles: true }));
+      n++;
+    }
+    const note = view.querySelector('#preset-note');
+    note.textContent = n ? `${n} goal${n === 1 ? '' : 's'} set ${pct}% faster than your best. Change any of them.` : 'Enter some best times first.';
+    note.hidden = false;
+  }));
   view.querySelector('#goals-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
@@ -184,13 +205,15 @@ function renderPage(view, key, goals, query) {
   const { use, per } = readPrefs(query);
   const page = PAGES.find((p) => p.key === key);
   const base = `#goals/${key}`;
-  const nav = `<p class="goal-nav"><a href="#goals">‹ Goals</a> ${PAGES.filter((p) => p.key !== key).map((p) => `<a href="#goals/${p.key}">${p.label}</a>`).join(' · ')}</p>`;
+  const strip = `<a class="back-link" href="#goals">‹ Goals</a>
+    <nav class="stroke-strip" aria-label="Gear pages">${PAGES.map((p) => `<a href="#goals/${p.key}" ${p.key === key ? 'aria-current="page"' : ''}>${STROKES[p.key]?.short || p.label}</a>`).join('')}</nav>`;
   if (!goals) {
-    view.innerHTML = `<section class="card">${nav}<h2>${page.label}</h2><p class="muted">Set up your goals first.</p><div class="actions"><a class="btn" href="#goals/edit">Set up my goals</a></div></section>`;
+    view.innerHTML = `<section class="card gear-page">${strip}<h2>${page.label}</h2><p class="muted">Set up your goals first.</p><div class="actions"><a class="btn" href="#goals/edit">Set up my goals</a></div></section>`;
     return;
   }
   const set = gearSet(goals, { use, per });
-  const head = `${nav}<div class="card-head"><h2>${page.label}</h2>${useToggle(use, base)}</div>`;
+  const head = (sub) => `${strip}<div class="page-title"><h2>${page.label}</h2>${sub ? `<p class="muted small">${sub}</p>` : ''}</div>
+    <div class="toggles">${useToggle(use, base)}</div>`;
   if (key === 'speed') { view.innerHTML = speedPage(set, head, use); wire(view, base); return; }
   if (key === 'im') {
     const split = SPLITS.includes(Number(query.get('split'))) ? Number(query.get('split')) : 100;
@@ -201,9 +224,8 @@ function renderPage(view, key, goals, query) {
   const g = set.strokes[key];
   view.innerHTML = `
     <section class="card gear-page">
-      ${head}
-      ${g ? `<p class="muted small">${refLine(g.reference, use)} Fatigue factor ${set.factor.factor.toFixed(3)}.</p>
-      <div class="card-head"><h3>Pace per</h3>${perToggle(per, base)}</div>
+      ${head(g ? `${refLine(g.reference, use)} Fatigue factor ${set.factor.factor.toFixed(3)}.` : '')}
+      ${g ? `<div class="toggles"><span class="muted small">Pace per</span>${perToggle(per, base)}</div>
       <div class="table-wrap"><table class="gear-table">
         <thead><tr><th>Gear</th><th>Pace /${per}</th><th>Rest</th><th>Effort</th></tr></thead>
         <tbody>${g.gears.map((x) => `<tr class="${isHalf(x) ? 'half' : ''}" data-gear="${x.key}">
@@ -221,16 +243,15 @@ const SPLITS = [25, 50, 100];
 function imPage(set, head, use, per, base, split) {
   const im = set.im;
   if (!im) {
-    return `<section class="card gear-page">${head}<p class="muted">Add a 400 IM, a 200 IM, or a 200 back, breast or fly ${use} time to see your IM gears.</p>
+    return `<section class="card gear-page">${head('')}<p class="muted">Add a 400 IM, a 200 IM, or a 200 back, breast or fly ${use} time to see your IM gears.</p>
       <div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div></section>`;
   }
   const r = im.reference;
   const from = r.estimated ? `Estimated 400 IM (${fmtPace(r.seconds)}) from your ${use} ${esc(r.from.label)}` : `From your ${use} 400 IM: ${fmtPace(r.seconds)}`;
   return `
     <section class="card gear-page">
-      ${head}
-      <p class="muted small">${from}; 200 IM about ${fmtPace(im.im200)}. Fatigue factor ${set.factor.factor.toFixed(3)}.</p>
-      <div class="card-head"><h3>IM pace per</h3>${perToggle(per, base)}</div>
+      ${head(`${from}; 200 IM about ${fmtPace(im.im200)}. Fatigue factor ${set.factor.factor.toFixed(3)}.`)}
+      <div class="toggles"><span class="muted small">IM pace per</span>${perToggle(per, base)}</div>
       <div class="table-wrap"><table class="gear-table">
         <thead><tr><th>Gear</th><th>IM /${per}</th><th>200 IM</th><th>Rest</th></tr></thead>
         <tbody>${im.gears.map((x) => `<tr class="${isHalf(x) ? 'half' : ''}" data-gear="${x.key}">
@@ -269,7 +290,7 @@ function speedPage(set, head, use) {
   const f2 = (v) => formatTime(v, { dp: 2 });
   return `
     <section class="card gear-page">
-      ${head}
+      ${head(strokes.length ? `From your ${use} 50 of each stroke` : '')}
       ${strokes.length ? `<p class="muted small">From your ${use} 50 of each stroke: your clean mid-pool speed, and what the start, a push and a 25 should take at it.
         Each stroke has its own start and turn model (freestyle’s is calibrated to elite short course swims; the others are starting points to fit to your own 15 m and 25 times).</p>`
     : `<p class="muted">Add a 50 ${use} time for a stroke to see your speed targets.</p><div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`}
