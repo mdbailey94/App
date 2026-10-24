@@ -81,10 +81,14 @@ test('fatigue factor from two races (Factor Calculator): 5:12 and 18:00 → 1.04
 
 test('reference race: the longest they have; a 200 estimated from a 100 when that is all', () => {
   assert.equal(referenceRace({ 'free-200': 120, 'free-500': 320 }, 'free').event.key, 'free-500');
-  const est = referenceRace({ 'fly-100': 60 }, 'fly', 1.05);
+  const est = referenceRace({ 'fly-100': 60 }, 'fly', 1.045);
   assert.equal(est.event.key, 'fly-200');
   assert.equal(est.estimated, true);
-  close(est.seconds, 60 * 2 ** 1.099, 0.2);
+  close(est.seconds, 60 * 2.3, 0.3); // a 200 fly is about 2.3 × the 100 (swimming, not a runner's 400:800)
+  close(referenceRace({ 'free-100': 50 }, 'free').seconds, 50 * 2.17, 0.3);
+  close(referenceRace({ 'breast-100': 65 }, 'breast').seconds, 65 * 2.21, 0.4);
+  // A speed-leaning swimmer's 200 is a little further off their 100.
+  assert.ok(referenceRace({ 'free-100': 50 }, 'free', 1.07).seconds > referenceRace({ 'free-100': 50 }, 'free', 1.03).seconds);
   assert.equal(referenceRace({ 'fly-50': 26 }, 'fly'), null);
   assert.equal(strokeGears({}, 'free'), null);
 });

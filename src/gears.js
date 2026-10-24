@@ -46,8 +46,17 @@ export const MAIN_GEARS = ['G2', 'G3', 'G4', 'G5', 'G6'];
 export const gearOf = (key) => GEARS.find((g) => g.key === key);
 
 // Fatigue factor: distance types about 1.03, typical 1.04–1.05, speed-leaning
-// 1.06–1.07 (the sheet's Factor Calculator cut-offs).
-export const FACTOR = { default: 1.045, distance: 1.035, sprinter: 1.06, min: 1.0, max: 1.12, offset200: 0.049 };
+// 1.06–1.07 (the sheet's Factor Calculator cut-offs). Everything here is
+// swimming: the gears are defined by how long an effort lasts (an hour, 15
+// minutes), which is what carries between sports; a 100 swim is a 400 run.
+// `offset200` is the sheet's extra exponent for a 200 predicted from a 500.
+// `from100` is the exponent for a 200 predicted from a 100, per stroke, from
+// short course yards 100:200 ratios (free about 2.17, back 2.19, breast
+// 2.21, fly 2.30, which fades most): ratio = 2 ^ exponent.
+export const FACTOR = {
+  default: 1.045, distance: 1.035, sprinter: 1.06, min: 1.0, max: 1.12, offset200: 0.049,
+  from100: { free: 1.12, back: 1.13, breast: 1.145, fly: 1.2, im: 1.14 },
+};
 export const swimmerType = (f) => (f <= FACTOR.distance ? 'Distance' : f >= FACTOR.sprinter ? 'Sprinter' : 'Middle');
 
 // ---- times
@@ -118,16 +127,18 @@ export function fatigueFactor(times = {}, override = null) {
 }
 
 // The race the gears for a stroke come from: the longest race they have a
-// time for, estimated up to a 200 from a 100 when that is all there is.
-// Freestyle: 1650, 1000, 500, 200, else 200 from the 100. Other strokes:
-// 200, else 200 from the 100. Returns null with no usable time.
+// time for, estimated up to a 200 from a 100 when that is all there is
+// (with the stroke's own 100:200 ratio; the swimmer's factor shifts it a
+// little either way). Freestyle: 1650, 1000, 500, 200, else 200 from the
+// 100. Other strokes: 200, else 200 from the 100. null with no usable time.
 export function referenceRace(times = {}, stroke, f = FACTOR.default) {
   const own = EVENTS.filter((e) => e.stroke === stroke && e.dist >= 200 && times[e.key] > 0).sort((a, b) => b.dist - a.dist)[0];
   if (own) return { event: own, seconds: times[own.key], estimated: false };
   const hundred = EVENTS.find((e) => e.stroke === stroke && e.dist === 100);
   if (hundred && times[hundred.key] > 0) {
     const two = EVENTS.find((e) => e.stroke === stroke && e.dist === 200);
-    return { event: two, seconds: +riegel(times[hundred.key], 100, 200, f + FACTOR.offset200).toFixed(1), estimated: true, from: hundred };
+    const exponent = (FACTOR.from100[stroke] || FACTOR.from100.free) + (f - FACTOR.default);
+    return { event: two, seconds: +riegel(times[hundred.key], 100, 200, exponent).toFixed(1), estimated: true, from: hundred };
   }
   return null;
 }

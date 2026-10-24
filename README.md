@@ -34,7 +34,10 @@ a **practice group**, in which case each day's check-in is also sent to a Google
   pace, the 200 IM at each gear with its four 50s (elite stroke shares) and the switch 50s/100s (fly–back,
   back–breast, breast–free); and from a 50, the speed targets (15 m dive and push, 25 dive and push, flag to
   flag, predicted 100, and the S1–S4 zone 25s from the clean-speed model). The fatigue factor is worked out
-  from two best 200+ freestyles or set by hand. Practice times: log a set's average and see the trend (last
+  from two best 200+ freestyles or set by hand. All of it is swimming-based: the gears are defined by how
+  long an effort lasts, which is what carries between sports (a 100 swim is a 400 run), and the factors
+  come from the Gears sheet, elite short course splits and the USRPT work; a 200 estimated from a 100 uses
+  each stroke's own 100:200 ratio (free 2.17, back 2.19, breast 2.21, fly 2.3). Practice times: log a set's average and see the trend (last
   3 sets) against the gear target (off for now; it becomes test sets). Goals are stored on the day and sent to
   the coach like a check-in. The coach can set or change a swimmer's times from the dashboard (sheet script
   version 2): they go into the sheet and the phone picks them up with its next send.
