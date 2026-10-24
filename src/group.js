@@ -244,7 +244,7 @@ export function watchList(rows, date) {
       if (drop >= 10) reasons.push({ level: 'warning', text: `Readiness down ${Math.round(drop)} points on their usual this week.` });
     }
 
-    const acwr = workload(upTo, date).acwr;
+    const acwr = workload(upTo, date).ewmaAcwr;
     if (acwr !== null && acwr > 1.5) reasons.push({ level: 'warning', text: `Training load spike: this week is ${acwr.toFixed(1)}× their 4-week average.` });
 
     if (sick) reasons.push(sick);

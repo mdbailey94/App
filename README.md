@@ -36,12 +36,30 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 | Component | Weight | How |
 |---|---|---|
 | Wellness | 60 % | Six 1–7 scales + sleep hours, scaled 0–100 |
-| HRV | 25 % | Today's ln RMSSD vs your personal baseline (mean ± SD of up to 30 prior readings; needs 5) |
+| HRV | 25 % | The 7-day average of ln RMSSD vs your personal baseline (mean ± SD of up to 30 prior readings; needs 5). Single readings are too noisy to judge a day on (Plews et al. 2013) |
 | Resting HR | 15 % | Today's HR vs your baseline (higher = worse) |
 
 Components without data are left out and the rest re-weighted, so the score works from day one
-with the questionnaire alone. A major injury (unable to perform certain strokes or movements) overrides the score with
-"talk to your coach/medical staff". Acute:chronic workload ratio appears after 3 weeks of data.
+with the questionnaire alone.
+
+**Your own usual.** Subjective wellness is most informative against the athlete's own history, not
+a fixed scale (Saw, Main & Gastin 2016; Gallo et al. 2017). Once a swimmer has 5 check-ins in the
+last 28 days, each answer, sleep hours and the wellness score are compared with that history as
+z-scores (`personalBaseline`). The 0–100 score is unchanged; the status can only get worse: the
+score 1 SD under their usual, or any one answer 2 SD under, makes the day at least *Moderate*;
+1.5 SD under makes it *Low*. A major injury (unable to perform certain strokes or movements)
+overrides everything with "talk to your coach/medical staff".
+
+**Training load.** Load is session RPE × minutes (Foster 2001). After 3 weeks of logged training:
+- *acute:chronic* — the last 7 days against the last 28, as exponentially weighted averages
+  (Williams et al. 2017); over 1.5 is flagged as a spike. The coupled 7:28 ratio is kept as a
+  reference. The ratio is a prompt to look, not a prediction (Impellizzeri et al. 2020).
+- *monotony and strain* (Foster 1998) — monotony is the mean ÷ SD of the last 7 daily loads;
+  2 or more with a week above their usual is noted. Strain is the weekly load × monotony.
+
+The questionnaire stays short on purpose: compliance falls as daily questionnaires grow (Saw et
+al. 2015), and the six items plus sleep cover the dimensions that respond to training (fatigue,
+sleep, soreness, stress, mood) in the McLean et al. 2010 and Hooper & Mackinnon 1995 forms.
 
 This is training guidance, **not a medical device**.
 

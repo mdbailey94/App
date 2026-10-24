@@ -5,7 +5,7 @@
 // Pure functions.
 
 import { groupByAthlete } from './group.js';
-import { assessDay, daysBetween, PRACTICE_KEYS, scaleMaxOf, shiftDate, trainingOnDay, workload } from './readiness.js';
+import { assessDay, daysBetween, LOAD, PRACTICE_KEYS, scaleMaxOf, shiftDate, trainingOnDay, workload } from './readiness.js';
 
 // The thresholds, in one place so they're easy to adjust.
 export const FOLLOW_UP = {
@@ -19,7 +19,7 @@ export const FOLLOW_UP = {
   lowRun: 3, // …this long
   shortSleep: 7, // nights under this many hours…
   shortNights: 3, // …on this many of their last 4 check-ins
-  acwr: 1.5, // last 7 days' load against their 4-week average
+  acwr: 1.5, // last 7 days' load against their 4-week average (EWMA ratio)
   hardEffort: 7, // a practice this hard (effort, 1–10)…
   poorPerf: 4, // …that went this poorly (how well they did, 1–10)…
   mismatches: 2, // …on this many different days in the last week
@@ -134,8 +134,9 @@ export function concernsOn(entries, date, C = FOLLOW_UP) {
       add('recovery', 'warning', `Under ${C.shortSleep} h sleep on ${short.length} of their last ${nights.length} nights (average ${avg(nights).toFixed(1)} h).`, sleepAsk);
     }
   }
-  const acwr = workload(upTo, date).acwr;
-  if (acwr !== null && acwr > C.acwr) add('recovery', 'warning', `Training load: the last 7 days are ${acwr.toFixed(1)}× their 4-week average.`, 'How is your body handling the extra work this week?');
+  const load = workload(upTo, date);
+  if (load.ewmaAcwr !== null && load.ewmaAcwr > C.acwr) add('recovery', 'warning', `Training load: the last 7 days are ${load.ewmaAcwr.toFixed(1)}× their 4-week average.`, 'How is your body handling the extra work this week?');
+  if (load.monotony !== null && load.monotony >= LOAD.monotonyHigh && load.acute7 > load.weeklyAvg28 * LOAD.monotonyWeek) add('recovery', 'note', `Training monotony ${load.monotony.toFixed(1)}: every day much the same, and above their usual week.`, 'How is your body handling the extra work this week?');
 
   // Training response: practices that felt hard and went poorly on several
   // days, or "how well did you do" well under their usual.

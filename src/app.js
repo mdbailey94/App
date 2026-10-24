@@ -144,9 +144,9 @@ function renderToday() {
       <div class="stats">
         <div><span class="stat-num">${a.load.acute7}</span><span class="stat-label">last 7 days</span></div>
         <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">usual week</span></div>
-        <div><span class="stat-num">${a.load.acwr !== null ? `${a.load.acwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
+        <div><span class="stat-num">${a.load.ewmaAcwr !== null ? `${a.load.ewmaAcwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
       </div>
-      <p class="muted small">Load = training minutes × effort. “Vs usual” compares the last 7 days with your 4-week weekly average: around 1× is a normal week.${a.load.acwr === null ? ' It appears after 3 weeks of check-ins.' : ''}</p>
+      <p class="muted small">Load = training minutes × effort. “Vs usual” weighs your last week against your last 4 weeks, recent days counting most: around 1× is a normal week.${a.load.ewmaAcwr === null ? ' It appears after 3 weeks of logged training.' : ''}${a.load.monotony !== null ? ` Variety: ${a.load.monotony < 1.5 ? 'a good mix of harder and easier days' : a.load.monotony < 2 ? 'days are fairly similar' : 'every day is much the same'} (monotony ${a.load.monotony.toFixed(1)}).` : ''}</p>
     </section>
 
     ${status.joined && !answered ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}
