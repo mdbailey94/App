@@ -42,6 +42,42 @@ jobs:
 
   # Publishes the app to GitHub Pages from main so it can be opened on a phone.
   # Enable it once under Settings → Pages → Source: "GitHub Actions".
+  # A private preview of each pull request on Firebase Hosting (a separate
+  # address, nothing on it until you use it, gone after 14 days), so a change
+  # can be tried before it reaches the swimmers. The action comments the
+  # address on the pull request.
+  preview-firebase:
+    if: github.event_name == 'pull_request'
+    needs: [test, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - id: cfg
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$SA" ]; then echo "enabled=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$PROJECT" ]; then PROJECT=$(printf '%s' "$SA" | jq -r '.project_id // empty'); fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+      - if: steps.cfg.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+      - if: steps.cfg.outputs.enabled == 'true'
+        run: mkdir _site && cp -r index.html coach.html styles.css sw.js manifest.webmanifest coach.webmanifest icons src apps-script _site/
+      - if: steps.cfg.outputs.enabled == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ steps.cfg.outputs.project }}
+          channelId: pr-${{ github.event.number }}
+          expires: 14d
+          firebaseToolsVersion: 15.34.0
+
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [test, e2e]
