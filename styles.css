@@ -711,3 +711,28 @@ th { letter-spacing: 0.01em; }
   .print-table { font-size: 11px; }
   .print-table td, .print-table th { padding: 3px 4px; }
 }
+
+/* ---------- coach dashboard polish */
+.coach-status { margin-left: auto; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.coach-status .link { font-size: 18px; line-height: 1; padding: 2px 6px; min-width: 32px; min-height: 32px; }
+.skeleton { pointer-events: none; }
+.sk-line, .sk-tiles > div { background: linear-gradient(90deg, var(--bg) 25%, color-mix(in srgb, var(--border) 60%, var(--bg)) 50%, var(--bg) 75%); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; border-radius: 8px; }
+.sk-line { height: 14px; margin: 12px 0; }
+.sk-line.w40 { width: 40%; height: 20px; }
+.sk-line.w70 { width: 70%; }
+.sk-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.sk-tiles > div { height: 64px; border-radius: 12px; }
+@keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk-line, .sk-tiles > div { animation: none; } }
+.search { display: block; width: 100%; min-height: 44px; padding: 8px 14px; margin: 8px 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text); font: inherit; }
+.search:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.roster a:focus-visible, .group-table a:focus-visible, .fu-list a:focus-visible, .watch-line a:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 6px; }
+.group-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+/* Group tab on a wide screen: check-ins on the left, the day's training on the right. */
+@media (min-width: 960px) {
+  body.coach main { max-width: 1120px; }
+  body.coach .send-banner { max-width: 1088px; }
+  .coach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: start; }
+  .coach-grid .col { min-width: 0; }
+}
+@media (max-width: 520px) { .coach-status .muted { display: none; } }

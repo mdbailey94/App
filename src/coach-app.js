@@ -101,21 +101,69 @@ function wireShare(root, button, field, copiedText = 'Copied') {
 
 // ------------------------------------------------------------- group data
 
-let cache = null; // { at, rows } – shared by every tab while the page is open
+// The group's rows, shared by every tab while the page is open and kept in
+// this browser between opens, so the dashboard shows the last data at once
+// and refreshes behind it (every 5 minutes, or on Refresh).
+const CACHE_KEY = 'athlete-readiness/coach-rows/v1';
+const FRESH_MS = 5 * 60000;
+let cache = null; // { at, rows, url }
+let refreshing = null;
+let lastRefreshError = null;
 
-async function loadRows(coach, force) {
-  if (!force && cache && Date.now() - cache.at < 5 * 60000) return cache.rows;
-  const res = await callSheet(coach.url, { action: 'dashboard', coachPassword: coach.password, days: 120 });
-  cache = { at: Date.now(), rows: res.rows };
-  return res.rows;
+function readCache(coach) {
+  if (cache?.url === coach.url) return cache;
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (c?.url === coach.url && Array.isArray(c.rows)) cache = c;
+  } catch { /* nothing kept */ }
+  return cache?.url === coach.url ? cache : null;
 }
 
-const refreshLine = (href) => `<p class="muted small refresh-line">Updated ${ago(cache?.at ?? Date.now())} ·
+function keepCache(c) {
+  cache = c;
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch { /* too big for this browser: in memory only */ }
+}
+
+async function fetchRows(coach) {
+  if (refreshing) return refreshing;
+  setStatus('refreshing');
+  refreshing = callSheet(coach.url, { action: 'dashboard', coachPassword: coach.password, days: 120 })
+    .then((res) => { keepCache({ at: Date.now(), rows: res.rows, url: coach.url }); lastRefreshError = null; return res.rows; })
+    .catch((e) => { lastRefreshError = e.message; throw e; })
+    .finally(() => { refreshing = null; setStatus(); });
+  return refreshing;
+}
+
+// Rows to draw with now, and whether fresher ones are on the way:
+// { rows, stale } (stale: a refresh is running and will redraw the screen).
+async function loadRows(coach, force) {
+  const kept = readCache(coach);
+  if (kept && !force && Date.now() - kept.at < FRESH_MS) return { rows: kept.rows, stale: false };
+  if (kept && !force) return { rows: kept.rows, stale: true };
+  return { rows: await fetchRows(coach), stale: false };
+}
+
+// "Updated 3 min ago · refresh" in the top bar.
+function setStatus(state) {
+  const el = document.getElementById('coach-status');
+  if (!el) return;
+  if (!loadCoach()) { el.hidden = true; return; }
+  el.hidden = false;
+  const at = cache?.at;
+  el.innerHTML = state === 'refreshing' ? '<span class="muted">Refreshing…</span>'
+    : `<span class="muted">${at ? `Updated ${ago(at)}` : 'No data yet'}${lastRefreshError ? ' · couldn’t refresh' : ''}</span>
+       <button type="button" class="link" id="refresh-now" aria-label="Refresh from the sheet">↻</button>`;
+  el.querySelector('#refresh-now')?.addEventListener('click', () => { const h = location.hash.split('?')[0] || '#group'; location.hash = `${h}?refresh=${Date.now()}`; });
+}
+
+const refreshLine = (href) => `<p class="muted small refresh-line">Updated ${ago(cache?.at ?? Date.now())}${lastRefreshError ? ` · couldn’t refresh: ${esc(lastRefreshError)}` : ''} ·
   <a href="${href}${href.includes('?') ? '&' : '?'}refresh=${Date.now()}">Refresh</a></p>`;
 
 function signOut() {
   saveCoach(null);
   cache = null;
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* nothing to remove */ }
+  setStatus();
   location.hash = '#group';
   route();
 }
@@ -137,11 +185,23 @@ function route() {
   if (!coach) { renderLogin(); return; }
   if (screen === 'settings') { renderSettings(coach); return; }
 
-  view.innerHTML = '<section class="card"><p class="muted">Loading the group sheet…</p></section>';
+  const draw = (rows) => SCREENS[screen]({ coach, rows, query, arg: arg && decodeURIComponent(arg) });
+  const ticket = ++routeTicket;
+  if (!readCache(coach)) view.innerHTML = skeleton();
+  setStatus();
   loadRows(coach, query.has('refresh'))
-    .then((rows) => {
+    .then(({ rows, stale }) => {
       if (query.has('refresh')) history.replaceState(null, '', location.href.replace(/[?&]refresh=\d+/, ''));
-      SCREENS[screen]({ coach, rows, query, arg: arg && decodeURIComponent(arg) });
+      draw(rows);
+      if (stale) {
+        // Fresher rows are on the way: redraw with them, unless the coach has
+        // started typing into something in the meantime.
+        fetchRows(coach).then((fresh) => {
+          if (ticket !== routeTicket) return;
+          if (view.querySelector('form:not([hidden]) :focus')) return;
+          draw(fresh);
+        }).catch(() => { refreshLineUpdate(); });
+      }
     })
     .catch((e) => {
       view.innerHTML = `<section class="card"><h3>Couldn’t load the group sheet</h3><p>${esc(e.message)}</p>
@@ -149,6 +209,21 @@ function route() {
         <a class="btn secondary" href="#settings">Settings</a></div></section>`;
     });
 }
+let routeTicket = 0;
+
+// A refresh that failed behind a drawn screen: say so on its refresh line.
+function refreshLineUpdate() {
+  const line = view.querySelector('.refresh-line');
+  if (line && lastRefreshError) line.insertAdjacentHTML('afterbegin', `<span class="muted">Couldn’t refresh: ${esc(lastRefreshError)} · </span>`);
+}
+
+// Grey blocks in the shape of a screen, while the first load runs.
+const skeleton = () => `
+  <section class="card skeleton" aria-busy="true" aria-label="Loading">
+    <div class="sk-line w40"></div><div class="sk-tiles"><div></div><div></div><div></div><div></div></div>
+    <div class="sk-line"></div><div class="sk-line"></div><div class="sk-line w70"></div><div class="sk-line"></div>
+  </section>
+  <section class="card skeleton" aria-hidden="true"><div class="sk-line w40"></div><div class="sk-line"></div><div class="sk-line w70"></div></section>`;
 window.addEventListener('hashchange', route);
 
 // ------------------------------------------------------------------- group
@@ -304,6 +379,8 @@ function renderGroup({ rows, query }) {
   const vsDay = (a, b) => (a !== null && b !== null ? a - b : null);
 
   view.innerHTML = `
+    <div class="coach-grid">
+    <div class="col">
     <section class="card" id="checkins">
       <div class="coach-head">
         <a class="btn secondary icon-btn" href="#group?d=${shiftDate(date, -1)}" aria-label="Previous day">‹</a>
@@ -335,14 +412,17 @@ function renderGroup({ rows, query }) {
 
     ${watchLine(fu)}
 
-    ${trainingCard(rows, athletes, shiftDate(date, -1), { id: 'yesterday-training', title: date === todayISO() ? 'Yesterday’s training' : 'The day before' })}
-    ${trainingCard(rows, athletes, date, { id: 'day-training', title: date === todayISO() ? 'Today’s training' : 'This day’s training', today: date === todayISO() })}
-
     ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
         <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
           <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
         </ul>
-        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
+        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}
+    </div>
+    <div class="col">
+    ${trainingCard(rows, athletes, shiftDate(date, -1), { id: 'yesterday-training', title: date === todayISO() ? 'Yesterday’s training' : 'The day before' })}
+    ${trainingCard(rows, athletes, date, { id: 'day-training', title: date === todayISO() ? 'Today’s training' : 'This day’s training', today: date === todayISO() })}
+    </div>
+    </div>`;
 }
 
 // --------------------------------------------------------------- charts
@@ -873,15 +953,23 @@ function renderSwimmers(ctx) {
     <section class="card">
       <h2>Swimmers</h2>
       <p class="muted small">Everyone who has checked in in the last 3 weeks. Tap a name for their history.</p>
+      ${list.length > 6 ? '<input type="search" class="search" id="swimmer-search" placeholder="Find a swimmer" aria-label="Find a swimmer" autocomplete="off">' : ''}
       ${list.length ? `<ul class="roster">${list.map((s) => `
-        <li><a href="#swimmers/${encodeURIComponent(s.key)}">
+        <li data-name="${esc(s.name.toLowerCase())}"><a href="#swimmers/${encodeURIComponent(s.key)}">
           <span class="roster-name">${esc(s.name)}</span>
           <span class="roster-meta">${statusBadge(s.status)}
             <span class="muted small">${s.checkins7}/7 days${s.avg7 !== null ? ` · avg ${s.avg7}` : ''} · last ${esc(shortDate(s.lastDate))}</span></span>
         </a></li>`).join('')}</ul>` : '<p class="muted">Nobody has checked in yet. Invite your swimmers from the Messages tab.</p>'}
+      <p class="muted small" id="no-match" hidden>No swimmer matches.</p>
       ${refreshLine('#swimmers')}
     </section>
     ${gearsCard}`;
+  view.querySelector('#swimmer-search')?.addEventListener('input', (ev) => {
+    const q = ev.target.value.trim().toLowerCase();
+    let shown = 0;
+    view.querySelectorAll('.roster li').forEach((li) => { const hit = !q || li.dataset.name.includes(q); li.hidden = !hit; shown += hit; });
+    view.querySelector('#no-match').hidden = shown > 0;
+  });
 }
 
 function renderSwimmer({ coach, rows, arg, query }) {

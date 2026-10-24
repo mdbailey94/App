@@ -1,5 +1,5 @@
 // The coach dashboard, against a group sheet with 40 days of made-up data.
-import { test, expect, dayISO, GROUP_CODE, COACH_PASSWORD, sheetFor } from './helpers.mjs';
+import { test, expect, dayISO, GROUP_CODE, COACH_PASSWORD, sheetFor, sheetState } from './helpers.mjs';
 import { buildItems } from '../../src/team.js';
 
 const W = (v, sleep) => ({ sleepHours: sleep, scaleMax: 7, sleepQuality: v, energy: v, soreness: v, stress: v, mood: v, motivation: v });
@@ -274,6 +274,13 @@ test('Swimmers tab: the roster, then one swimmer’s history', async ({ page }, 
   await expect(names).toHaveCount(7);
   await expect(names.first()).toHaveText('Ana Ruiz');
   await expect(page.locator('.roster li', { hasText: 'Leo Park' })).toContainText('4/7 days');
+  // Find a swimmer by name.
+  await page.fill('#swimmer-search', 'le');
+  await expect(page.locator('.roster li:visible .roster-name')).toHaveText(['Leo Park', 'Sam Lee']);
+  await page.fill('#swimmer-search', 'zzz');
+  await expect(page.locator('#no-match')).toBeVisible();
+  await page.fill('#swimmer-search', '');
+  await expect(page.locator('.roster li:visible')).toHaveCount(7);
 
   await page.click('.roster a:has-text("Kai Moana")');
   await expect(page).toHaveURL(/#swimmers\/kai%20moana/);
@@ -382,4 +389,33 @@ test('workouts logged on the Workouts tab: how well it went, why practices were 
   await page.goto('/coach.html#watchlist');
   await expect(page.locator('#fu-health .fu-list > li', { hasText: 'Nia Lopez' })).toContainText('Missed practice sick: yesterday.');
   await expect(page.locator('#fu-response .fu-list > li', { hasText: 'Nia Lopez' })).toContainText('felt hard (7+) but went poorly (4 or less) on 2 days');
+});
+
+test('the dashboard opens on the last data at once and refreshes behind it; the sheet going down keeps the last data', async ({ page, request }, testInfo) => {
+  const sheet = sheetFor(testInfo);
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  await page.goto('/coach.html#group');
+  await expect(page.locator('#checkins h2')).toBeVisible();
+  await expect(page.locator('#coach-status')).toContainText('Updated just now');
+
+  // The sheet goes down. A fresh open still shows the kept rows, and says the refresh failed.
+  await sheetState(request, sheet, { down: true });
+  await page.evaluate(() => { const c = JSON.parse(localStorage.getItem('athlete-readiness/coach-rows/v1')); c.at -= 10 * 60000; localStorage.setItem('athlete-readiness/coach-rows/v1', JSON.stringify(c)); });
+  await page.reload();
+  await expect(page.locator('.skeleton')).toHaveCount(0);
+  await expect(page.locator('#checkins h2')).toBeVisible();
+  await expect(page.locator('#coach-status')).toContainText('couldn’t refresh');
+  await expect(page.locator('.refresh-line')).toContainText('Couldn’t refresh');
+  await sheetState(request, sheet, { down: false });
+
+  // A refresh from the top bar fetches again.
+  await page.click('#refresh-now');
+  await expect(page.locator('#coach-status')).toContainText('Updated just now');
+  await expect(page.locator('#coach-status')).not.toContainText('couldn’t refresh');
+
+  // Signing out forgets the kept rows.
+  await page.goto('/coach.html#settings');
+  await page.click('#signout');
+  expect(await page.evaluate(() => localStorage.getItem('athlete-readiness/coach-rows/v1'))).toBeNull();
 });
