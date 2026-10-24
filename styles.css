@@ -595,3 +595,38 @@ details.fu-cat summary { color: var(--text); }
   .data-table .col-latest { display: none; }
   .data-table td, .data-table th { padding-left: 4px; padding-right: 4px; }
 }
+
+/* Goals tab: gear pages, times form, practice-time trend. */
+.goal-tiles { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 700px) { .goal-tiles { grid-template-columns: repeat(3, 1fr); } }
+.goal-tile { text-decoration: none; align-items: flex-start; text-align: left; padding: 12px; }
+.goal-tile .stat-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.goal-tile .tile-line { font-size: 13px; }
+.goal-nav { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+.goal-nav a { margin-right: 2px; }
+.gear-page h2 { margin: 0; }
+.gear-table { font-size: 14px; }
+.gear-table th, .gear-table td { padding: 8px 6px; }
+.gear-table tbody th { text-align: left; font-weight: 500; }
+.gear-table td.pace { font-size: 16px; }
+.gear-table tr.half { color: var(--muted); font-size: 13px; }
+.gear-table tr.half td.pace { font-size: 13px; }
+.im-strokes td, .im-switches td { white-space: nowrap; }
+.speed-table th { width: 32%; }
+.speed-card h3 .muted { font-weight: 400; }
+.zone-table td.small, .zone-table th .th-sub { white-space: normal; }
+.times-table input { width: 100%; min-width: 72px; font: inherit; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.times-table tr.stroke-row th { background: var(--bg); font-weight: 600; color: var(--text); padding-top: 12px; }
+.times-table th, .times-table td { padding: 4px 4px; }
+.set-list li { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 14px; }
+.set-list .link.small { font-size: 12px; }
+.row.compact { gap: 6px; }
+.row.compact select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.targets .target { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg); margin: 2px 0; }
+.targets .target.on { background: var(--accent); color: var(--accent-ink); }
+.use-seg, .per-seg { flex-shrink: 0; }
+.speed-table th { width: 60%; }
+.speed-table tr.cont th { padding-top: 0; }
+.speed-table tr.cont th br { display: none; }
+.zone-table .flag-row td { padding-bottom: 10px; }
+.gear-table .flag-row td { text-align: left; }

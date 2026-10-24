@@ -75,7 +75,7 @@ test('logging yesterday right after the check-in, and the streak grows', async (
 test('Workouts tab: today and yesterday first, then earlier days with their status', async ({ page }) => {
   await page.clock.setFixedTime(atDay(WEEK.wed));
   await seed(page, { entries: [{ date: WEEK.sun, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } }, { date: WEEK.tue, workouts: LOGGED }], hash: '#workouts' });
-  await expect(page.locator('.tabs a')).toHaveText(['Today', 'Check-in', 'Workouts', 'History', 'Team']);
+  await expect(page.locator('.tabs a')).toHaveText(['Today', 'Check-in', 'Workouts', 'Goals', 'History', 'Team']);
   await expect(page.locator('.tabs a[aria-current]')).toHaveText('Workouts');
 
   const days = page.locator('.workout-day');

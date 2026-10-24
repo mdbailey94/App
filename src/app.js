@@ -16,6 +16,7 @@ import {
 } from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
+import { renderGoals } from './goals.js';
 import { stuck, syncPending, syncStatus } from './team.js';
 
 const view = document.getElementById('view');
@@ -30,6 +31,7 @@ const routes = {
   workouts: (arg, query) => renderWorkouts(arg, query),
   saturday: () => location.replace('#workouts'), // older links: the Monday question about Saturday
   history: renderHistory,
+  goals: (arg, query) => renderGoals(view, arg, query),
   team: (arg, query) => renderTeam(view, query, route),
 };
 let cleanup = null;

@@ -28,6 +28,14 @@ a **practice group**, in which case each day's check-in is also sent to a Google
 - **Heart reading** (optional, from Today) — 1–3 min camera reading. Past readings are kept.
 - **Team** — athletes join their group (name + group code, usually via the coach's invite link); new and
   edited days are sent automatically and retried if offline. The coach opens the **coach dashboard** here.
+- **Goals** — goal and best times per event (SCY), and the training gears worked out from them, following
+  the coach's Gears sheet: for each stroke, the pace per 25/50/75/100/200 at G2 (4-hour pace), G2.5, G3
+  (1-hour), G3.5, G4 (15-minute), G5 (5-minute) and G6 (2-minute), with recommended rest; for IM, the IM
+  pace, the 200 IM at each gear with its four 50s (elite stroke shares) and the switch 50s/100s (fly–back,
+  back–breast, breast–free); and from a 50, the speed targets (15 m dive and push, 25 dive and push, flag to
+  flag, predicted 100, and the S1–S4 zone 25s from the clean-speed model). The fatigue factor is worked out
+  from two best 200+ freestyles or set by hand. Practice times: log a set's average and see the trend (last
+  3 sets) against the gear target. Goals and sets are stored on the day and sent to the coach like a check-in.
 - **History** — trend charts (readiness, HRV in ms with your normal band, resting HR, wellness,
   daily load), the entry table, export/import.
 

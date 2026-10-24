@@ -13,6 +13,8 @@ import {
   swimmerInsights, teamTrend, trainingCompare, trendSummary,
 } from './group.js';
 import { followUps, followUpsFor, hardButPoor } from './followups.js';
+import { goalsSummary } from './goals.js';
+import { formatTime, MAIN_GEARS } from './gears.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
@@ -729,6 +731,29 @@ function moreHtml(rows, date, span) {
 
 // ---------------------------------------------------------------- swimmers
 
+// A swimmer's goals and gears (Goals tab in their app): G2–G6 per 100 for
+// each stroke they gave a time for, and the trend of the set they log most.
+function goalsCard(a) {
+  const g = goalsSummary(a.entries);
+  if (!g) return '';
+  const fp = (v) => formatTime(v, { dp: 1 });
+  const t = g.trend;
+  const latest = t?.points.at(-1);
+  const target = latest?.gear && t.targets[latest.gear];
+  return `
+    <section class="card" id="swimmer-goals">
+      <h3>Goals and gears</h3>
+      <p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times.</p>
+      ${g.rows.length ? `<div class="table-wrap"><table class="group-table gear-table">
+        <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
+        <tbody>${g.rows.map((r) => `<tr><th scope="row">${r.label}</th><td class="small">${r.reference.estimated ? 'est. ' : ''}${esc(r.reference.event.label)} ${fp(r.reference.seconds)}</td>${MAIN_GEARS.map((k) => `<td>${fp(r.paces[k])}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>` : '<p class="muted">Goal times set, but none long enough for gears yet.</p>'}
+      ${t?.points.length ? `<h4>Practice times: ${t.dist} ${esc(t.stroke)}</h4>
+      <p class="small">${t.points.length} set${t.points.length === 1 ? '' : 's'} logged; last 3 average <b>${fp(latest.rolling)}</b>${target ? ` vs ${latest.gear} target ${fp(target)}` : ''}.</p>
+      <div data-c="goal-trend"></div>` : ''}
+    </section>`;
+}
+
 function renderSwimmers(ctx) {
   if (ctx.arg) { renderSwimmer(ctx); return; }
   const list = roster(ctx.rows, todayISO());
@@ -797,6 +822,8 @@ function renderSwimmer({ rows, arg, query }) {
     : '<p class="muted">Not logged yet.</p>'}
     </section>
 
+    ${goalsCard(a)}
+
     <section class="card" id="charts">
       <h3>Charts</h3>
       <p class="muted small">${esc(first(a.name))}’s days: pick what to see and what to compare it with, including the team average.</p>
@@ -845,6 +872,12 @@ function renderSwimmer({ rows, arg, query }) {
         effort (1–10) for morning practice · doubles, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
   wirePicker(view.querySelector('#charts'), athletes, chart, { where: 'swimmer', base: `#swimmers/${encodeURIComponent(a.key)}` });
+  const gt = goalsSummary(a.entries)?.trend;
+  const gtEl = view.querySelector('[data-c="goal-trend"]');
+  if (gt?.points.length && gtEl) {
+    requestAnimationFrame(() => lineChart(gtEl, gt.points.map((p) => ({ x: dayIndex(p.date), y: p.avg, y2: p.rolling, label: `${shortDate(p.date)}${p.gear ? ` · ${p.gear}` : ''}` })),
+      { yFormat: (v) => formatTime(v, { dp: 1 }), tip: (d) => `${esc(d.label)}: <b>${formatTime(d.y, { dp: 1 })}</b>` }));
+  }
   view.querySelector('#more-days')?.addEventListener('click', (ev) => {
     view.querySelectorAll('.more-row').forEach((r) => { r.hidden = false; });
     ev.target.remove();
