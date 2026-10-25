@@ -164,20 +164,26 @@ export function wireWorkouts(form) {
 // One line per day: "AM 2 h · effort 7 · how well 8/10 · Doubles 1 h 30 min …",
 // or `short` for lists: "AM 2h 7·8 · Dbl 1½h 6·7 · Wt" (time, effort·how well).
 // No doubles shows nothing.
-export function workoutSummary(w, { short = false } = {}) {
-  if (!w) return '';
+// The day's practices as parts: [{ tag, text, kind }], kind = 'swim' | 'off' | 'extra'.
+export function workoutParts(w, { short = false } = {}) {
+  if (!w) return [];
   const part = (p) => {
     const s = w[p.key];
     if (!s) return null;
     const tag = short ? p.short : p.tag;
     if (s.durationMin > 0) {
-      return short ? `${tag} ${shortHours(s.durationMin)} ${s.rpe}${s.perf ? `·${s.perf}` : ''}`
-        : `${tag} ${hoursLabel(s.durationMin)} · effort ${s.rpe}${s.perf ? ` · how well ${s.perf}/10` : ''}`;
+      return { tag, kind: 'swim', text: short ? `${shortHours(s.durationMin)} ${s.rpe}${s.perf ? `·${s.perf}` : ''}`
+        : `${hoursLabel(s.durationMin)} · effort ${s.rpe}${s.perf ? ` · how well ${s.perf}/10` : ''}` };
     }
-    if (!s.none) return p.askWhy ? `${tag} no` : null;
+    if (!s.none) return p.askWhy ? { tag, kind: 'off', text: 'no' } : null;
     const why = SKIP_REASONS[s.none].toLowerCase();
-    return `${tag} ${short ? why.replace(' day', '') : why}`;
+    return { tag, kind: 'off', text: short ? why.replace(' day', '') : why };
   };
-  return [...PRACTICES.map(part), w.weights && (short ? 'Wt' : 'Weights'), w.meet && `Meet${w.meetLevel && !short ? ` (${w.meetLevel})` : ''}`]
-    .filter(Boolean).join(' · ');
+  return [...PRACTICES.map(part),
+    w.weights && { tag: short ? 'Wt' : 'Weights', kind: 'extra', text: '' },
+    w.meet && { tag: 'Meet', kind: 'extra', text: w.meetLevel && !short ? `(${w.meetLevel})` : '' }].filter(Boolean);
+}
+
+export function workoutSummary(w, opts) {
+  return workoutParts(w, opts).map((x) => [x.tag, x.text].filter(Boolean).join(' ')).join(' · ');
 }

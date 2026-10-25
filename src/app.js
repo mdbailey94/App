@@ -3,7 +3,7 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll, fixMisloggedSunday,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, unloggedDays, WEEKDAYS, wellnessScore, withWorkouts,
+  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, unloggedDays, WEEKDAYS, withWorkouts,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
@@ -12,7 +12,7 @@ import {
   checkinSections, readCheckin, showFormError, showMissing, wireCheckin,
 } from './checkin-form.js';
 import {
-  asksDoubles, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary,
+  asksDoubles, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary, workoutParts,
 } from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
@@ -161,10 +161,13 @@ function renderToday() {
       <div class="stats">
         <div><span class="stat-num">${a.load.acute7}</span><span class="stat-label">last 7 days</span></div>
         <div><span class="stat-num">${a.load.weeklyAvg28}</span><span class="stat-label">usual week</span></div>
-        <div><span class="stat-num">${a.load.ewmaAcwr !== null ? `${a.load.ewmaAcwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
+        <div><span class="stat-num">${a.load.acwr !== null ? `${a.load.acwr.toFixed(2)}×` : '–'}</span><span class="stat-label">vs usual</span></div>
       </div>
       ${loadStrip(entries, date)}
-      <p class="muted small">Load = training minutes × effort. “Vs usual” weighs your last week against your last 4 weeks, recent days counting most: around 1× is a normal week.${a.load.ewmaAcwr === null ? ' It appears after 3 weeks of logged training.' : ''}${a.load.monotony !== null ? ` Variety: ${a.load.monotony < 1.5 ? 'a good mix of harder and easier days' : a.load.monotony < 2 ? 'days are fairly similar' : 'every day is much the same'} (monotony ${a.load.monotony.toFixed(1)}).` : ''}</p>
+      ${a.load.monotony !== null ? `<p class="variety small"><b>Variety:</b> ${a.load.monotony < 1.5 ? 'a good mix of harder and easier days' : a.load.monotony < 2 ? 'days are fairly similar' : 'every day is much the same – an easier day helps recovery'}</p>` : ''}
+      <details class="explain"><summary>What these numbers mean</summary>
+        <p class="muted small">Load = training minutes × effort (1–10). “Usual week” is your average week over the last 4. “Vs usual” is the last 7 days against it: around 1× is a normal week, 1.3× or more is a big jump.${a.load.daysOfData < 21 ? ' It appears after 3 weeks of logged training.' : ''}${a.load.monotony !== null ? ` Variety compares your average day with how much days differ (monotony ${a.load.monotony.toFixed(1)}; 2 or more means every day is much the same).` : ''}</p>
+      </details>
     </section>
 
     ${status.joined && !answered ? `<p class="sync-line" id="sync-line">${sendStatus(status)}</p>` : ''}
@@ -288,12 +291,16 @@ const dayName = (d, today = todayISO()) => (d === today ? 'Today' : d === shiftD
 function workoutStatus(entries, d, opts) {
   const w = entries.find((e) => e.date === d)?.workouts;
   const done = complete(w, { doubles: asksDoubles(d, todayISO()) });
-  if (w) return { state: done ? 'logged' : 'partly', label: done ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts) };
+  if (w) return { state: done ? 'logged' : 'partly', label: done ? 'Logged' : 'Partly logged', summary: workoutSummary(w, opts), parts: workoutParts(w, opts) };
   const legacy = trainingOnDay(entries, d);
-  if (legacy?.assumed) return { state: 'assumed', label: 'Off (Sunday)', summary: '' };
-  if (legacy) return { state: 'checkin', label: 'From check-in', summary: workoutSummary(formValues(null, legacy), opts) };
-  return { state: 'none', label: 'Not logged', summary: '' };
+  if (legacy?.assumed) return { state: 'assumed', label: 'Off (Sunday)', summary: '', parts: [] };
+  if (legacy) { const v = formValues(null, legacy); return { state: 'checkin', label: 'From check-in', summary: workoutSummary(v, opts), parts: workoutParts(v, opts) }; }
+  return { state: 'none', label: 'Not logged', summary: '', parts: [] };
 }
+
+// Practices as chips: AM 2 h · effort 5 · how well 7/10 | Doubles … | Weights.
+const partChips = (parts, cls = 'wk-chips') => (parts.length ? `<ul class="${cls}">${parts.map((x) => `
+  <li class="wk-chip wk-chip-${x.kind}"><b>${esc(x.tag)}</b>${x.text ? ` ${esc(x.text)}` : ''}</li>`).join('')}</ul>` : '');
 
 function renderWorkouts(arg, query) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(arg || '')) { renderWorkoutDay(arg, query); return; }
@@ -304,8 +311,9 @@ function renderWorkouts(arg, query) {
     return `<section class="card workout-day" data-day="${d}">
       <div class="workout-head"><h3>${esc(dayName(d))} <span class="muted small">${d === today || d === shiftDate(today, -1) ? esc(prettyDate(d)) : ''}</span></h3>
         <span class="wk-status wk-${st.state}">${st.label}</span></div>
-      ${st.summary ? `<p class="small">${esc(st.summary)}</p>` : ''}
-      <a class="btn ${st.state === 'none' ? '' : 'secondary'} block" href="#workouts/${d}">${st.state === 'none' ? `Log ${d === today ? 'today’s' : d === shiftDate(today, -1) ? 'yesterday’s' : 'this day’s'} training` : 'Edit'}</a>
+      ${partChips(st.parts)}
+      <a class="btn ${st.state === 'none' ? '' : 'secondary'} block" href="#workouts/${d}">${st.state === 'none' ? `Log ${d === today ? 'today’s' : d === shiftDate(today, -1) ? 'yesterday’s' : 'this day’s'} training`
+    : st.state === 'assumed' ? 'Trained? Log it' : 'Edit'}</a>
     </section>`;
   };
   const earlier = Array.from({ length: 19 }, (_, i) => shiftDate(today, -(i + 2)));
@@ -315,13 +323,15 @@ function renderWorkouts(arg, query) {
     ${card(today)}
     ${card(shiftDate(today, -1))}
     <section class="card"><h3>Earlier</h3>
-      <p class="muted small">Time, then effort · how well it went.</p>
+      <p class="muted small">Time, then effort · how well it went (1–10).</p>
       <ul class="workout-list">${earlier.map((d, i) => {
     const st = workoutStatus(entries, d, { short: true });
-    return `<li><a href="#workouts/${d}">
+    const mark = st.state === 'logged' ? '<span class="wl-check" aria-label="Logged" title="Logged">✓</span>'
+      : `<span class="wk-status wk-${st.state}">${st.state === 'none' && i < 7 ? 'Fill in' : st.state === 'assumed' ? 'Off' : st.label}</span>`;
+    return `<li class="wl-${st.state}"><a href="#workouts/${d}">
           <span class="wl-date">${esc(prettyDate(d))}</span>
-          <span class="wl-sum muted small">${esc(st.summary || '')}</span>
-          <span class="wk-status wk-${st.state}">${st.state === 'none' && i < 7 ? 'Fill in' : st.label}</span></a></li>`;
+          <span class="wl-sum">${partChips(st.parts, 'wk-chips small')}</span>
+          ${mark}</a></li>`;
   }).join('')}</ul>
       <form id="other-day" class="row other-day">
         <label class="field">Another day <input type="date" name="d" max="${today}" required></label>
@@ -562,27 +572,33 @@ function download(name, type, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+
 function renderHistory() {
   const entries = loadEntries();
+  const all = withWorkouts(entries);
+  const heartCols = entries.some((e) => e.hrv);
+  const SHOWN = 14;
   view.innerHTML = `
     <div id="trends"></div>
 
     <section class="card"><h3>Entries</h3>
-      ${entries.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>HR</th><th>HRV</th><th>Load</th><th></th></tr></thead>
-        <tbody>${[...entries].reverse().map((e) => {
+      ${entries.length ? `<p class="muted small">Tap a date to change it.</p>
+      <div class="table-wrap"><table class="entries-table">
+        <thead><tr><th>Date</th><th>Readiness</th>${heartCols ? '<th>HR</th><th>HRV</th>' : ''}<th>Load</th><th><span class="sr-only">Delete</span></th></tr></thead>
+        <tbody>${[...entries].reverse().map((e, i) => {
     const a = assessDay(entries, e.date, { heart: false });
-    const load = sessionLoad(withWorkouts(entries).find((x) => x.date === e.date)?.training);
-    return `<tr>
+    const load = sessionLoad(all.find((x) => x.date === e.date)?.training);
+    return `<tr${i >= SHOWN ? ' class="older" hidden' : ''}>
             <td><a href="${e.wellness ? `#checkin/${e.date}` : `#workouts/${e.date}`}">${esc(shortDate(e.date))}</a></td>
-            <td>${a.score ?? '–'}</td>
-            <td>${wellnessScore(e.wellness) ?? '–'}</td>
-            <td>${fmt(e.hrv?.hr)}</td>
-            <td>${fmt(e.hrv?.rmssd)}</td>
-            <td>${load || '–'}</td>
-            <td><button class="link danger" data-del="${e.date}" aria-label="Delete ${e.date}">Delete</button></td>
+            <td>${a.score !== null && a.score !== undefined ? `<span class="score-dot dot-${a.status?.level || 'none'}" aria-hidden="true"></span>${a.score}` : '<span class="muted">–</span>'}</td>
+            ${heartCols ? `<td>${fmt(e.hrv?.hr)}</td><td>${fmt(e.hrv?.rmssd)}</td>` : ''}
+            <td>${load || '<span class="muted">–</span>'}</td>
+            <td><button class="icon-del" data-del="${e.date}" aria-label="Delete ${e.date}" title="Delete">${TRASH}</button></td>
           </tr>`;
-  }).join('')}</tbody></table></div>` : '<p class="muted">No entries yet. Start with today’s check-in.</p>'}
+  }).join('')}</tbody></table></div>
+      ${entries.length > SHOWN ? `<button class="btn secondary block" type="button" id="older">Show ${entries.length - SHOWN} older</button>` : ''}`
+    : '<p class="muted">No entries yet. Start with today’s check-in.</p>'}
     </section>
 
     <section class="card"><h3>Your data</h3>
@@ -599,6 +615,7 @@ function renderHistory() {
 
   const $ = (sel) => view.querySelector(sel);
   renderTrends($('#trends'), entries, { athlete: true });
+  $('#older')?.addEventListener('click', (ev) => { view.querySelectorAll('tr.older').forEach((r) => { r.hidden = false; }); ev.target.remove(); });
 
   view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
     if (confirm(`Delete the entry for ${b.dataset.del}?`)) { deleteEntry(b.dataset.del); route(); }

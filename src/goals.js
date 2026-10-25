@@ -62,27 +62,38 @@ export function renderGoals(view, arg, query) {
 function renderOverview(view, entries, goals, query) {
   const { use, per } = readPrefs(query);
   const set = gearSet(goals, { use, per: 100 });
+  // A stroke with no goal yet still shows its pace from the best time (marked).
+  const other = use === 'goal' ? gearSet(goals, { use: 'best', per: 100 }) : null;
   const count = Object.values(goals?.times || {}).filter((t) => t?.goal > 0).length;
+  const g3 = (gears) => fmtPace(gears.find((x) => x.key === 'G3').pace);
   const tile = (p) => {
-    let line = '';
-    if (!set) line = '';
+    let pace = '';
+    let sub = '';
+    let from = '';
+    if (!set) sub = '';
     else if (p.key === 'speed') {
-      const n = Object.keys(set.speed).length;
-      line = n ? `${n} stroke${n > 1 ? 's' : ''} with a 50` : 'Add a 50 time';
+      const keys = Object.keys(set.speed);
+      const k = keys.includes('free') ? 'free' : keys[0];
+      if (k) { pace = formatTime(set.speed[k].dive25.fromStart, { dp: 2 }); sub = `25 dive · ${STROKES[k].short}${keys.length > 1 ? ` +${keys.length - 1}` : ''}`; } else sub = 'Add a 50 time';
     } else if (p.key === 'im') {
-      line = set.im ? `G3 ${fmtPace(set.im.gears.find((g) => g.key === 'G3').pace)} /100` : 'Add an IM or a 200 of a stroke';
+      const im = set.im || other?.im;
+      if (im) { pace = g3(im.gears); sub = 'G3 /100'; from = set.im ? '' : 'best'; } else sub = 'Add an IM or a 200 of a stroke';
     } else {
-      const g = set.strokes[p.key];
-      line = g ? `G3 ${fmtPace(g.gears.find((x) => x.key === 'G3').pace)} /100` : `Add a ${p.key === 'free' ? '200 or longer' : '200 or 100'}`;
+      const g = set.strokes[p.key] || other?.strokes[p.key];
+      if (g) { pace = g3(g.gears); sub = 'G3 /100'; from = set.strokes[p.key] ? '' : 'best'; } else sub = `Add a ${p.key === 'free' ? '200 or longer' : '200 or 100'}`;
     }
-    return `<a class="tile goal-tile" href="#goals/${p.key}"><span class="stat-label">${p.label}</span><span class="tile-line ${line.startsWith('Add') ? 'muted' : ''}">${esc(line)}</span></a>`;
+    return `<a class="tile goal-tile${pace ? '' : ' empty'}${from ? ' from-best' : ''}" href="#goals/${p.key}"><span class="stat-label">${p.label}</span>
+      ${pace ? `<span class="tile-pace">${esc(pace)}</span>` : ''}<span class="tile-line muted">${esc(sub)}${from ? ' · from best' : ''}</span></a>`;
   };
   view.innerHTML = `
     <section class="card">
       <h2>Goals</h2>
       ${goals ? `
-      <p class="muted small">${count} goal time${count === 1 ? '' : 's'} set${goals.updatedAt ? ` ${esc(shortDate(goals.updatedAt.slice(0, 10)))}` : ''}.
-        Fatigue factor ${set.factor.factor.toFixed(3)} (${set.factor.type}${factorFrom(set.factor)}).${suitLine(set)}</p>
+      <ul class="meta-chips">
+        <li><b>${count}</b> goal time${count === 1 ? '' : 's'}${goals.updatedAt ? ` · set ${esc(shortDate(goals.updatedAt.slice(0, 10)))}` : ''}${goals.setBy === 'coach' ? ' by your coach' : ''}</li>
+        <li>Fatigue factor <b>${set.factor.factor.toFixed(3)}</b> <span class="muted">${esc(set.factor.type)}${factorFrom(set.factor)}</span></li>
+        ${set.suit ? `<li>Practice suit <b>+${set.suit}%</b></li>` : ''}
+      </ul>
       <div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`
     : `<p>Enter your goal times (and best times) and the app works out your training gears: the pace to hold for
         each gear, for every stroke, IM and the IM switches, plus your speed targets.</p>
@@ -210,7 +221,8 @@ function wireReadAs(form) {
     if (!out?.classList.contains('read-as')) return;
     const raw = input.value.trim();
     const sec = parseTime(raw);
-    out.textContent = !raw ? '' : sec === null ? '?' : `= ${formatTime(sec, { dp: raw.includes('.') && /\.\d{2}$/.test(raw) ? 2 : 1 })}`;
+    const read = sec === null ? null : formatTime(sec, { dp: raw.includes('.') && /\.\d{2}$/.test(raw) ? 2 : 1 });
+    out.textContent = !raw ? '' : read === null ? '?' : read === raw ? '' : `= ${read}`;
     out.classList.toggle('bad', Boolean(raw) && sec === null);
   };
   form.addEventListener('input', (ev) => { if (ev.target.matches('input[type=text]')) show(ev.target); });
@@ -293,12 +305,11 @@ function imPage(set, head, use, per, base, split) {
     </section>
     <section class="card" id="im-switches">
       <h3>IM switches</h3>
-      <p class="muted small">Switch 50s (25 + 25) and 100s (50 + 50): the two strokes at that gear, back to back. Rest shown for the 50 · the 100.</p>
+      <p class="muted small">Switch 50s (25 + 25) and 100s (50 + 50): the two strokes at that gear, back to back. Under each gear, the rest after a 50 · a 100.</p>
       <div class="table-wrap"><table class="gear-table im-switches">
-        <thead><tr><th>Gear</th>${IM.switches.map((sw) => `<th>${sw.label}<br><span class="th-sub">50 · 100</span></th>`).join('')}<th>Rest</th></tr></thead>
-        <tbody>${im.gears.filter((x) => !isHalf(x)).map((x) => `<tr data-gear="${x.key}"><th scope="row"><b>${x.key}</b></th>
-          ${IM.switches.map((sw) => `<td><b>${fmtPace(x.switches[sw.key].fifty)}</b><br><span class="th-sub">${fmtPace(x.switches[sw.key].hundred)}</span></td>`).join('')}
-          <td class="muted small">${restText(x.switches.flyBack.rest50)} · ${restText(x.switches.flyBack.rest100)}</td></tr>`).join('')}
+        <thead><tr><th>Gear<br><span class="th-sub">rest</span></th>${IM.switches.map((sw) => `<th>${sw.label}<br><span class="th-sub">50 · 100</span></th>`).join('')}</tr></thead>
+        <tbody>${im.gears.filter((x) => !isHalf(x)).map((x) => `<tr data-gear="${x.key}"><th scope="row"><b>${x.key}</b><br><span class="th-sub rest">${restText(x.switches.flyBack.rest50)} · ${restText(x.switches.flyBack.rest100)}</span></th>
+          ${IM.switches.map((sw) => `<td><b>${fmtPace(x.switches[sw.key].fifty)}</b><br><span class="th-sub">${fmtPace(x.switches[sw.key].hundred)}</span></td>`).join('')}</tr>`).join('')}
         </tbody></table></div>
     </section>`;
 }
@@ -309,8 +320,8 @@ function speedPage(set, head, use) {
   return `
     <section class="card gear-page">
       ${head(strokes.length ? `From your ${use} 50 of each stroke.${suitLine(set)}` : '')}
-      ${strokes.length ? `<p class="muted small">From your ${use} 50 of each stroke: your clean mid-pool speed, and what the start, a push and a 25 should take at it.
-        Each stroke has its own start and turn model (freestyle’s is calibrated to elite short course swims; the others are starting points to fit to your own 15 m and 25 times).</p>`
+      ${strokes.length ? `<p class="muted small">Your clean mid-pool speed, and what a start, a push and a 25 should take at it.
+        Each stroke has its own start and turn model: freestyle’s is calibrated to elite short course swims; the others are starting points to fit to your own 15 m and 25 times.</p>`
     : `<p class="muted">Add a 50 ${use} time for a stroke to see your speed targets.</p><div class="actions"><a class="btn secondary" href="#goals/edit">Edit times</a></div>`}
     </section>
     ${strokes.map(([s, sp]) => `
@@ -328,9 +339,9 @@ function speedPage(set, head, use) {
         </tbody></table>
       <h4>Speed zones: 25 push</h4>
       <table class="gear-table zone-table">
-        <tbody>${ZONES.map((z) => `<tr data-zone="${z.key}"><th scope="row"><b>${z.key}</b> ${z.label}<br><span class="th-sub">${z.pct} of clean speed</span></th>
-          <td class="pace"><b>${f2(sp.zones[z.key])}</b><br><span class="th-sub">rest ${sp.zoneRest[z.key]} s</span></td></tr>
-          <tr class="flag-row"><td colspan="2">${z.trains}: ${z.work}. Rest ${z.rest}.</td></tr>`).join('')}
+        <tbody>${ZONES.map((z) => `<tr data-zone="${z.key}"><th scope="row"><span class="zone-key">${z.key}</span> <b>${z.label}</b> <span class="th-sub">${z.pct} of clean speed</span>
+            <span class="zone-note">${esc(z.trains.charAt(0).toUpperCase() + z.trains.slice(1))}: ${esc(z.work)}. Rest ${esc(z.rest)}.</span></th>
+          <td class="pace"><b>${f2(sp.zones[z.key])}</b><br><span class="th-sub">rest ${sp.zoneRest[z.key]} s</span></td></tr>`).join('')}
         </tbody></table>
     </section>`).join('')}`;
 }

@@ -196,16 +196,25 @@ export function workload(entries, today) {
   const enough = daysOfData >= LOAD.minDays;
   const acwr = enough && chronic28 > 0 ? acute7 / (chronic28 / 4) : null;
   // EWMA from their first day: load_t × λ + ewma_(t-1) × (1 − λ), λ = 2 / (N + 1).
+  // Both start at zero, which leaves the slow (28-day) one too low for its
+  // first weeks and the ratio too high; dividing each by 1 − (1 − λ)^n (the
+  // weight it has gathered after n days) removes that start-up bias.
+  const la = 2 / 8;
+  const lc = 2 / 29;
   let ewmaA = 0;
   let ewmaC = 0;
+  let n = 0;
   if (first) {
     for (let d = first; d <= today; d = shiftDate(d, 1)) {
       const l = loadOn(d);
-      ewmaA = l * (2 / 8) + ewmaA * (1 - 2 / 8);
-      ewmaC = l * (2 / 29) + ewmaC * (1 - 2 / 29);
+      ewmaA = l * la + ewmaA * (1 - la);
+      ewmaC = l * lc + ewmaC * (1 - lc);
+      n += 1;
     }
   }
-  const ewmaAcwr = enough && ewmaC > 0 ? ewmaA / ewmaC : null;
+  const unbiasA = ewmaA / (1 - (1 - la) ** n);
+  const unbiasC = ewmaC / (1 - (1 - lc) ** n);
+  const ewmaAcwr = enough && unbiasC > 0 ? unbiasA / unbiasC : null;
   const week = Array.from({ length: 7 }, (_, i) => loadOn(shiftDate(today, -i)));
   const sd = std(week);
   const monotony = enough && acute7 > 0 && sd > 0 ? mean(week) / sd : null;

@@ -86,10 +86,10 @@ test('Workouts tab: today and yesterday first, then earlier days with their stat
   await expect(days.nth(1)).toContainText('AM 2 h · effort 5 · how well 7/10');
   await expect(days.nth(1).locator('.btn')).toHaveText('Edit');
   // An older check-in reported the day before it (day 4): shown as such.
-  const rows = page.locator('.workout-list li');
+  const rows = page.locator('.workout-list > li');
   await expect(rows).toHaveCount(19);
   await expect(rows.nth(0).locator('.wk-status')).toHaveText('Fill in'); // Monday, recent: invites a tap
-  await expect(rows.nth(1).locator('.wk-status')).toHaveText('Off (Sunday)');
+  await expect(rows.nth(1).locator('.wk-status')).toHaveText('Off'); // Sunday, assumed off
   await expect(rows.nth(2).locator('.wk-status')).toHaveText('From check-in'); // Saturday, reported Sunday
 });
 
@@ -282,4 +282,20 @@ test('Today lists earlier unlogged days to fill in', async ({ page }) => {
   await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
   await expect(page.locator('#gaps-line')).toContainText('Monday’s training not logged');
   await expect(page.locator('#gaps-line a')).toHaveAttribute('href', `#workouts/${WEEK.mon}`);
+});
+
+test('History: the last 14 entries with a readiness dot, older ones on request, and a quiet delete', async ({ page }) => {
+  const entries = Array.from({ length: 20 }, (_, i) => ({ date: dayISO(20 - i), wellness: WELLNESS(5) }));
+  await seed(page, { entries, hash: '#today' });
+  await page.goto('/#history');
+  const rows = page.locator('.entries-table tbody tr');
+  await expect(rows.filter({ visible: true })).toHaveCount(14);
+  await expect(page.locator('.entries-table thead th')).toHaveText(['Date', 'Readiness', 'Load', 'Delete']); // no heart readings: no HR/HRV columns
+  await expect(rows.first().locator('.score-dot')).toHaveCount(1);
+  await page.click('#older');
+  await expect(rows.filter({ visible: true })).toHaveCount(20);
+  page.once('dialog', (d) => d.accept());
+  await page.click(`[data-del="${dayISO(1)}"]`);
+  await expect(page.locator('.entries-table tbody tr')).toHaveCount(19);
+  expect(await page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k)).some((e) => e.date === d), [ENTRIES, dayISO(1)])).toBe(false);
 });
