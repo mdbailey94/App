@@ -112,6 +112,8 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   await expect(page.locator('#fu-ready')).toContainText('Maya Torres');
   await page.goto('/coach.html#group');
   await expect(page.locator('#not-in li', { hasText: 'Leo Park' })).toContainText('missed 3 days');
+  // Last on the page, after the day's training.
+  await expect(page.locator('#view > section.card').last()).toHaveAttribute('id', 'not-in');
 
   // Check-ins: readiness, and its change since yesterday and against their usual.
   await expect(page.locator('.checkin-table thead th')).toHaveText(['Swimmer', 'Ready', 'vs yesterday', 'vs usual']);

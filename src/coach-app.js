@@ -412,17 +412,18 @@ function renderGroup({ rows, query }) {
 
     ${watchLine(fu)}
 
-    ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
-        <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
-          <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
-        </ul>
-        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}
     </div>
     <div class="col">
     ${trainingCard(rows, athletes, shiftDate(date, -1), { id: 'yesterday-training', title: date === todayISO() ? 'Yesterday’s training' : 'The day before' })}
     ${trainingCard(rows, athletes, date, { id: 'day-training', title: date === todayISO() ? 'Today’s training' : 'This day’s training', today: date === todayISO() })}
     </div>
-    </div>`;
+    </div>
+
+    ${day.missing.length ? `<section class="card" id="not-in"><h3>Not checked in (${day.missing.length})</h3>
+        <ul class="plain">${day.missing.map((m) => `<li>${athleteLink(m.key, m.name)}
+          <span class="muted small">last ${esc(shortDate(m.lastSeen))}</span>${m.missedDays >= 2 ? `<span class="missed">· missed ${m.missedDays} days</span>` : ''}</li>`).join('')}
+        </ul>
+        ${date === todayISO() ? '<div class="actions"><a class="btn secondary" href="#messages">Send a reminder</a></div>' : ''}</section>` : ''}`;
 }
 
 // --------------------------------------------------------------- charts
