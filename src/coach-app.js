@@ -14,7 +14,7 @@ import {
 } from './group.js';
 import { followUps, followUpsFor, hardButPoor } from './followups.js';
 import { goalsSummary, readTimesForm, timesFormHtml, wireTimesForm } from './goals.js';
-import { formatTime, gearSet, latestGoals, MAIN_GEARS, STROKES } from './gears.js';
+import { formatTime, gearSet, latestGoals, MAIN_GEARS, STROKES, SUIT } from './gears.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
@@ -893,7 +893,7 @@ function teamGearsCard(rows, query) {
   return `
     <section class="card" id="team-gears">
       <h3>Team gears</h3>
-      <p class="muted small">Everyone’s pace at one gear, from their goal times with their practice-suit adjustment, fastest first. For writing a set.</p>
+      <p class="muted small">Everyone’s pace at one gear, from their goal times${SUIT.enabled ? ' with their practice-suit adjustment' : ''}, fastest first. For writing a set.</p>
       <div class="toggles">
         <span class="seg" role="group" aria-label="Stroke">${strokes.map((s) => `<a href="${q({ stroke: s })}" ${s === stroke ? 'aria-current="true"' : ''}>${STROKES[s].short}</a>`).join('')}</span>
         <span class="seg" role="group" aria-label="Gear">${MAIN_GEARS.map((k) => `<a href="${q({ gear: k })}" ${k === gear ? 'aria-current="true"' : ''}>${k}</a>`).join('')}</span>

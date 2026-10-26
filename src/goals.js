@@ -43,7 +43,7 @@ function readPrefs(query) {
   return { use, per };
 }
 
-const suitLine = (set) => (set.suit ? ` Practice-suit adjustment +${set.suit}%.` : ' No practice-suit adjustment.');
+const suitLine = (set) => (!SUIT.enabled ? '' : set.suit ? ` Practice-suit adjustment +${set.suit}%.` : ' No practice-suit adjustment.');
 const refLine = (ref, use) => (ref.estimated
   ? `Estimated 200 (${fmtPace(ref.seconds)}) from your ${use} ${esc(ref.from.label)}.`
   : `From your ${use} ${esc(ref.event.label)}: ${fmtPace(ref.seconds)}.`);
@@ -130,12 +130,13 @@ export function timesFormHtml(goals) {
         </div>
         <label class="field">Fatigue factor <span class="muted small">(leave blank to work it out from the best 200+ frees; now ${fact.factor.toFixed(3)}${fact.from && fact.from !== 'set by hand' ? `, from the ${esc(fact.from)}` : fact.from ? '' : ', the usual starting point'})</span>
           <input type="text" name="factor" inputmode="decimal" placeholder="e.g. 1.040" value="${g.factor ? g.factor : ''}"></label>
-        <label class="field">Practice-suit adjustment <span class="muted small">(race times are in a tech suit; practice paces are slowed by this. Usual: girls ${SUIT.girls}%, boys ${SUIT.boys}%)</span>
+        ${SUIT.enabled ? `<label class="field">Practice-suit adjustment <span class="muted small">(race times are in a tech suit; practice paces are slowed by this. Usual: girls ${SUIT.girls}%, boys ${SUIT.boys}%)</span>
           <select name="suit">
             <option value="auto" ${typeof g.suitPct !== 'number' ? 'selected' : ''}>Usual for the group</option>
             <option value="0" ${g.suitPct === 0 ? 'selected' : ''}>None (times not in a tech suit)</option>
             ${[0.5, 1, 1.5, 2, 2.5, 3].map((p) => `<option value="${p}" ${g.suitPct === p ? 'selected' : ''}>${p}%</option>`).join('')}
-          </select></label>
+          </select></label>`
+    : `<input type="hidden" name="suit" value="${typeof g.suitPct === 'number' ? g.suitPct : 'auto'}">`}
         <div class="presets-row">
           <span class="muted small">Set goals from best times:</span>
           ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}">${p}% faster</button>`).join('')}
