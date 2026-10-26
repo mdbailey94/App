@@ -11,8 +11,9 @@ async function setUpGoals(page) {
   await expect(page).toHaveURL(/#goals\/edit/);
   // Group, age group and fatigue factor sit in a closed Settings section.
   await expect(page.locator('[name=sex]')).toBeHidden();
-  await expect(page.locator('#form-settings summary')).toContainText('Girls · 15-16 · fatigue factor 1.045');
   await page.click('#form-settings summary');
+  await expect(page.locator('[name=sex]')).toHaveValue(''); // not set until they choose
+  await expect(page.locator('[name=age]')).toHaveValue('15-16');
   await page.selectOption('[name=sex]', 'boys');
   await fill(page, 'factor', '1.050'); // the 200 Chart's factor, so the numbers match the sheet
   await fill(page, 'best-free-50', '23.5');
@@ -172,7 +173,7 @@ test('coach: a swimmer’s goals, gears and practice-time trend on their page', 
 
   // Settings says the sheet script is current.
   await page.goto('/coach.html#settings');
-  await expect(page.locator('#script-version')).toContainText('Sheet script version 2');
+  await expect(page.locator('#script-version')).toContainText('Sheet script version 3');
 });
 
 test('a swimmer’s phone picks up goal times the coach set, with its next send', async ({ page, request }, testInfo) => {

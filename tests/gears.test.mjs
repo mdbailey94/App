@@ -228,3 +228,16 @@ test('practice-suit adjustment (when on): girls 1.5%, boys 1%, off or by hand; e
   assert.equal(adj.speed.free.hundred, raw.speed.free.hundred);
   assert.equal(adj.speed.free.cleanSpeed, raw.speed.free.cleanSpeed);
 });
+
+test('group not set: the midpoint of the boys\' and girls\' models (IM shares, standards ratios, starts)', () => {
+  const times = { 'im-400': 240, 'back-200': 120 };
+  const [b, g, n] = ['boys', 'girls', ''].map((sex) => imGears(times, { sex }).gears.find((x) => x.key === 'G3'));
+  close(n.strokes.breast, (b.strokes.breast + g.strokes.breast) / 2, 0.06);
+  close(n.strokes.free, (b.strokes.free + g.strokes.free) / 2, 0.06);
+  const [rb, rg, rn] = ['boys', 'girls', ''].map((sex) => imGears({ 'back-200': 120 }, { sex }).reference.seconds);
+  close(rn, (rb + rg) / 2, 0.06);
+  const [sb, sg, sn] = ['boys', 'girls', ''].map((sex) => speedTargets(24, sex, 'free').dive15.fromStart);
+  assert.ok(sn > Math.min(sb, sg) && sn < Math.max(sb, sg));
+  // Goals with no group at all use the midpoint too.
+  close(gearSet({ times: { 'im-400': { goal: 240 } } }).im.gears.find((x) => x.key === 'G3').strokes.breast, n.strokes.breast, 0.06);
+});

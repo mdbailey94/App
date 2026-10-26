@@ -42,7 +42,7 @@ test('submit creates the sheets, writes rows and updates by athlete + date', () 
     { entry: entry('2026-09-26'), summary },
     { entry: entry('2026-09-27'), summary },
   ] });
-  assert.deepEqual(r1, { ok: true, saved: ['2026-09-26', '2026-09-27'], version: 2 });
+  assert.deepEqual(r1, { ok: true, saved: ['2026-09-26', '2026-09-27'], version: 3 });
   const sh = app.sheets.get('Entries');
   assert.equal(sh.rows.length, 3); // header + 2
   assert.ok(app.sheets.get('Today').formulas.A1.startsWith('=QUERY('));
@@ -143,5 +143,5 @@ test('goal times: the coach sets them, a phone that resends keeps them, and ever
   assert.equal(r4.ok, true);
   assert.equal(sh.rows.length, 3);
   assert.equal(app.post({ action: 'dashboard', coachPassword: 'secret' }).rows.find((r) => r.athlete === 'Ana').entry.goals.times['back-200'].goal, 130);
-  assert.equal(app.post({ action: 'ping', coachPassword: 'secret' }).version, 2);
+  assert.equal(app.post({ action: 'ping', coachPassword: 'secret' }).version, 3);
 });

@@ -114,7 +114,7 @@ const setLabel = (s) => `${s.reps ? `${s.reps} × ` : ''}${s.dist} ${STROKES[s.s
 // The times form's fields: group, age group, factor and the best/goal table
 // with the 1–3% presets. Shared with the coach dashboard.
 export function timesFormHtml(goals) {
-  const g = goals || { sex: 'girls', age: '15-16', factor: null, times: {} };
+  const g = goals || { sex: '', age: '15-16', factor: null, times: {} };
   const fact = fatigueFactor(timesOf(g, 'best'), g.factor);
   const row = (e) => {
     const t = g.times?.[e.key] || {};
@@ -123,13 +123,13 @@ export function timesFormHtml(goals) {
       <td><input type="text" name="goal-${e.key}" inputmode="decimal" value="${t.goal ? fmtPace(t.goal) : ''}" aria-label="${esc(e.label)} goal"><span class="read-as" aria-live="polite"></span></td></tr>`;
   };
   const group = (stroke) => `<tr class="stroke-row"><th colspan="3">${STROKES[stroke].label}</th></tr>${EVENTS.filter((e) => e.stroke === stroke).map(row).join('')}`;
-  // Group, age group and fatigue factor rarely change: folded into Settings,
-  // with what they are now on the closed line.
+  // Group, age group and fatigue factor rarely change: folded into Settings.
+  // Group "Not set" uses the midpoint of the boys' and girls' models.
   return `
         <details class="form-settings" id="form-settings">
-        <summary><span class="fs-title">Settings</span> <span class="fs-now muted small">${g.sex === 'boys' ? 'Boys' : 'Girls'} · ${esc(g.age || '15-16')} · fatigue factor ${fact.factor.toFixed(3)}</span></summary>
+        <summary>Settings</summary>
         <div class="row">
-          <label class="field">Group <select name="sex"><option value="girls" ${g.sex !== 'boys' ? 'selected' : ''}>Girls</option><option value="boys" ${g.sex === 'boys' ? 'selected' : ''}>Boys</option></select></label>
+          <label class="field">Group <select name="sex"><option value="" ${g.sex !== 'boys' && g.sex !== 'girls' ? 'selected' : ''}>Not set</option><option value="girls" ${g.sex === 'girls' ? 'selected' : ''}>Girls</option><option value="boys" ${g.sex === 'boys' ? 'selected' : ''}>Boys</option></select></label>
           <label class="field">Age group <select name="age">${AGE_GROUPS.map((a) => `<option ${a === (g.age || '15-16') ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
         </div>
         <label class="field">Fatigue factor <span class="muted small">(leave blank to work it out from the best 200+ frees; now ${fact.factor.toFixed(3)}${fact.from && fact.from !== 'set by hand' ? `, from the ${esc(fact.from)}` : fact.from ? '' : ', the usual starting point'})</span>
@@ -173,7 +173,7 @@ export function readTimesForm(form) {
   if (factorRaw && !(factor >= 1 && factor <= 1.12)) bad.push('fatigue factor (1.00 to 1.12)');
   if (bad.length) return { bad };
   const suit = fd.get('suit');
-  return { goals: { sex: fd.get('sex'), age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString(), ...(suit && suit !== 'auto' ? { suitPct: Number(suit) } : {}) } };
+  return { goals: { sex: fd.get('sex') || '', age: fd.get('age'), factor, times, course: 'SCY', updatedAt: new Date().toISOString(), ...(suit && suit !== 'auto' ? { suitPct: Number(suit) } : {}) } };
 }
 
 // Wire the presets and the "read as" previews on a times form.
