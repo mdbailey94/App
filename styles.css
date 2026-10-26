@@ -834,3 +834,8 @@ th { letter-spacing: 0.01em; }
 .form-settings[open] summary::after { transform: rotate(180deg); }
 .form-settings summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
 .form-settings > .row, .form-settings > .field { margin-top: 10px; }
+/* Presets on one row on a phone: short label, three compact buttons */
+.presets-row { flex-wrap: nowrap; gap: 6px; }
+.presets-row > span { white-space: nowrap; margin-right: 2px; }
+.presets-row .preset { min-width: 52px; min-height: 36px; padding: 0 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 350px) { .presets-row { gap: 4px; } .presets-row .preset { min-width: 44px; padding: 0 8px; } .presets-row > span { font-size: 12px; } }

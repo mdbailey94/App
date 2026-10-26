@@ -142,9 +142,9 @@ export function timesFormHtml(goals) {
           </select></label>`
     : `<input type="hidden" name="suit" value="${typeof g.suitPct === 'number' ? g.suitPct : 'auto'}">`}
         </details>
-        <div class="presets-row">
-          <span class="muted small">Set goals from best times:</span>
-          ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}">${p}% faster</button>`).join('')}
+        <div class="presets-row" role="group" aria-label="Set every goal faster than the best time">
+          <span class="muted small">Faster than best:</span>
+          ${[1, 2, 3].map((p) => `<button type="button" class="preset" data-faster="${p}" aria-label="Set goals ${p}% faster than best">${p}%</button>`).join('')}
         </div>
         <p class="muted small" id="preset-note" hidden></p>
         <div class="table-wrap"><table class="times-table">
