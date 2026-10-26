@@ -9,6 +9,10 @@ async function setUpGoals(page) {
   await seed(page, { hash: '#goals' });
   await page.click('#setup-goals');
   await expect(page).toHaveURL(/#goals\/edit/);
+  // Group, age group and fatigue factor sit in a closed Settings section.
+  await expect(page.locator('[name=sex]')).toBeHidden();
+  await expect(page.locator('#form-settings summary')).toContainText('Girls · 15-16 · fatigue factor 1.045');
+  await page.click('#form-settings summary');
   await page.selectOption('[name=sex]', 'boys');
   await fill(page, 'factor', '1.050'); // the 200 Chart's factor, so the numbers match the sheet
   await fill(page, 'best-free-50', '23.5');

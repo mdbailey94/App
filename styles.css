@@ -824,3 +824,12 @@ th { letter-spacing: 0.01em; }
 }
 /* A stats row with two tiles fills the row instead of leaving a gap. */
 .stats:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, 1fr); }
+/* Goal times form: settings folded away */
+.form-settings { margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 12px; padding: 0 12px; background: var(--bg); }
+.form-settings summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 44px; color: var(--text); list-style: none; }
+.form-settings summary::-webkit-details-marker { display: none; }
+.form-settings summary::before { content: '⚙'; color: var(--muted); }
+.form-settings summary::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.form-settings[open] summary::after { transform: rotate(180deg); }
+.form-settings .fs-title { font-weight: 600; }
+.form-settings[open] { padding-bottom: 8px; }
