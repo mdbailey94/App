@@ -30,13 +30,17 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
   const hrAvg = rollingMean(sorted, (e) => e.hrv?.hr);
   const smooth = new Map(sorted.map((e, i) => [e.date, { hrv: hrvAvg[i], hr: hrAvg[i] }]));
   const recent = sorted.slice(-42);
+  // The athlete's readiness is their answers alone, the same as wellness, so
+  // they get one chart of it; heart charts only once there are readings.
+  const hasHeart = sorted.some((e) => Number.isFinite(e.hrv?.lnRmssd));
   container.innerHTML = `
     <section class="card"><h3>Readiness</h3><div data-c="ready"></div></section>
+    ${hasHeart || !athlete ? `
     <section class="card"><h3>HRV (ms)${athlete ? ' – 7-day average' : ''}</h3><p class="muted small">${athlete
     ? 'Averaged over a week, because single readings vary a lot from day to day. Shaded band = your normal range.'
     : `Shaded band = ${esc(who)} normal range (mean ± 1 SD of recent readings).`}</p><div data-c="hrv"></div></section>
-    <section class="card"><h3>Resting heart rate${athlete ? ' – 7-day average' : ''}</h3><div data-c="hr"></div></section>
-    <section class="card"><h3>Wellness</h3><div data-c="well"></div></section>
+    <section class="card"><h3>Resting heart rate${athlete ? ' – 7-day average' : ''}</h3><div data-c="hr"></div></section>` : ''}
+    ${athlete ? '' : '<section class="card"><h3>Wellness</h3><div data-c="well"></div></section>'}
     <section class="card"><h3>Daily training load</h3><div data-c="load"></div></section>`;
   const $ = (k) => container.querySelector(`[data-c="${k}"]`);
   const series = (fn) => recent.map((e) => ({ x: dayIndex(e.date), y: fn(e), label: shortDate(e.date) }));
@@ -46,13 +50,14 @@ export function renderTrends(container, entries, { who = 'your', athlete = false
     // Shown in milliseconds. The normal band and the weekly average are worked
     // out on the log scale (day-to-day HRV is skewed), then converted back.
     const hrvBase = baseline(entries.map((e) => e.hrv?.lnRmssd));
-    lineChart($('hrv'), series((e) => Math.exp(athlete ? smooth.get(e.date).hrv : e.hrv?.lnRmssd ?? NaN)), {
+    if ($('hrv')) lineChart($('hrv'), series((e) => Math.exp(athlete ? smooth.get(e.date).hrv : e.hrv?.lnRmssd ?? NaN)), {
       yFormat: (v) => `${Math.round(v)}`,
+      minSpan: 20,
       band: hrvBase ? { lo: Math.exp(hrvBase.mean - hrvBase.sd), hi: Math.exp(hrvBase.mean + hrvBase.sd) } : null,
       tip: (d) => `${d.label}: <b>${fmt(d.y)} ms</b>`,
     });
-    lineChart($('hr'), series((e) => (athlete ? smooth.get(e.date).hr : e.hrv?.hr ?? NaN)), { yFormat: (v) => `${Math.round(v)}`, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
-    lineChart($('well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });
+    if ($('hr')) lineChart($('hr'), series((e) => (athlete ? smooth.get(e.date).hr : e.hrv?.hr ?? NaN)), { yFormat: (v) => `${Math.round(v)}`, minSpan: 8, tip: (d) => `${d.label}: <b>${fmt(d.y)} bpm</b>` });
+    if ($('well')) lineChart($('well'), series((e) => wellnessScore(e.wellness) ?? NaN), { yMin: 0, yMax: 100 });
     barChart($('load'), series((e) => sessionLoad(e.training)), { tip: (d) => `${d.label}: <b>${d.y} AU</b>` });
   });
 }

@@ -344,7 +344,9 @@ export function speedTargets(t50, sex = 'boys', stroke = 'free') {
 // suits (the 2008–09 polyurethane suits were 2–4%; Berthelot et al. 2010),
 // a little more for women, whose suits cover the torso. Practice paces are
 // slowed by this share; race predictions are left as race times.
-export const SUIT = { girls: 1.5, boys: 1.0, max: 5 };
+// Off for now (the coach's call): paces come straight from the times. Any
+// share a swimmer or coach chose is kept with their goals for when it's back.
+export const SUIT = { enabled: false, girls: 1.5, boys: 1.0, max: 5 };
 export const suitPct = (goals) => {
   const v = goals?.suitPct;
   if (v === 0 || (typeof v === 'number' && v >= 0 && v <= SUIT.max)) return v;
@@ -382,7 +384,7 @@ export function gearSet(goals, { use = 'goal', per = 100 } = {}) {
   const sex = goals.sex || 'girls';
   const ff = fatigueFactor(timesOf(goals, 'best'), goals.factor);
   const opts = { factor: ff.factor, per };
-  const suit = suitPct(goals);
+  const suit = SUIT.enabled ? suitPct(goals) : 0;
   const adjust = (g) => {
     if (!g) return g;
     const k = 1 + suit / 100;

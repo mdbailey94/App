@@ -14,7 +14,7 @@ import {
 } from './group.js';
 import { followUps, followUpsFor, hardButPoor } from './followups.js';
 import { goalsSummary, readTimesForm, timesFormHtml, wireTimesForm } from './goals.js';
-import { formatTime, gearSet, latestGoals, MAIN_GEARS, STROKES } from './gears.js';
+import { formatTime, gearSet, latestGoals, MAIN_GEARS, STROKES, SUIT } from './gears.js';
 import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
@@ -352,15 +352,15 @@ function trainingCard(rows, athletes, trainedOn, { id, title, today = false }) {
           ${compareRow('Avg load', (d) => d.avgLoad, { load: true })}
         </tbody></table></div>
       <div class="table-wrap"><table class="group-table day-table">
-        <thead><tr><th>Swimmer</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>How well<br><span class="th-sub">AM · Dbl</span></th><th>Load</th><th>vs last<br>week</th><th>vs<br>avg</th></tr></thead>
+        <thead><tr><th>Swimmer</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>How well<br><span class="th-sub">AM · Dbl</span></th><th>Load</th><th class="vs-col">vs last<br>week</th><th class="vs-col">vs<br>avg</th></tr></thead>
         <tbody>${swimmers.map((s) => `
           <tr${s.tough.flagged ? ' class="tough"' : ''}>
             <td class="who">${athleteLink(s.key, s.name)} ${sessionTags(s.training)}</td>
             <td class="effort">${perPractice(s.training, (p) => p.rpe)}</td>
             <td class="perf">${perPractice(s.training, (p) => p.perf)}</td>
-            <td><b>${s.load}</b></td>
-            <td>${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
-            <td>${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
+            <td><b>${s.load}</b>${s.vsWeekAgo !== null || s.vsUsual !== null ? `<span class="narrow-deltas"><span title="vs last week">wk ${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</span> <span title="vs usual">avg ${delta(s.vsUsual, { unit: '%', big: 25 })}</span></span>` : ''}</td>
+            <td class="vs-col">${delta(s.vsWeekAgo, { unit: '%', big: 25 })}</td>
+            <td class="vs-col">${delta(s.vsUsual, { unit: '%', big: 25 })}</td>
           </tr>
           ${s.tough.flagged ? `<tr class="flag-row tough-row"><td colspan="6">⚑ Felt hard but went poorly on ${s.tough.days.length} days this week (${s.tough.days.map(when).join(', ')})</td></tr>` : ''}`).join('')}
         </tbody></table></div>
@@ -824,8 +824,8 @@ function goalsCard(a) {
         <button type="button" class="btn secondary small-btn" id="edit-goals">${g ? 'Edit times' : 'Enter times'}</button></span></div>
       ${g ? `<p class="muted small">Set ${esc(g.updated ? shortDate(g.updated) : '')}${g.goals.setBy === 'coach' ? ' by you' : ''}. Fatigue factor ${g.factor.factor.toFixed(3)} (${g.factor.type}${g.factor.from && g.factor.from !== 'set by hand' ? `, from their ${esc(g.factor.from)}` : ''}). Paces per 100 from their goal times${g.suit ? `, slowed ${g.suit}% for practice suits` : ''}.</p>
       ${g.rows.length ? `<div class="table-wrap"><table class="group-table gear-table">
-        <thead><tr><th>Stroke</th><th>From</th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
-        <tbody>${g.rows.map((r) => `<tr><th scope="row">${r.label}</th><td class="small">${r.reference.estimated ? 'est. ' : ''}${esc(r.reference.event.label)} ${fp(r.reference.seconds)}</td>${MAIN_GEARS.map((k) => `<td>${fp(r.paces[k])}</td>`).join('')}</tr>`).join('')}</tbody>
+        <thead><tr><th>Stroke<br><span class="th-sub">from</span></th>${MAIN_GEARS.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
+        <tbody>${g.rows.map((r) => `<tr><th scope="row"><b>${r.label}</b><br><span class="th-sub from">${r.reference.estimated ? 'est. ' : ''}${esc(r.reference.event.label)} ${fp(r.reference.seconds)}</span></th>${MAIN_GEARS.map((k) => `<td>${fp(r.paces[k])}</td>`).join('')}</tr>`).join('')}</tbody>
       </table></div>` : '<p class="muted">Goal times set, but none long enough for gears yet.</p>'}`
     : '<p class="muted">No goal times yet. They can enter them on the Goals tab, or you can here.</p>'}
       <form id="goals-form" class="stack coach-goals" hidden novalidate>
@@ -893,7 +893,7 @@ function teamGearsCard(rows, query) {
   return `
     <section class="card" id="team-gears">
       <h3>Team gears</h3>
-      <p class="muted small">Everyone’s pace at one gear, from their goal times with their practice-suit adjustment, fastest first. For writing a set.</p>
+      <p class="muted small">Everyone’s pace at one gear, from their goal times${SUIT.enabled ? ' with their practice-suit adjustment' : ''}, fastest first. For writing a set.</p>
       <div class="toggles">
         <span class="seg" role="group" aria-label="Stroke">${strokes.map((s) => `<a href="${q({ stroke: s })}" ${s === stroke ? 'aria-current="true"' : ''}>${STROKES[s].short}</a>`).join('')}</span>
         <span class="seg" role="group" aria-label="Gear">${MAIN_GEARS.map((k) => `<a href="${q({ gear: k })}" ${k === gear ? 'aria-current="true"' : ''}>${k}</a>`).join('')}</span>
@@ -979,6 +979,7 @@ function renderSwimmer({ coach, rows, arg, query }) {
     view.innerHTML = '<section class="card"><p>No data for this swimmer.</p><a href="#swimmers">‹ Swimmers</a></section>';
     return;
   }
+  const heart = a.entries.some((e) => e.hrv); // heart columns only once they have readings
   const latest = a.entries.at(-1);
   const assessment = assessDay(a.entries, latest.date);
   const fus = followUpsFor(a.entries, todayISO());
@@ -1050,26 +1051,28 @@ function renderSwimmer({ coach, rows, arg, query }) {
       <p class="muted small">A pattern, not proof: sleep, school and meets move readiness too.</p>
     </section>` : ''}
     <section class="card"><h3>Recent days</h3>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Ready</th><th>Well</th><th>Sleep</th><th>HR</th><th>HRV</th><th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>Load</th></tr></thead>
-        <tbody>${[...a.entries].reverse().slice(0, 28).map((e, i) => `
+      <div class="table-wrap"><table class="recent-table">
+        <thead><tr><th>Date</th><th>Ready</th><th class="col-well">Well</th><th>Sleep</th>${heart ? '<th>HR</th><th>HRV</th>' : ''}<th>Effort<br><span class="th-sub">AM · Dbl</span></th><th>Load</th></tr></thead>
+        <tbody>${[...a.entries].reverse().slice(0, 28).map((e, i) => {
+    const day = assessDay(a.entries, e.date);
+    return `
           <tr${i >= 7 ? ' class="more-row" hidden' : ''}>
             <td>${esc(shortDate(e.date))}</td>
-            <td>${assessDay(a.entries, e.date).score ?? '–'}</td>
-            <td>${wellnessScore(e.wellness) ?? '–'}</td>
+            <td>${day.score !== null && day.score !== undefined ? `<span class="score-dot dot-${day.status?.level || 'none'}" aria-hidden="true"></span>${day.score}` : '–'}</td>
+            <td class="col-well">${wellnessScore(e.wellness) ?? '–'}</td>
             <td>${fmt(e.wellness?.sleepHours, 1)}</td>
-            <td>${fmt(e.hrv?.hr)}</td>
-            <td>${fmt(e.hrv?.rmssd)}</td>
+            ${heart ? `<td>${fmt(e.hrv?.hr)}</td><td>${fmt(e.hrv?.rmssd)}</td>` : ''}
             <td class="effort">${effortCell(e.training)}</td>
             <td>${sessionLoad(e.training) || '–'}</td>
           </tr>
-          ${e.notes || e.pain?.level ? `<tr class="flag-row${i >= 7 ? ' more-row' : ''}" ${i >= 7 ? 'hidden' : ''}><td colspan="8">${[
+          ${e.notes || e.pain?.level ? `<tr class="flag-row${i >= 7 ? ' more-row' : ''}" ${i >= 7 ? 'hidden' : ''}><td colspan="${heart ? 8 : 6}">${[
     e.pain?.level ? `Injury ${e.pain.level}/3${e.pain.location ? ` (${esc(e.pain.location)})` : ''}` : '',
     e.notes ? `“${esc(e.notes)}”` : '',
-  ].filter(Boolean).join(' · ')}</td></tr>` : ''}`).join('')}
+  ].filter(Boolean).join(' · ')}</td></tr>` : ''}`;
+  }).join('')}
         </tbody></table></div>
       ${a.entries.length > 7 ? `<button type="button" class="btn secondary block" id="more-days">Show ${Math.min(28, a.entries.length) - 7} more days</button>` : ''}
-      <p class="muted small">HRV = RMSSD in ms. Training is reported the morning after, so each row is the day before’s
+      <p class="muted small">${heart ? 'HRV = RMSSD in ms. ' : ''}Training is reported the morning after, so each row is the day before’s
         effort (1–10) for morning practice · doubles, with Wt / Meet if they lifted or raced. Load = minutes × effort; weights count as 45 min at hard effort (5).</p>
     </section>`;
   wirePicker(view.querySelector('#charts'), athletes, chart, { where: 'swimmer', base: `#swimmers/${encodeURIComponent(a.key)}` });

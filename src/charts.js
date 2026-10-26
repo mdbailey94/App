@@ -24,7 +24,7 @@ function niceTicks(lo, hi, count = 4) {
   return ticks;
 }
 
-function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zeroBased, xInset = 0 }) {
+function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zeroBased, xInset = 0, minSpan = 0 }) {
   container.innerHTML = '';
   container.classList.add('chart');
   const width = Math.max(260, container.clientWidth || 320);
@@ -36,6 +36,9 @@ function frame(container, { data, height, yMin, yMax, yFormat, xLabel, band, zer
   // All but identical values (a flat week): give the axis a unit either side
   // rather than ticks a millionth apart.
   if (hi - lo < Math.max(1e-9, Math.abs(hi) * 1e-6)) { lo -= 1; hi += 1; }
+  // A measure that barely moves (resting HR within a beat) gets at least
+  // `minSpan` of axis, so small wobbles don't look like big swings.
+  if (hi - lo < minSpan) { const mid = (hi + lo) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; }
   const ticks = niceTicks(lo, hi);
   lo = Math.min(lo, ticks[0]);
   hi = Math.max(hi, ticks[ticks.length - 1]);

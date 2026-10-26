@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cleanSpeed, fatigueFactor, formatTime, gearPace, gearSet, imGears, latestGoals, parseTime, referenceRace, restFor,
-  riegel, setTrend, speedTargets, strokeGears, gearOf, suitPct,
+  riegel, setTrend, speedTargets, strokeGears, gearOf, suitPct, SUIT,
 } from '../src/gears.js';
 
 const close = (a, b, tol = 0.06) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
@@ -188,12 +188,23 @@ test('latestGoals and setTrend: the newest goals win; sets by stroke and distanc
   const tr = setTrend(entries, { stroke: 'free', dist: 100 }, g.strokes.free);
   assert.deepEqual(tr.points.map((p) => p.avg), [72, 71, 70]);
   assert.deepEqual(tr.points.map((p) => p.rolling), [72, 71.5, 71]);
-  close(tr.targets.G3, gearPace(120, 200, 3600, 1.045) * 1.015, 0.1); // with the girls' practice-suit adjustment
+  close(tr.targets.G3, gearPace(120, 200, 3600, 1.045), 0.1); // no practice-suit adjustment while it's off
   assert.equal(setTrend(entries, { stroke: 'free', dist: 50 }).points.length, 1);
   assert.deepEqual(setTrend(entries, { stroke: 'back', dist: 100 }).points, []);
 });
 
-test('practice-suit adjustment: girls 1.5%, boys 1%, off or by hand; every practice pace slows, race predictions stay', () => {
+test('practice-suit adjustment: off for now, so paces come straight from the times (a chosen share is kept)', () => {
+  const g = { sex: 'girls', factor: 1.05, suitPct: 2, times: { 'free-200': { goal: 120 } } };
+  assert.equal(SUIT.enabled, false);
+  const set = gearSet(g);
+  assert.equal(set.suit, 0);
+  assert.equal(set.strokes.free.gears[2].pace, 70.5); // the 200 Chart's G3, unadjusted
+  assert.equal(suitPct(g), 2); // still read from the goals, for when it's turned back on
+});
+
+test('practice-suit adjustment (when on): girls 1.5%, boys 1%, off or by hand; every practice pace slows, race predictions stay', (t) => {
+  SUIT.enabled = true;
+  t.after(() => { SUIT.enabled = false; });
   const g = { sex: 'boys', factor: 1.05, times: { 'free-200': { goal: 120 }, 'free-50': { goal: 22.49 }, 'im-400': { goal: 240 } } };
   assert.equal(suitPct(g), 1);
   assert.equal(suitPct({ ...g, sex: 'girls' }), 1.5);

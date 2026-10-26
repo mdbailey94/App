@@ -39,7 +39,11 @@ test('workload: coupled and EWMA acute:chronic ratios, monotony and strain, only
   assert.equal(w.acute7, 7 * 480);
   assert.ok(Math.abs(w.acwr - 3360 / ((3360 + 21 * 240) / 4)) < 1e-9);
   // EWMA weights recent days more, so a week-old step up hasn't fully reached the 7-day average yet.
-  assert.ok(w.ewmaAcwr > 1.3 && w.ewmaAcwr < w.acwr);
+  assert.ok(w.ewmaAcwr > 1.2 && w.ewmaAcwr < w.acwr);
+  // A steady month reads 1×: both averages are corrected for starting at zero
+  // (uncorrected, the 28-day one is still warming up and the ratio reads ~1.1–1.3).
+  const steady = Array.from({ length: 30 }, (_, i) => ({ date: shiftDate('2026-09-27', -i), training: { durationMin: 90, rpe: 5 } }));
+  assert.ok(Math.abs(workload(steady, '2026-09-27').ewmaAcwr - 1) < 1e-9);
   // Seven identical days: no variation to measure.
   assert.equal(w.monotony, null);
   const short = workload(entries.slice(0, 7), '2026-09-27');

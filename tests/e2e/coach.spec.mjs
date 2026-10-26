@@ -140,7 +140,7 @@ test('Group tab, then the Watchlist tab: categories, check-ins and who is missin
   const ana = trainedRows.first();
   await expect(ana).toContainText('Ana Ruiz');
   // 4 h at 8 yesterday against 1½ h at 5 on the same day last week and the 3 weeks before.
-  await expect(ana.locator('td').nth(3)).toHaveText('1920');
+  await expect(ana.locator('td').nth(3).locator('b')).toHaveText('1920');
   await expect(ana.locator('td').nth(4)).toHaveText('▲+327%');
   await expect(ana.locator('td').nth(5)).toHaveText('▲+327%');
   const mayaDay = trainedRows.filter({ hasText: 'Maya Torres' });
