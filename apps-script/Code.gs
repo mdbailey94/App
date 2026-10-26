@@ -14,7 +14,7 @@ const COACH_PASSWORD = 'change-me-too';
 
 // Bumped when the app needs something new from this script; the dashboard
 // says when the sheet's copy is behind.
-const SCRIPT_VERSION = 2;
+const SCRIPT_VERSION = 3;
 
 const ENTRIES = 'Entries';
 const TODAY = 'Today';
@@ -231,7 +231,7 @@ function setGoals_(req) {
   if (!g || typeof g !== 'object' || typeof g.times !== 'object') return { ok: false, error: 'Missing goal times.' };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(req.date) ? req.date : new Date().toISOString().slice(0, 10);
   const goals = {
-    sex: g.sex === 'boys' ? 'boys' : 'girls',
+    sex: g.sex === 'boys' || g.sex === 'girls' ? g.sex : '',
     age: String(g.age || '15-16').slice(0, 5),
     factor: typeof g.factor === 'number' && isFinite(g.factor) ? g.factor : null,
     course: 'SCY',

@@ -157,6 +157,14 @@ export function strokeGears(times, stroke, { factor = FACTOR.default, per = 100,
   };
 }
 
+// ---- boys / girls
+// Where the model differs by sex (IM stroke shares, standards ratios, start
+// times), a swimmer with no group set gets the midpoint of the two.
+export const SEXES = ['girls', 'boys'];
+const isSex = (s) => SEXES.includes(s);
+const mid = (a, b) => Object.fromEntries(Object.keys(a).map((k) => [k, typeof a[k] === 'number' && typeof b[k] === 'number' ? (a[k] + b[k]) / 2 : a[k]]));
+const bySex = (pair, sex) => (isSex(sex) ? pair[sex] : mid(pair.girls, pair.boys));
+
 // ---- IM
 
 // Stroke shares of a 400 IM (elite short course yards swims; the sheet's IM
@@ -176,13 +184,14 @@ export const IM = {
 
 // The 400 IM the IM gears come from: their 400 IM, else 200 IM × 2.15, else
 // a 200 of a stroke × the USA Swimming standards ratio for their sex and age.
-export function imReference(times = {}, { sex = 'girls', age = '15-16' } = {}) {
+export function imReference(times = {}, { sex = '', age = '15-16' } = {}) {
   if (times['im-400'] > 0) return { event: eventOf('im-400'), seconds: times['im-400'], estimated: false };
   if (times['im-200'] > 0) return { event: eventOf('im-400'), seconds: +(times['im-200'] * IM.ratio400to200).toFixed(1), estimated: true, from: eventOf('im-200') };
   for (const s of ['back', 'fly', 'breast']) {
     const k = `${s}-200`;
     if (times[k] > 0) {
-      const ratio = STANDARD_RATIOS[`${sex}-${age}-${s}`] ?? STANDARD_RATIOS[`girls-15-16-${s}`];
+      const ratioFor = (x) => STANDARD_RATIOS[`${x}-${age}-${s}`] ?? STANDARD_RATIOS[`${x}-15-16-${s}`];
+      const ratio = isSex(sex) ? ratioFor(sex) : (ratioFor('girls') + ratioFor('boys')) / 2;
       return { event: eventOf('im-400'), seconds: +(times[k] * ratio).toFixed(1), estimated: true, from: eventOf(k) };
     }
   }
@@ -191,10 +200,10 @@ export function imReference(times = {}, { sex = 'girls', age = '15-16' } = {}) {
 
 // IM gears: IM pace per `per` at each gear, the 200 IM at that gear, its four
 // 50s, and the switch 50s (25 + 25) and 100s (50 + 50).
-export function imGears(times, { factor = FACTOR.default, per = 100, sex = 'girls', age = '15-16', gears = GEARS } = {}) {
+export function imGears(times, { factor = FACTOR.default, per = 100, sex = '', age = '15-16', gears = GEARS } = {}) {
   const ref = imReference(times, { sex, age });
   if (!ref) return null;
-  const shares = IM.shares[sex] || IM.shares.girls;
+  const shares = bySex(IM.shares, sex);
   return {
     reference: ref,
     per,
@@ -283,7 +292,7 @@ export const ZONES = [
 
 const factorsFor = (stroke, sex) => {
   const f = SPEED_FACTORS[stroke] || SPEED_FACTORS.free;
-  return { ...f, ...(f[sex] || f.boys), zones: SPEED_FACTORS.zones };
+  return { ...f, ...bySex({ girls: f.girls, boys: f.boys }, sex), zones: SPEED_FACTORS.zones };
 };
 
 // A 50 from clean speed v (yd/s): start, first length, turn, tired second length.
@@ -350,7 +359,8 @@ export const SUIT = { enabled: false, girls: 1.5, boys: 1.0, max: 5 };
 export const suitPct = (goals) => {
   const v = goals?.suitPct;
   if (v === 0 || (typeof v === 'number' && v >= 0 && v <= SUIT.max)) return v;
-  return SUIT[goals?.sex === 'boys' ? 'boys' : 'girls'];
+  const sex = goals?.sex;
+  return isSex(sex) ? SUIT[sex] : (SUIT.girls + SUIT.boys) / 2;
 };
 
 // Everything in `obj` that is a time, slowed by `pct` (deep; keeps keys
@@ -381,7 +391,7 @@ export const timesOf = (goals, use = 'goal') => Object.fromEntries(Object.entrie
 export function gearSet(goals, { use = 'goal', per = 100 } = {}) {
   if (!goals) return null;
   const times = timesOf(goals, use);
-  const sex = goals.sex || 'girls';
+  const sex = isSex(goals.sex) ? goals.sex : '';
   const ff = fatigueFactor(timesOf(goals, 'best'), goals.factor);
   const opts = { factor: ff.factor, per };
   const suit = SUIT.enabled ? suitPct(goals) : 0;

@@ -1203,7 +1203,7 @@ function renderSettings(coach) {
 }
 
 // The sheet script version this dashboard was built for.
-const SCRIPT_NEEDED = 2;
+const SCRIPT_NEEDED = 3;
 
 // ------------------------------------------------------------------- login
 

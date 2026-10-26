@@ -824,12 +824,18 @@ th { letter-spacing: 0.01em; }
 }
 /* A stats row with two tiles fills the row instead of leaving a gap. */
 .stats:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, 1fr); }
-/* Goal times form: settings folded away */
-.form-settings { margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 12px; padding: 0 12px; background: var(--bg); }
-.form-settings summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 44px; color: var(--text); list-style: none; }
+/* Goal times form: settings folded away, a small control like the presets */
+.form-settings { margin: 4px 0 8px; }
+.form-settings summary { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px; list-style: none;
+  font-size: 13px; font-weight: 600; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); }
 .form-settings summary::-webkit-details-marker { display: none; }
-.form-settings summary::before { content: '⚙'; color: var(--muted); }
-.form-settings summary::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.form-settings summary::after { content: '▾'; font-size: 11px; color: var(--muted); transition: transform .15s; }
+.form-settings[open] summary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .form-settings[open] summary::after { transform: rotate(180deg); }
-.form-settings .fs-title { font-weight: 600; }
-.form-settings[open] { padding-bottom: 8px; }
+.form-settings summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.form-settings > .row, .form-settings > .field { margin-top: 10px; }
+/* Presets on one row on a phone: short label, three compact buttons */
+.presets-row { flex-wrap: nowrap; gap: 6px; }
+.presets-row > span { white-space: nowrap; margin-right: 2px; }
+.presets-row .preset { min-width: 52px; min-height: 36px; padding: 0 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 350px) { .presets-row { gap: 4px; } .presets-row .preset { min-width: 44px; padding: 0 8px; } .presets-row > span { font-size: 12px; } }
