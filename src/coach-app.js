@@ -444,6 +444,12 @@ const PRESETS = [
   { a: 'rate', b: '', label: 'Check-ins' },
 ];
 
+// Weekdays for "Mondays only" etc.: '' = every day, '0'–'6' = Sunday–Saturday.
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WEEKS_BACK = 12; // a weekday chart: the last 12 of that day
+const weekdayOf = (d) => new Date(`${d}T12:00:00Z`).getUTCDay();
+const okDay = (v) => v === '' || /^[0-6]$/.test(v ?? 'x');
+
 // The picker's state from the address, else last time's, else the default.
 function picks(query, where, { team = true } = {}) {
   const saved = loadPicks()[where] || {};
@@ -451,10 +457,12 @@ function picks(query, where, { team = true } = {}) {
   const a = ok(query.get('a')) ? query.get('a') : ok(saved.a) ? saved.a : 'readiness';
   const bq = query.has('b') ? query.get('b') : saved.b ?? (team ? 'load' : 'team');
   const b = bq === a ? '' : bq === 'team' && !team ? 'team' : ok(bq) ? bq : '';
-  return { a, b };
+  const wd = okDay(query.get('wd')) ? query.get('wd') : okDay(saved.wd) ? saved.wd : '';
+  return { a, b, wd };
 }
 
-function pickerHtml({ a, b, who }, { swimmers = null, team = true } = {}) {
+function pickerHtml({ a, b, who, wd = '' }, { swimmers = null, team = true } = {}) {
+  const todayWd = String(weekdayOf(todayISO()));
   const opts = (sel, skip = []) => {
     const groups = {};
     for (const [k, m] of Object.entries(METRICS)) {
@@ -473,15 +481,19 @@ function pickerHtml({ a, b, who }, { swimmers = null, team = true } = {}) {
         ${swimmers ? `<label class="field">For <select name="who">
           <option value="team">Whole team</option>
           ${swimmers.map((s) => `<option value="${esc(s.key)}" ${s.key === who ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : ''}
+        <label class="field">Days <select name="wd">
+          <option value="" ${wd === '' ? 'selected' : ''}>Every day</option>
+          ${[1, 2, 3, 4, 5, 6, 0].map((d) => `<option value="${d}" ${wd === String(d) ? 'selected' : ''}>${DAY_NAMES[d]}s only</option>`).join('')}</select></label>
       </div>
       <div class="presets" role="group" aria-label="Quick picks">${PRESETS.filter((p) => team || !METRICS[p.a].teamOnly).map((p) => `
-        <button type="button" class="preset${p.a === a && p.b === b ? ' on' : ''}" data-a="${p.a}" data-b="${p.b}">${p.label}</button>`).join('')}</div>
+        <button type="button" class="preset${p.a === a && p.b === b ? ' on' : ''}" data-a="${p.a}" data-b="${p.b}">${p.label}</button>`).join('')}
+        <button type="button" class="preset day-preset${wd === todayWd ? ' on' : ''}" data-wd="${wd === todayWd ? '' : todayWd}">${wd === todayWd ? 'Every day' : `${DAY_NAMES[todayWd]}s`}</button></div>
       <div data-t="picker"></div>
       <p class="muted small" data-picker-note></p>`;
 }
 
 // Draw the picked chart into `root` [data-t=picker].
-function drawPicker(root, athletes, { a, b, who, span }) {
+function drawPicker(root, athletes, { a, b, who, span, wd = '' }) {
   const el = root.querySelector('[data-t="picker"]');
   const A = METRICS[a];
   const B = b && b !== 'team' ? METRICS[b] : null;
@@ -490,7 +502,17 @@ function drawPicker(root, athletes, { a, b, who, span }) {
   // the mornings, training being the day before's.
   const sessions = A.training && (!B || B.training);
   const today = todayISO();
-  const mornings = Array.from({ length: span }, (_, i) => shiftDate(today, i - span + 1 + (sessions ? 1 : 0)));
+  // One weekday only (Mondays, say): the last 12 of that day, so each is
+  // compared with the same day in the weeks before. The day is the one the
+  // chart shows: the session day for training, else the morning.
+  let mornings;
+  if (wd !== '') {
+    let last = today;
+    while (weekdayOf(last) !== Number(wd)) last = shiftDate(last, -1);
+    mornings = Array.from({ length: WEEKS_BACK }, (_, i) => shiftDate(last, -7 * (WEEKS_BACK - 1 - i) + (sessions ? 1 : 0)));
+  } else {
+    mornings = Array.from({ length: span }, (_, i) => shiftDate(today, i - span + 1 + (sessions ? 1 : 0)));
+  }
   const day = (m) => (sessions ? shiftDate(m, -1) : m);
   const title = (M) => `${M.label}${M.training && !sessions ? ' (day before)' : ''}`;
   const unit = (M) => M.unit || '';
@@ -529,7 +551,9 @@ function drawPicker(root, athletes, { a, b, who, span }) {
       tip: (d) => `${d.label}: <b>${Number.isFinite(d.y) ? show(A, d.y) : '–'}</b>`,
     });
   }
-  root.querySelector('[data-picker-note]').textContent = [`${forWho}, last ${span} days${sessions ? ' (training days, up to today)' : ''}.`, ...notes].join(' ');
+  const range = wd !== '' ? `the last ${WEEKS_BACK} ${DAY_NAMES[wd]}s${sessions ? ' (training on that day)' : B?.training ? ` (training: the day before each ${DAY_NAMES[wd]} morning)` : ''}`
+    : `last ${span} days${sessions ? ' (training days, up to today)' : ''}`;
+  root.querySelector('[data-picker-note]').textContent = [`${forWho}, ${range}.`, ...notes].join(' ');
 }
 
 // Wire the picker: redraw in place and keep the address up to date.
@@ -539,18 +563,19 @@ function wirePicker(root, athletes, state, { where, base }) {
     const team = state.who === 'team';
     if (!team && METRICS[state.a].teamOnly) state.a = 'readiness';
     if (state.b === state.a || (team && state.b === 'team') || (!team && METRICS[state.b]?.teamOnly)) state.b = '';
-    savePicks(where, { a: state.a, b: state.b });
-    const q = new URLSearchParams({ t: state.span, a: state.a, b: state.b });
+    savePicks(where, { a: state.a, b: state.b, wd: state.wd || '' });
+    const q = new URLSearchParams({ t: state.span, a: state.a, b: state.b, ...(state.wd ? { wd: state.wd } : {}) });
     history.replaceState(null, '', `${location.pathname}${location.search}${base}?${q}`);
     root.querySelector('.picker-body').innerHTML = pickerHtml(state, { team });
     // Keep the 7 / 14 / 28-day links on the same picks.
     view.querySelectorAll('.seg a[data-span]').forEach((x) => { x.href = `${base}?${new URLSearchParams({ ...Object.fromEntries(q), t: x.dataset.span })}`; });
     drawPicker(root, athletes, state);
   };
-  root.addEventListener('change', (ev) => { if (['a', 'b', 'who'].includes(ev.target.name)) go({ [ev.target.name]: ev.target.value }); });
+  root.addEventListener('change', (ev) => { if (['a', 'b', 'who', 'wd'].includes(ev.target.name)) go({ [ev.target.name]: ev.target.value }); });
   root.addEventListener('click', (ev) => {
     const p = ev.target.closest('.preset');
-    if (p) go({ a: p.dataset.a, b: p.dataset.b });
+    if (p?.dataset.wd !== undefined) go({ wd: p.dataset.wd });
+    else if (p) go({ a: p.dataset.a, b: p.dataset.b });
   });
   requestAnimationFrame(() => drawPicker(root, athletes, state));
 }
@@ -610,8 +635,8 @@ function renderData({ rows, query }) {
     const M = METRICS[a];
     const d = dash(a, span);
     const ord = sortRows(d.swimmers, state.sort);
-    const q = (patch = {}) => new URLSearchParams({ t: span, a, b: state.b, who: state.who, sort: state.sort, ...patch });
-    savePicks('history', { a, b: state.b, who: state.who, sort: state.sort });
+    const q = (patch = {}) => new URLSearchParams({ t: span, a, b: state.b, who: state.who, sort: state.sort, ...(state.wd ? { wd: state.wd } : {}), ...patch });
+    savePicks('history', { a, b: state.b, who: state.who, sort: state.sort, wd: state.wd || '' });
     history.replaceState(null, '', `${location.pathname}${location.search}#data?${q()}`);
     const scale = heatScale(M, d);
     view.innerHTML = `<div id="data-tab">
@@ -681,11 +706,12 @@ function renderData({ rows, query }) {
       if (state.b === state.a || (team && state.b === 'team') || (!team && METRICS[state.b]?.teamOnly)) state.b = '';
       render();
     };
-    charts.addEventListener('change', (ev) => { if (['a', 'b', 'who'].includes(ev.target.name)) go({ [ev.target.name]: ev.target.value }); });
+    charts.addEventListener('change', (ev) => { if (['a', 'b', 'who', 'wd'].includes(ev.target.name)) go({ [ev.target.name]: ev.target.value }); });
     root.addEventListener('click', (ev) => {
       const t = ev.target.closest('[data-tile], .preset, [data-sort], .who-btn, [data-span], .heat td, #csv');
       if (!t) return;
       if (t.dataset.tile) go({ a: t.dataset.tile, b: t.dataset.tile === state.a ? state.b : '' });
+      else if (t.classList.contains('day-preset')) go({ wd: t.dataset.wd });
       else if (t.classList.contains('preset')) go({ a: t.dataset.a, b: t.dataset.b });
       else if (t.dataset.sort) go({ sort: state.sort === t.dataset.sort ? `-${t.dataset.sort}` : t.dataset.sort });
       else if (t.classList.contains('who-btn')) {
