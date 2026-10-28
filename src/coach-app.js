@@ -500,30 +500,33 @@ function drawPicker(root, athletes, { a, b, who, span, wd = '' }) {
   // Training is filed on the morning after. All training: chart the days
   // the sessions happened, up to today. Mixed with a morning measure: chart
   // the mornings, training being the day before's.
+  // One weekday only (Mondays, say): the last 12 of that day, each against
+  // the same day in the weeks before, everything on that calendar day: the
+  // workouts done that Monday, and that Monday morning's check-in.
   const sessions = A.training && (!B || B.training);
   const today = todayISO();
-  // One weekday only (Mondays, say): the last 12 of that day, so each is
-  // compared with the same day in the weeks before. The day is the one the
-  // chart shows: the session day for training, else the morning.
-  let mornings;
-  if (wd !== '') {
+  const byDay = wd !== '';
+  let days; // the days the chart shows
+  if (byDay) {
     let last = today;
     while (weekdayOf(last) !== Number(wd)) last = shiftDate(last, -1);
-    mornings = Array.from({ length: WEEKS_BACK }, (_, i) => shiftDate(last, -7 * (WEEKS_BACK - 1 - i) + (sessions ? 1 : 0)));
+    days = Array.from({ length: WEEKS_BACK }, (_, i) => shiftDate(last, -7 * (WEEKS_BACK - 1 - i)));
   } else {
-    mornings = Array.from({ length: span }, (_, i) => shiftDate(today, i - span + 1 + (sessions ? 1 : 0)));
+    days = Array.from({ length: span }, (_, i) => shiftDate(today, i - span + 1));
   }
-  const day = (m) => (sessions ? shiftDate(m, -1) : m);
-  const title = (M) => `${M.label}${M.training && !sessions ? ' (day before)' : ''}`;
+  // The mornings to read each measure from: training on day d is on d + 1.
+  const shift = (M) => (byDay ? (M.training ? 1 : 0) : (sessions ? 1 : 0));
+  const datesFor = (M) => days.map((d) => shiftDate(d, shift(M)));
+  const title = (M) => `${M.label}${M.training && !sessions && !byDay ? ' (day before)' : ''}`;
   const unit = (M) => M.unit || '';
   const show = (M, v) => (Number.isFinite(v) ? `${fmt(v, Number.isInteger(v) ? 0 : 1)}${unit(M)}` : '–');
-  const sa = metricSeries(athletes, a, mornings, who);
-  const base = mornings.map((m, i) => ({ x: dayIndex(day(m)), label: shortDate(day(m)), n: sa[i].n }));
+  const sa = metricSeries(athletes, a, datesFor(A), who);
+  const base = days.map((d, i) => ({ x: dayIndex(d), label: shortDate(d), n: sa[i].n }));
   const forWho = who === 'team' ? 'Team average' : athletes.get(who)?.name || '';
   const notes = [A, B].filter(Boolean).map((M) => (M.hint ? `${M.label}: ${M.hint}.` : '')).filter(Boolean);
   if (who === 'team' && [A, B].some((M) => M?.team > 1)) notes.push(`Team averages need ${MIN_TEAM}+ swimmers that day.`);
   if (B) {
-    const sb = metricSeries(athletes, b, mornings, who);
+    const sb = metricSeries(athletes, b, datesFor(B), who);
     const panel = (M) => ({ kind: M.kind, min: M.min, max: M.max, title: title(M) });
     pairChart(el, base.map((d, i) => ({ ...d, top: sa[i].value ?? NaN, bottom: sb[i].value ?? NaN })), {
       top: panel(A),
@@ -531,7 +534,7 @@ function drawPicker(root, athletes, { a, b, who, span, wd = '' }) {
       tip: (d) => `${d.label}<br>${esc(title(A))}: <b>${show(A, d.top)}</b><br>${esc(title(B))}: <b>${show(B, d.bottom)}</b>`,
     });
   } else if (b === 'team') {
-    const st = metricSeries(athletes, a, mornings, 'team');
+    const st = metricSeries(athletes, a, datesFor(A), 'team');
     lineChart(el, base.map((d, i) => ({ ...d, y: sa[i].value ?? NaN, y2: st[i].value ?? NaN })), {
       yMin: A.min, yMax: A.max, yFormat: (v) => String(+v.toFixed(1)),
       tip: (d) => `${d.label}<br>${esc(forWho)}: <b>${show(A, d.y)}</b><br>Team: <b>${show(A, d.y2)}</b>`,
@@ -551,7 +554,7 @@ function drawPicker(root, athletes, { a, b, who, span, wd = '' }) {
       tip: (d) => `${d.label}: <b>${Number.isFinite(d.y) ? show(A, d.y) : '–'}</b>`,
     });
   }
-  const range = wd !== '' ? `the last ${WEEKS_BACK} ${DAY_NAMES[wd]}s${sessions ? ' (training on that day)' : B?.training ? ` (training: the day before each ${DAY_NAMES[wd]} morning)` : ''}`
+  const range = byDay ? `the last ${WEEKS_BACK} ${DAY_NAMES[wd]}s${A.training || B?.training ? ` (workouts done on ${DAY_NAMES[wd]}${sessions ? '' : `, with that ${DAY_NAMES[wd]} morning’s check-in`})` : ''}`
     : `last ${span} days${sessions ? ' (training days, up to today)' : ''}`;
   root.querySelector('[data-picker-note]').textContent = [`${forWho}, ${range}.`, ...notes].join(' ');
 }

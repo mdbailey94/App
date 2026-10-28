@@ -141,14 +141,23 @@ export function lineChart(container, data, opts = {}) {
   addTooltip(container, svg, data, pts, o.tip, PAD.top, height - PAD.bottom);
 }
 
+// Bar slots across the axis: one per step between points (a day, or a week
+// for a one-weekday chart), so weekly bars are as wide as daily ones.
+const slotsOf = (xs) => {
+  const sorted = [...xs].sort((a, b) => a - b);
+  let step = Infinity;
+  for (let i = 1; i < sorted.length; i++) if (sorted[i] > sorted[i - 1]) step = Math.min(step, sorted[i] - sorted[i - 1]);
+  if (!Number.isFinite(step)) step = 1;
+  return Math.max(1, Math.round((sorted[sorted.length - 1] - sorted[0]) / step) + 1);
+};
+
 export function barChart(container, data, opts = {}) {
   const o = {
     height: 140, yFormat: (v) => String(v), xLabel: (d) => d.label, tip: (d) => `${d.label}: <b>${o.yFormat(d.y)}</b>`, ...opts,
   };
   if (!data.length) { container.innerHTML = '<p class="muted">No data yet.</p>'; return; }
   const { svg, sx, sy, iw } = frame(container, { ...o, data, zeroBased: true, xInset: 13 }); // half the widest bar
-  const span = Math.max(1, data[data.length - 1].x - data[0].x + 1);
-  const bw = Math.max(2, Math.min(24, iw / span - 2));
+  const bw = Math.max(2, Math.min(24, iw / slotsOf(data.map((d) => d.x)) - 2));
   const base = sy(0);
   // `signed`: values either side of zero (e.g. above/below usual), with a
   // zero line and up / down colours.
@@ -251,8 +260,7 @@ export function pairChart(container, data, opts = {}) {
   for (const p of panels) p.sy = (v) => p.y0 + o.panelHeight - ((v - p.lo) / (p.hi - p.lo)) * o.panelHeight;
 
   const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': `${panels[0].title} and ${panels[1].title}` }, container);
-  const span = Math.max(1, xHi - xLo + 1);
-  const bw = Math.max(2, Math.min(24, iw / span - 2));
+  const bw = Math.max(2, Math.min(24, iw / slotsOf(xs) - 2));
   let pts = null;
   for (const p of panels) {
     for (const t of p.ticks) {

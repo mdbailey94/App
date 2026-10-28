@@ -440,7 +440,13 @@ test('charts by weekday: Mondays only (the last 12), a quick pick for today’s 
   // Training on that weekday, by practice (morning or doubles).
   await expect(page.locator('#charts select[name=a] option[value=loadPm]')).toHaveText('Doubles load');
   await page.selectOption('#charts select[name=a]', 'loadAm');
-  await expect(note).toContainText('(training on that day)');
+  await expect(note).toContainText('(workouts done on Monday)');
+  // With readiness: Monday's workouts, and that Monday morning's check-in (not Sunday's training).
+  await page.selectOption('#charts select[name=b]', 'readiness');
+  await expect(note).toContainText('(workouts done on Monday, with that Monday morning’s check-in)');
+  await expect(chart.locator('.panel-title')).toHaveText(['Morning load', 'Readiness']);
+  await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
+  await page.selectOption('#charts select[name=b]', '');
   await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
   // Today's weekday in one tap, and back to every day.
   const todays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
