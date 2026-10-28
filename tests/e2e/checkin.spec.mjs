@@ -10,11 +10,11 @@ const LOGGED = { am: { durationMin: 120, rpe: 5, perf: 7 }, pm: { none: null }, 
 // Today at a given local time (doubles are asked about from 4:30 pm).
 const at = (h, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; };
 // A fixed week, for flows that depend on the weekday (Sundays are assumed off).
-const WEEK = { sat: '2026-10-10', sun: '2026-10-11', mon: '2026-10-12', tue: '2026-10-13', wed: '2026-10-14' };
+const WEEK = { sat: '2026-10-10', sun: '2026-10-11', mon: '2026-10-12', tue: '2026-10-13', wed: '2026-10-14', thu: '2026-10-15' };
 const atDay = (date, h = 7) => new Date(`${date}T${String(h).padStart(2, '0')}:00:00`);
 
 test('the check-in is just the questions; then yesterday’s training, which can be skipped', async ({ page }) => {
-  await page.clock.setFixedTime(atDay(WEEK.wed));
+  await page.clock.setFixedTime(atDay(WEEK.wed, 6)); // before 6:30 am: today's practice isn't asked yet
   await seed(page, { hash: '#morning' });
   await expect(page.locator('#reading')).toHaveCount(0);
   await expect(page.locator('#checkin select, #checkin [name=amDid], #checkin [name=weights]')).toHaveCount(0); // no training here
@@ -26,7 +26,8 @@ test('the check-in is just the questions; then yesterday’s training, which can
   await page.waitForURL(new RegExp(`#workouts/${WEEK.tue}\\?after=checkin`));
   await expect(page.locator('.welcome')).toContainText('Check-in saved');
   await expect(page.locator('h2')).toHaveText('Yesterday’s training');
-  await expect(page.locator('#log-today')).toHaveAttribute('href', `#workouts/${WEEK.wed}`);
+  await expect(page.locator('.welcome')).toContainText('Already trained this morning?');
+  await expect(page.locator('#log-today')).toHaveAttribute('href', `#workouts/${WEEK.wed}?after=checkin`);
   const e = await entryOn(page, WEEK.wed);
   expect(e.wellness).toMatchObject({ scaleMax: 7, energy: 5 });
   expect(e.training).toBeUndefined();
@@ -62,9 +63,17 @@ test('logging yesterday right after the check-in, and the streak grows', async (
   await answerAll(page);
   await page.click('#save');
   await page.waitForURL(/#workouts\//);
+  await expect(page.locator('.welcome')).toContainText('Today’s practice is next.');
   await answerWorkout(page, { am: ['120', '5', '7'], pm: ['no'] });
   await page.click('#save-workout');
+  // After 6:30 am, then this morning's practice.
+  await page.waitForURL(new RegExp(`#workouts/${WEEK.wed}\\?after=checkin&then=1`));
+  await expect(page.locator('.welcome')).toContainText('Saved. One more: how was today’s practice (Wednesday)?');
+  await expect(page.locator('h2')).toHaveText('Today’s training');
+  await answerWorkout(page, { am: ['90', '6', '8'] });
+  await page.click('#save-workout');
   await page.waitForURL(/#today$/);
+  expect((await entryOn(page, WEEK.wed)).workouts.am).toMatchObject({ durationMin: 90, rpe: 6, perf: 8 });
   await expect(page.locator('#yesterday-line')).toHaveText('✓ Yesterday’s training logged');
   await expect(page.locator('.streak')).toHaveText('🔥 4-day streak');
   const y = await entryOn(page, WEEK.tue);
@@ -252,7 +261,12 @@ test('Sunday counts as a day off; after the check-in, each unlogged day this wee
   });
   await answerAll(page);
   await page.click('#save');
-  // Sunday is skipped (assumed off): Saturday first, then Friday.
+  // Sunday is skipped (assumed off), so today's practice first (it's after
+  // 6:30 am), then Saturday, then Friday.
+  await page.waitForURL(new RegExp(`#workouts/${WEEK.mon}\\?after=checkin`));
+  await expect(page.locator('.welcome')).toContainText('One more: how was today’s practice (Monday)?');
+  await answerWorkout(page);
+  await page.click('#save-workout');
   await page.waitForURL(new RegExp(`#workouts/${WEEK.sat}\\?after=checkin`));
   await expect(page.locator('.welcome')).toContainText('Saturday’s training isn’t logged yet');
   await answerWorkout(page);
@@ -298,4 +312,22 @@ test('History: the last 14 entries with a readiness dot, older ones on request, 
   await page.click(`[data-del="${dayISO(1)}"]`);
   await expect(page.locator('.entries-table tbody tr')).toHaveCount(19);
   expect(await page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k)).some((e) => e.date === d), [ENTRIES, dayISO(1)])).toBe(false);
+});
+
+test('yesterday already logged: after 6:30 am the check-in goes straight to today’s practice; before, straight to Today', async ({ page }) => {
+  await page.clock.setFixedTime(new Date(`${WEEK.wed}T09:15:00`));
+  await seed(page, { entries: [{ date: WEEK.tue, wellness: WELLNESS(), workouts: LOGGED }], hash: '#morning' });
+  await answerAll(page);
+  await page.click('#save');
+  await page.waitForURL(new RegExp(`#workouts/${WEEK.wed}\\?after=checkin$`));
+  await expect(page.locator('.welcome')).toContainText('Check-in saved. One more: how was today’s practice (Wednesday)?');
+  await expect(page.locator('#log-today')).toHaveCount(0);
+  await page.click('#skip');
+  await page.waitForURL(/#today$/);
+
+  await page.clock.setFixedTime(new Date(`${WEEK.thu}T06:10:00`));
+  await seed(page, { entries: [{ date: WEEK.wed, wellness: WELLNESS(), workouts: LOGGED }], hash: '#morning' });
+  await answerAll(page);
+  await page.click('#save');
+  await page.waitForURL(/#today$/);
 });

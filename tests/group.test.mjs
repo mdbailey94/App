@@ -386,3 +386,14 @@ test('dataDashboard: each swimmer by day with period averages; check-in rate fro
   assert.equal(dataDashboard(rows, 'perfAm', '2026-10-14', 7).swimmers.find((r) => r.name === 'Ann').latest, 7);
   assert.deepEqual(dataDashboard(rows, 'energy', '2026-10-14', 7, { swimmers: false }).swimmers, []);
 });
+
+test('metricSeries: morning and doubles load, one practice each', () => {
+  const T = { am: { durationMin: 120, rpe: 6, perf: 8 }, pm: { durationMin: 90, rpe: 7, perf: 6 }, weights: true, meet: false };
+  const rows = [
+    { athlete: 'A', date: '2026-10-06', entry: { wellness: { sleepHours: 8, scaleMax: 7, energy: 5 }, workouts: T } },
+    { athlete: 'A', date: '2026-10-07', entry: { wellness: { sleepHours: 8, scaleMax: 7, energy: 5 } } },
+  ];
+  // Filed on the morning after; weights are left out of either practice.
+  assert.deepEqual(metricSeries(rows, 'loadAm', ['2026-10-07'], 'a').map((p) => p.value), [720]);
+  assert.deepEqual(metricSeries(rows, 'loadPm', ['2026-10-07'], 'a').map((p) => p.value), [630]);
+});

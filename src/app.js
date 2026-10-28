@@ -3,7 +3,7 @@ import {
   loadTeam, saveSettings, todayISO, upsertEntry, clearAll, fixMisloggedSunday,
 } from './storage.js';
 import {
-  assessDay, checkInStreak, compareToUsual, sessionLoad, shiftDate, trainingOnDay, unloggedDays, WEEKDAYS, withWorkouts,
+  assessDay, checkInStreak, compareToUsual, hasWorkouts, isSunday, sessionLoad, shiftDate, trainingOnDay, unloggedDays, WEEKDAYS, withWorkouts,
 } from './readiness.js';
 import { PpgCamera, cameraSupported } from './camera.js';
 import { drawWaveform } from './charts.js';
@@ -12,7 +12,7 @@ import {
   checkinSections, readCheckin, showFormError, showMissing, wireCheckin,
 } from './checkin-form.js';
 import {
-  asksDoubles, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary, workoutParts,
+  asksDoubles, asksToday, complete, formValues, readWorkouts, wireWorkouts, workoutSections, workoutSummary, workoutParts,
 } from './workout-form.js';
 import { esc, fmt, prettyDate, renderTrends, shareOrCopy, shortDate } from './ui.js';
 import { renderTeam, syncLine } from './team-tab.js';
@@ -190,9 +190,18 @@ async function sendAndWait(btn) {
 }
 
 // After today's check-in (and after each day logged from there): on to the
-// most recent day this past week with no training logged, if any. Sundays
-// count as off days unless they log otherwise.
-const nextUnlogged = () => unloggedDays(loadEntries(), todayISO())[0];
+// next day with no training logged – yesterday first, then (from 6:30 am)
+// today's practice, then earlier days this past week. Sundays count as off
+// days unless they log otherwise.
+function nextUnlogged() {
+  const entries = loadEntries();
+  const today = todayISO();
+  const past = unloggedDays(entries, today);
+  const yesterday = shiftDate(today, -1);
+  const todayOpen = asksToday() && !isSunday(today) && !hasWorkouts(entries.find((e) => e.date === today)?.workouts);
+  const order = [...past.filter((d) => d === yesterday), ...(todayOpen ? [today] : []), ...past.filter((d) => d !== yesterday)];
+  return order[0];
+}
 function afterCheckin() {
   const d = nextUnlogged();
   location.hash = d ? `#workouts/${d}?after=checkin` : '#today';
@@ -351,14 +360,16 @@ function renderWorkoutDay(date, query) {
   const own = entries.find((e) => e.date === date)?.workouts;
   const values = formValues(own, own ? null : trainingOnDay(entries, date));
   const afterCheckin = query.get('after') === 'checkin';
+  const fromWorkout = query.get('then') === '1'; // arrived here after saving another day
   const doubles = asksDoubles(date, today);
   view.innerHTML = `
     ${afterCheckin ? `<section class="card welcome" role="status">
-      <p><b>✓ ${date === shiftDate(today, -1) ? `Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was <b>yesterday’s</b> training`
+      <p><b>✓ ${date === today ? `${fromWorkout ? 'Saved' : `Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}`}.</b> One more: how was <b>today’s</b> practice`
+    : date === shiftDate(today, -1) ? `Check-in ${syncStatus().joined && !syncStatus().pending ? 'sent' : 'saved'}.</b> One more: how was <b>yesterday’s</b> training`
     : `Saved.</b> ${esc(weekdayName(date))}’s training isn’t logged yet: how was it`}
-        (${esc(date === shiftDate(today, -1) ? weekdayName(date) : prettyDate(date))})?
+        (${esc(date === today || date === shiftDate(today, -1) ? weekdayName(date) : prettyDate(date))})?
         <a href="#today" id="skip">Skip</a></p>
-      <p class="muted small">Already trained this morning? <a href="#workouts/${today}" id="log-today">Log today’s instead</a>.</p></section>` : ''}
+      ${date !== today ? `<p class="muted small">${asksToday() ? 'Today’s practice is next.' : 'Already trained this morning?'} <a href="#workouts/${today}?after=checkin" id="log-today">Log today’s ${asksToday() ? 'now' : 'instead'}</a>.</p>` : ''}</section>` : ''}
     <form id="workout" class="stack" novalidate>
       <section class="card"><p><a href="#workouts">‹ Workouts</a></p>
         <h2>${esc(dayName(date) === 'Today' || dayName(date) === 'Yesterday' ? `${dayName(date)}’s training` : 'Training')}</h2>
@@ -383,7 +394,7 @@ function renderWorkoutDay(date, query) {
     upsertEntry(date, { workouts: { ...kept, ...out.workouts, loggedAt: own?.loggedAt || new Date().toISOString() } });
     sendAndWait(form.querySelector('#save-workout')).then(() => {
       const next = afterCheckin && nextUnlogged();
-      location.hash = next ? `#workouts/${next}?after=checkin` : afterCheckin ? '#today' : '#workouts';
+      location.hash = next ? `#workouts/${next}?after=checkin&then=1` : afterCheckin ? '#today' : '#workouts';
     });
   });
 }

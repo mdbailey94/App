@@ -16,6 +16,10 @@ export const PRACTICES = [
 // Doubles are asked about once they could have happened: for today after
 // 4:30 pm, and any time for earlier days (logged the next morning).
 export const DOUBLES_FROM = 16 * 60 + 30;
+// From 6:30 am the check-in also asks about today's morning practice (a
+// swimmer who checks in after practice rates the one they just swam).
+export const TODAY_FROM = 6 * 60 + 30;
+export const asksToday = (now = new Date()) => now.getHours() * 60 + now.getMinutes() >= TODAY_FROM;
 export function asksDoubles(date, today, now = new Date()) {
   return date < today || now.getHours() * 60 + now.getMinutes() >= DOUBLES_FROM;
 }

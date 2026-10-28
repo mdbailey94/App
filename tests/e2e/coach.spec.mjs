@@ -421,3 +421,38 @@ test('the dashboard opens on the last data at once and refreshes behind it; the 
   await page.click('#signout');
   expect(await page.evaluate(() => localStorage.getItem('athlete-readiness/coach-rows/v1'))).toBeNull();
 });
+
+test('charts by weekday: Mondays only (the last 12), a quick pick for today’s weekday, doubles load', async ({ page }, testInfo) => {
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  await page.goto('/coach.html#data');
+  const chart = page.locator('#charts [data-t="picker"]');
+  const note = page.locator('#charts [data-picker-note]');
+  await page.selectOption('#charts select[name=b]', '');
+  await page.selectOption('#charts select[name=a]', 'readiness');
+  await page.selectOption('#charts select[name=wd]', '1');
+  await expect(page).toHaveURL(/wd=1/);
+  await expect(note).toContainText('the last 12 Mondays');
+  // Every point is a Monday, a week apart.
+  const labels = await chart.locator('.series-dot').count();
+  expect(labels).toBeGreaterThan(0);
+  expect(labels).toBeLessThanOrEqual(12);
+  // Training on that weekday, by practice (morning or doubles).
+  await expect(page.locator('#charts select[name=a] option[value=loadPm]')).toHaveText('Doubles load');
+  await page.selectOption('#charts select[name=a]', 'loadAm');
+  await expect(note).toContainText('(workouts done on Monday)');
+  // With readiness: Monday's workouts, and that Monday morning's check-in (not Sunday's training).
+  await page.selectOption('#charts select[name=b]', 'readiness');
+  await expect(note).toContainText('(workouts done on Monday, with that Monday morning’s check-in)');
+  await expect(chart.locator('.panel-title')).toHaveText(['Morning load', 'Readiness']);
+  await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
+  await page.selectOption('#charts select[name=b]', '');
+  await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
+  // Today's weekday in one tap, and back to every day.
+  const todays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+  await page.click(`.day-preset:has-text("${todays}s")`);
+  await expect(note).toContainText(`the last 12 ${todays}s`);
+  await page.click('.day-preset:has-text("Every day")');
+  await expect(note).toContainText('last 7 days');
+  await expect(page).not.toHaveURL(/wd=/);
+});

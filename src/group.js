@@ -547,6 +547,8 @@ export const METRICS = {
   rpeAm: { label: 'Morning effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
   rpePm: { label: 'Doubles effort', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went' },
   perfAm: { label: 'Morning: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went', good: true },
+  loadAm: { label: 'Morning load', group: 'Training', kind: 'bar', team: MIN_TEAM, training: true, hint: 'minutes × effort, morning practice' },
+  loadPm: { label: 'Doubles load', group: 'Training', kind: 'bar', team: MIN_TEAM, training: true, hint: 'minutes × effort, doubles' },
   perfPm: { label: 'Doubles: how well', group: 'Training', kind: 'line', min: 0, max: 10, training: true, unit: '/10', hint: 'those who went', good: true },
   rmssd: { label: 'HRV (ms)', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' ms', good: true },
   hr: { label: 'Resting heart rate', group: 'Heart (optional)', kind: 'line', team: MIN_TEAM, unit: ' bpm' },
@@ -565,7 +567,13 @@ function metricValue(a, key, date) {
     if (!t) return null;
     if (key === 'load') return sessionLoad(t);
     if (key === 'minutes') return 'am' in t || 'pm' in t ? practiceMinutes(t) : t.durationMin || 0;
-    const k = key.endsWith('Am') ? 'am' : 'pm';
+    if (key === 'loadAm' || key === 'loadPm') {
+      // One practice's load; an older whole-day check-in counts as the morning.
+      const k = key === 'loadAm' ? 'am' : 'pm';
+      if (!('am' in t) && !('pm' in t)) return k === 'am' && t.durationMin > 0 ? t.durationMin * (t.rpe || 0) : null;
+      return t[k]?.durationMin > 0 ? t[k].durationMin * (t[k].rpe || 0) : null;
+    }
+    const k = key.endsWith('Am') ? 'am' : 'pm'; // rpe/perf Am|Pm
     const v = key.startsWith('rpe') ? sessionRpe(t, k) : t[k]?.perf;
     return v > 0 ? v : null;
   }
@@ -585,7 +593,7 @@ function metricValue(a, key, date) {
 export function metricSeries(rows, key, dates, who = 'team') {
   const athletes = rows instanceof Map ? rows : groupByAthlete(rows);
   const m = METRICS[key];
-  const round = (v) => (v === null ? null : key === 'readiness' || key === 'load' || key === 'minutes' ? Math.round(v) : +v.toFixed(1));
+  const round = (v) => (v === null ? null : ['readiness', 'load', 'loadAm', 'loadPm', 'minutes'].includes(key) ? Math.round(v) : +v.toFixed(1));
   return dates.map((date) => {
     if (key === 'rate') {
       const day = dayOf(athletes, date);
