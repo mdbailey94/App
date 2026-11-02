@@ -450,6 +450,7 @@ test('charts by weekday: Mondays only (the last 12), a quick pick for today’s 
   await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
   // Today's weekday in one tap, and back to every day.
   const todays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+  await page.selectOption('#charts select[name=wd]', ''); // from every day (today may itself be a Monday)
   await page.click(`.day-preset:has-text("${todays}s")`);
   await expect(note).toContainText(`the last 12 ${todays}s`);
   await page.click('.day-preset:has-text("Every day")');

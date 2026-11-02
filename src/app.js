@@ -190,7 +190,7 @@ async function sendAndWait(btn) {
 }
 
 // After today's check-in (and after each day logged from there): on to the
-// next day with no training logged – yesterday first, then (from 6:30 am)
+// next day with no training logged – yesterday first, then (from 7:30 am)
 // today's practice, then earlier days this past week. Sundays count as off
 // days unless they log otherwise.
 function nextUnlogged() {

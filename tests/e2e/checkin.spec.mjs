@@ -14,7 +14,7 @@ const WEEK = { sat: '2026-10-10', sun: '2026-10-11', mon: '2026-10-12', tue: '20
 const atDay = (date, h = 7) => new Date(`${date}T${String(h).padStart(2, '0')}:00:00`);
 
 test('the check-in is just the questions; then yesterday’s training, which can be skipped', async ({ page }) => {
-  await page.clock.setFixedTime(atDay(WEEK.wed, 6)); // before 6:30 am: today's practice isn't asked yet
+  await page.clock.setFixedTime(atDay(WEEK.wed, 7)); // 7:00, before 7:30 am: today's practice isn't asked yet
   await seed(page, { hash: '#morning' });
   await expect(page.locator('#reading')).toHaveCount(0);
   await expect(page.locator('#checkin select, #checkin [name=amDid], #checkin [name=weights]')).toHaveCount(0); // no training here
@@ -54,7 +54,7 @@ test('a new day starts blank: nothing is carried over, and every answer is asked
 });
 
 test('logging yesterday right after the check-in, and the streak grows', async ({ page }) => {
-  await page.clock.setFixedTime(atDay(WEEK.wed));
+  await page.clock.setFixedTime(atDay(WEEK.wed, 8));
   // Up to Tuesday: training for Saturday–Monday came from older check-ins.
   const before = [WEEK.sun, WEEK.mon, WEEK.tue].map((date) => ({ date, wellness: WELLNESS(), training: { durationMin: 90, rpe: 5 } }));
   await seed(page, { entries: before, hash: '#today' });
@@ -66,7 +66,7 @@ test('logging yesterday right after the check-in, and the streak grows', async (
   await expect(page.locator('.welcome')).toContainText('Today’s practice is next.');
   await answerWorkout(page, { am: ['120', '5', '7'], pm: ['no'] });
   await page.click('#save-workout');
-  // After 6:30 am, then this morning's practice.
+  // After 7:30 am, then this morning's practice.
   await page.waitForURL(new RegExp(`#workouts/${WEEK.wed}\\?after=checkin&then=1`));
   await expect(page.locator('.welcome')).toContainText('Saved. One more: how was today’s practice (Wednesday)?');
   await expect(page.locator('h2')).toHaveText('Today’s training');
@@ -250,7 +250,7 @@ test('after checking in: thanks, no score or advice, then a comparison with thei
 });
 
 test('Sunday counts as a day off; after the check-in, each unlogged day this week is asked for in turn', async ({ page }) => {
-  await page.clock.setFixedTime(atDay(WEEK.mon));
+  await page.clock.setFixedTime(atDay(WEEK.mon, 8));
   await seed(page, {
     entries: [
       { date: '2026-10-08', wellness: WELLNESS(), workouts: LOGGED },
@@ -262,7 +262,7 @@ test('Sunday counts as a day off; after the check-in, each unlogged day this wee
   await answerAll(page);
   await page.click('#save');
   // Sunday is skipped (assumed off), so today's practice first (it's after
-  // 6:30 am), then Saturday, then Friday.
+  // 7:30 am), then Saturday, then Friday.
   await page.waitForURL(new RegExp(`#workouts/${WEEK.mon}\\?after=checkin`));
   await expect(page.locator('.welcome')).toContainText('One more: how was today’s practice (Monday)?');
   await answerWorkout(page);
@@ -314,7 +314,7 @@ test('History: the last 14 entries with a readiness dot, older ones on request, 
   expect(await page.evaluate(([k, d]) => JSON.parse(localStorage.getItem(k)).some((e) => e.date === d), [ENTRIES, dayISO(1)])).toBe(false);
 });
 
-test('yesterday already logged: after 6:30 am the check-in goes straight to today’s practice; before, straight to Today', async ({ page }) => {
+test('yesterday already logged: after 7:30 am the check-in goes straight to today’s practice; before, straight to Today', async ({ page }) => {
   await page.clock.setFixedTime(new Date(`${WEEK.wed}T09:15:00`));
   await seed(page, { entries: [{ date: WEEK.tue, wellness: WELLNESS(), workouts: LOGGED }], hash: '#morning' });
   await answerAll(page);
@@ -325,7 +325,7 @@ test('yesterday already logged: after 6:30 am the check-in goes straight to toda
   await page.click('#skip');
   await page.waitForURL(/#today$/);
 
-  await page.clock.setFixedTime(new Date(`${WEEK.thu}T06:10:00`));
+  await page.clock.setFixedTime(new Date(`${WEEK.thu}T07:20:00`));
   await seed(page, { entries: [{ date: WEEK.wed, wellness: WELLNESS(), workouts: LOGGED }], hash: '#morning' });
   await answerAll(page);
   await page.click('#save');
