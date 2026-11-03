@@ -1015,7 +1015,7 @@ function renderHandout(coach) {
       <section class="ho-daily">
         <h2>Every day</h2>
         <div class="ho-grid">
-          <div><h3>☀️ When you wake up</h3><p>Open the app and tap <b>Start my morning check-in</b>: sleep, energy, soreness, stress, mood, motivation, and any injury. Tap <b>Save and send</b>.</p></div>
+          <div><h3>⏰ Check in at the same time</h3><p>Fill it out <b>before practice</b> or about <b>30 minutes after practice</b>. Either works: pick one and stick with it for the best results. Tap <b>Start my morning check-in</b>, answer, then <b>Save and send</b>.</p></div>
           <div><h3>🏊 Your practices</h3><p>After the check-in it asks how <b>yesterday’s</b> practice went: how long, how hard (1–10) and how well (1–10). After 7:30 am it also asks about <b>this morning’s</b> practice.</p></div>
           <div><h3>🌙 Doubles</h3><p>Log afternoon doubles after 4:30 pm, or the next morning. Missed a day? The <b>Workouts</b> tab shows what still needs filling in.</p></div>
           <div><h3>🔒 Private</h3><p>Only your coach sees your answers. Teammates never see yours. Answer honestly: there are no wrong answers.</p></div>
