@@ -839,3 +839,62 @@ th { letter-spacing: 0.01em; }
 .presets-row > span { white-space: nowrap; margin-right: 2px; }
 .presets-row .preset { min-width: 52px; min-height: 36px; padding: 0 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-width: 350px) { .presets-row { gap: 4px; } .presets-row .preset { min-width: 44px; padding: 0 8px; } .presets-row > span { font-size: 12px; } }
+
+/* ---------- swimmer setup handout (coach dashboard, printable) */
+.handout-bar { margin: 4px 0 12px; }
+.handout { background: #fff; color: #111; border-radius: var(--radius); padding: 28px; border: 1px solid var(--border); max-width: 760px; margin: 0 auto 24px; font-size: 14px; line-height: 1.45; }
+.handout h1 { font-size: 26px; margin: 0; letter-spacing: -.01em; }
+.handout h2 { font-size: 17px; margin: 0 0 8px; color: #111; }
+.handout h3 { font-size: 14px; margin: 0 0 4px; color: #111; }
+.ho-head { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 2px solid #2a78d6; }
+.ho-logo { width: 56px; height: 56px; flex-shrink: 0; }
+.ho-sub { margin: 2px 0 0; color: #444; font-size: 15px; }
+.ho-sub b { color: #2a78d6; letter-spacing: .04em; }
+.ho-setup { display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: start; padding: 18px 0; border-bottom: 1px solid #ddd; }
+.ho-qr { text-align: center; }
+.ho-qr svg { width: 220px; height: 220px; display: block; border: 1px solid #ddd; border-radius: 12px; }
+.ho-qr p { margin: 6px 0 0; font-size: 13px; font-weight: 600; color: #2a78d6; }
+.ho-steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.ho-steps > li { position: relative; padding: 0 0 12px 40px; counter-increment: s; }
+.ho-steps > li::before { content: counter(s); position: absolute; left: 0; top: -2px; width: 28px; height: 28px; border-radius: 50%; background: #2a78d6; color: #fff; font-weight: 700; display: grid; place-items: center; }
+.ho-steps > li > span { display: block; font-size: 13px; color: #444; margin-top: 2px; }
+.ho-key { display: inline-block; min-width: 18px; padding: 0 4px; border: 1px solid #bbb; border-radius: 5px; text-align: center; font-size: 12px; line-height: 18px; }
+.ho-daily { padding: 16px 0; border-bottom: 1px solid #ddd; }
+.ho-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.ho-grid > div { background: #f3f7fd; border-radius: 10px; padding: 10px 12px; }
+.ho-grid p { margin: 0; font-size: 13px; color: #333; }
+.ho-trouble { padding-top: 16px; }
+.ho-trouble dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin: 0; }
+.ho-trouble dt { font-weight: 700; margin: 0; }
+.ho-trouble dd { font-size: 13px; color: #333; margin: 2px 0 0; }
+.ho-note { font-size: 12px; color: #555; margin: 10px 0 0; }
+@media (max-width: 640px) {
+  .handout { padding: 18px; }
+  .ho-setup { grid-template-columns: 1fr; }
+  .ho-qr svg { margin: 0 auto; }
+  .ho-grid, .ho-trouble dl { grid-template-columns: 1fr; }
+}
+@media print {
+  @page { size: letter; margin: 0.45in; }
+  .handout { border: 0; padding: 0; max-width: none; margin: 0; font-size: 12.5px; }
+  .handout h1 { font-size: 24px; }
+  .ho-grid > div { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ho-steps > li::before, .ho-head { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .handout-bar { display: none !important; }
+  .handout { font-size: 12.5px; line-height: 1.4; }
+  .handout h1 { font-size: 22px; }
+  .handout h2 { font-size: 15px; margin-bottom: 6px; }
+  .handout h3 { font-size: 12.5px; }
+  .ho-head { padding-bottom: 10px; }
+  .ho-setup { grid-template-columns: 220px 1fr; gap: 20px; padding: 14px 0; }
+  .ho-qr svg { width: 220px; height: 220px; }
+  .ho-steps > li { padding-bottom: 8px; }
+  .ho-steps > li > span, .ho-grid p, .ho-trouble dd { font-size: 12px; }
+  .ho-daily { padding: 10px 0; }
+  .ho-grid { gap: 8px 14px; }
+  .ho-grid > div { padding: 8px 10px; }
+  .ho-trouble { padding-top: 10px; }
+  .ho-trouble dl { gap: 6px 14px; }
+  .ho-note { margin-top: 6px; font-size: 10.5px; }
+  body.coach main { padding: 0 !important; }
+}

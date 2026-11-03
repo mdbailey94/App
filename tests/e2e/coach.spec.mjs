@@ -457,3 +457,34 @@ test('charts by weekday: Mondays only (the last 12), a quick pick for today’s 
   await expect(note).toContainText('last 7 days');
   await expect(page).not.toHaveURL(/wd=/);
 });
+
+test('setup handout: the group’s invite QR code, steps and troubleshooting, printable, from Messages', async ({ page }, testInfo) => {
+  await page.goto('/coach.html');
+  await signIn(page, testInfo);
+  await page.goto('/coach.html#messages');
+  await page.click('a:has-text("Printable setup handout")');
+  await expect(page).toHaveURL(/#handout$/);
+  await expect(page.locator('#coach-tabs a[aria-current]')).toHaveText('Messages');
+  const h = page.locator('.handout');
+  await expect(h.locator('.ho-qr svg')).toBeVisible();
+  await expect(h.locator('.ho-sub')).toContainText(`Group code ${GROUP_CODE}`);
+  await expect(h.locator('.ho-steps > li')).toHaveCount(4);
+  await expect(h.locator('.ho-trouble dt')).toHaveCount(6);
+  await expect(h).not.toContainText(COACH_PASSWORD); // never the coach password
+  await expect(page.locator('#print-handout')).toBeVisible();
+});
+
+test('setup handout is coach only: not signed in, a wrong saved password, or the swimmer app all show no handout', async ({ page }, testInfo) => {
+  // Not signed in: the coach sign-in, no QR code.
+  await page.goto('/coach.html#handout');
+  await expect(page.locator('#coach-login')).toBeVisible();
+  await expect(page.locator('.handout')).toHaveCount(0);
+  // A saved sign-in the sheet doesn't accept: refused.
+  await page.evaluate((c) => localStorage.setItem('athlete-readiness/coach/v1', JSON.stringify(c)), { url: sheetFor(testInfo).url, password: 'not-the-password', group: GROUP_CODE });
+  await page.reload();
+  await expect(page.locator('#handout-locked')).toContainText('Only the coach can open the handout');
+  await expect(page.locator('.handout')).toHaveCount(0);
+  // The swimmer app has no handout.
+  await page.goto('/#handout');
+  await expect(page.locator('.handout')).toHaveCount(0);
+});
