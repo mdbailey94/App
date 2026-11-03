@@ -981,7 +981,22 @@ function renderGearCard({ rows, arg }) {
 // A one-page setup handout for swimmers: the group's invite QR code (from
 // this coach's sign-in, so it works), the steps, the daily routine and
 // troubleshooting. Printed or saved as a PDF from the browser.
-function renderHandout(coach) {
+// Coach only: the sheet confirms the coach password before it is drawn (a
+// saved sign-in alone isn't enough), and nothing is shown if it can't.
+async function renderHandout(coach) {
+  view.innerHTML = '<section class="card"><p class="muted">Checking your coach sign-in…</p></section>';
+  try {
+    const r = await callSheet(coach.url, { action: 'ping', coachPassword: coach.password });
+    if (r?.role !== 'coach') throw new Error('Wrong coach password.');
+  } catch (e) {
+    if (!location.hash.startsWith('#handout')) return;
+    view.innerHTML = `<section class="card" id="handout-locked"><h2>Setup handout</h2>
+      <p>Only the coach can open the handout, and your group sheet couldn’t confirm the coach password just now.</p>
+      <p class="muted small">${esc(e.message)}</p>
+      <div class="actions"><a class="btn" href="#handout?retry=${Date.now()}">Try again</a><a class="btn secondary" href="#settings">Settings</a></div></section>`;
+    return;
+  }
+  if (!location.hash.startsWith('#handout')) return; // moved on while checking
   if (!coach.group) {
     view.innerHTML = `<section class="card"><h2>Setup handout</h2><p>Set your group code in <a href="#settings">Settings</a> first:
       the handout’s QR code needs it.</p></section>`;
