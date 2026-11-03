@@ -32,7 +32,8 @@ const inviteBlock = (link) => `<p class="muted small">Swimmers scan this with th
         It fills in the group details; they just add their name.</p>
         <div class="qr">${qrSvg(link)}</div>
         <input class="copy-field" id="invite" readonly value="${esc(link)}">
-        <div class="actions"><button class="btn secondary" id="copy-invite">${navigator.share ? 'Share link' : 'Copy link'}</button></div>`;
+        <div class="actions"><button class="btn secondary" id="copy-invite">${navigator.share ? 'Share link' : 'Copy link'}</button>
+          <a class="btn secondary" href="#handout">Printable setup handout</a></div>`;
 
 // Flags are worded for the athlete ("your baseline"); reword for the coach.
 const theirs = (text) => text.replace(/\byour\b/g, 'their');
@@ -170,20 +171,22 @@ function signOut() {
 
 // ------------------------------------------------------------------ router
 
-const SCREENS = { group: renderGroup, watchlist: renderWatchlist, data: renderData, swimmers: renderSwimmers, gearcard: renderGearCard, messages: renderMessages, settings: renderSettings };
+const SCREENS = { group: renderGroup, watchlist: renderWatchlist, data: renderData, swimmers: renderSwimmers, gearcard: renderGearCard, messages: renderMessages, settings: renderSettings, handout: renderHandout };
+const TAB_OF = { gearcard: 'swimmers', handout: 'messages' };
 
 function route() {
   const [path, qs] = (location.hash.slice(1) || 'group').split('?');
   const [name, arg] = path.split('/');
   const screen = name === 'history' ? 'data' : SCREENS[name] ? name : 'group'; // #history: the tab's old name
   const query = new URLSearchParams(qs || '');
-  tabs.querySelectorAll('a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === (screen === 'gearcard' ? 'swimmers' : screen)));
+  tabs.querySelectorAll('a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === (TAB_OF[screen] || screen)));
   window.scrollTo(0, 0);
 
   const coach = loadCoach();
   tabs.hidden = !coach;
   if (!coach) { renderLogin(); return; }
   if (screen === 'settings') { renderSettings(coach); return; }
+  if (screen === 'handout') { renderHandout(coach); return; } // needs no sheet data
 
   const draw = (rows) => SCREENS[screen]({ coach, rows, query, arg: arg && decodeURIComponent(arg) });
   const ticket = ++routeTicket;
@@ -973,6 +976,67 @@ function renderGearCard({ rows, arg }) {
       <p class="muted small">Dives from the start signal; pushes from feet leaving the wall. S2 50 pace, S3 100 pace, S4 200 pace.</p>` : ''}
     </section>`;
   view.querySelector('#print-card').addEventListener('click', () => window.print());
+}
+
+// A one-page setup handout for swimmers: the group's invite QR code (from
+// this coach's sign-in, so it works), the steps, the daily routine and
+// troubleshooting. Printed or saved as a PDF from the browser.
+function renderHandout(coach) {
+  if (!coach.group) {
+    view.innerHTML = `<section class="card"><h2>Setup handout</h2><p>Set your group code in <a href="#settings">Settings</a> first:
+      the handout’s QR code needs it.</p></section>`;
+    return;
+  }
+  const link = inviteLink(appUrl(), coach.url, coach.group);
+  view.innerHTML = `
+    <div class="card-head no-print handout-bar"><a href="#messages">‹ Messages</a>
+      <button type="button" class="btn small-btn" id="print-handout">Print / save PDF</button></div>
+    <article class="handout">
+      <header class="ho-head">
+        <img class="ho-logo" src="icons/icon.svg" alt="" width="56" height="56">
+        <div><h1>Athlete Readiness</h1>
+        <p class="ho-sub">Set it up on your phone in 2 minutes · Group code <b>${esc(coach.group)}</b></p></div>
+      </header>
+
+      <section class="ho-setup">
+        <div class="ho-qr">${qrSvg(link)}<p>Scan with your phone camera</p></div>
+        <ol class="ho-steps">
+          <li><b>Scan the code.</b> Open your phone’s <b>Camera</b> app, point it at the code and tap the link that pops up.
+            <span>Android: if nothing pops up, use Google Lens or the QR button in Quick Settings.</span></li>
+          <li><b>Join the group.</b> Type your <b>first and last name</b> and tap <b>Join group</b>. The group code is already filled in.
+            <span>Use the same name every time, spelled the same way.</span></li>
+          <li><b>Put it on your home screen</b> so it opens like an app.
+            <span><b>iPhone:</b> in <b>Safari</b>, tap Share <span class="ho-key">⬆︎</span> → <b>Add to Home Screen</b> → Add.</span>
+            <span><b>Android:</b> in <b>Chrome</b>, tap <span class="ho-key">⋮</span> → <b>Add to Home screen</b> (or <b>Install app</b>).</span></li>
+          <li><b>Do your first check-in.</b> It opens right after you join. About a minute.</li>
+        </ol>
+      </section>
+
+      <section class="ho-daily">
+        <h2>Every day</h2>
+        <div class="ho-grid">
+          <div><h3>☀️ When you wake up</h3><p>Open the app and tap <b>Start my morning check-in</b>: sleep, energy, soreness, stress, mood, motivation, and any injury. Tap <b>Save and send</b>.</p></div>
+          <div><h3>🏊 Your practices</h3><p>After the check-in it asks how <b>yesterday’s</b> practice went: how long, how hard (1–10) and how well (1–10). After 7:30 am it also asks about <b>this morning’s</b> practice.</p></div>
+          <div><h3>🌙 Doubles</h3><p>Log afternoon doubles after 4:30 pm, or the next morning. Missed a day? The <b>Workouts</b> tab shows what still needs filling in.</p></div>
+          <div><h3>🔒 Private</h3><p>Only your coach sees your answers. Teammates never see yours. Answer honestly: there are no wrong answers.</p></div>
+        </div>
+        <p class="ho-note">Sundays count as a day off unless you log a practice.</p>
+      </section>
+
+      <section class="ho-trouble">
+        <h2>If something goes wrong</h2>
+        <dl>
+          <div><dt>The code won’t scan</dt><dd>Hold the phone 6–12 inches away in good light. Still nothing? Ask your coach to text you the invite link and tap it.</dd></div>
+          <div><dt>No “Add to Home Screen” on iPhone</dt><dd>The link opened inside another app (Instagram, Gmail, Google). Tap the compass or ⋯ button to <b>Open in Safari</b>, then add it from Safari.</dd></div>
+          <div><dt>“Wrong group code”</dt><dd>Scan the code on this page again instead of typing. The code is <b>${esc(coach.group)}</b>.</dd></div>
+          <div><dt>“Hasn’t reached your coach yet”</dt><dd>You had no signal. Your answers are saved on your phone. Tap <b>Send now</b> once you’re online; it also retries by itself.</dd></div>
+          <div><dt>New phone, or the app was deleted</dt><dd>Scan this code again and join with <b>exactly the same name</b>. Your coach still has everything you sent.</dd></div>
+          <div><dt>The app looks out of date or blank</dt><dd>Close it fully and open it again while you have internet. Updates load by themselves.</dd></div>
+        </dl>
+        <p class="ho-note">Still stuck? Show this sheet to your coach.</p>
+      </section>
+    </article>`;
+  view.querySelector('#print-handout').addEventListener('click', () => window.print());
 }
 
 function renderSwimmers(ctx) {
