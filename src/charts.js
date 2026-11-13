@@ -215,83 +215,104 @@ export function drawWaveform(canvas, values, peaks = []) {
   }
 }
 
-// Two panels on one shared day axis, for reading one measure against
-// another without two scales on one plot (e.g. readiness on top, the day
-// before's load below), each day's values in line. One crosshair and
-// tooltip cover both.
-// data: [{ x, label, top: number|NaN|null, bottom: number|NaN|null }]
-// top / bottom: { kind: 'line' | 'bar' | 'signed', min, max, title }
-export function pairChart(container, data, opts = {}) {
-  const o = { panelHeight: 110, gap: 30, tip: (d) => d.label, ...opts };
-  const panels = [{ ...o.top, key: 'top' }, { ...o.bottom, key: 'bottom' }];
+// Two measures on one chart, for comparing them day by day: the first (`a`)
+// on the left axis, the second (`b`) on the right, each in its own colour.
+// Bars sit behind lines; two bar measures stand side by side. Both axes get
+// the same number of steps so the grid lines suit either.
+// `shared`: the same units (morning vs doubles load, say), so one axis for
+// both, and the bars and lines read against each other directly.
+// data: [{ x, label, a, b }]; opts.a / opts.b: { kind, min, max, title }.
+export function comboChart(container, data, opts = {}) {
+  const o = { height: 220, tip: (d) => d.label, ...opts };
+  const series = [{ ...o.a, key: 'a', n: 1 }, { ...o.b, key: 'b', n: 2 }];
   container.innerHTML = '';
   container.classList.add('chart');
-  const has = (p) => data.some((d) => Number.isFinite(d[p.key]) && (p.kind === 'line' || d[p.key] !== 0));
-  if (!data.length || !panels.some(has)) {
+  const isBar = (s) => s.kind !== 'line';
+  const has = (s) => data.some((d) => Number.isFinite(d[s.key]) && (!isBar(s) || d[s.key] !== 0));
+  if (!data.length || !series.some(has)) {
     container.innerHTML = '<p class="muted small">Not enough data yet.</p>';
     return;
   }
-  // Each panel's scale: its fixed range, else from the data (bars from 0,
-  // signed bars symmetric around 0).
-  for (const p of panels) {
-    const vals = data.map((d) => d[p.key]).filter(Number.isFinite);
-    let lo = p.min ?? (vals.length ? Math.min(...vals) : 0);
-    let hi = p.max ?? (vals.length ? Math.max(...vals) : 1);
-    if (p.kind === 'bar') lo = Math.min(0, lo);
-    if (p.kind === 'signed') { const r = Math.max(1, ...vals.map(Math.abs)); lo = -r; hi = r; }
-    if (p.kind === 'line' && p.min === undefined && p.max === undefined) { const pad = Math.max(1, (hi - lo) * 0.15); lo -= pad; hi += pad; }
-    p.ticks = niceTicks(lo, hi, 3);
-    p.lo = Math.min(lo, p.ticks[0]);
-    p.hi = Math.max(hi, p.ticks.at(-1));
+  for (const s of series) {
+    const vals = data.flatMap((d) => (o.shared ? [d.a, d.b] : [d[s.key]])).filter(Number.isFinite);
+    let lo = s.min ?? (vals.length ? Math.min(...vals) : 0);
+    let hi = s.max ?? (vals.length ? Math.max(...vals) : 1);
+    if (s.kind === 'bar') lo = Math.min(0, lo);
+    if (s.kind === 'signed') { const r = Math.max(1, ...vals.map(Math.abs)); lo = -r; hi = r; }
+    if (s.kind === 'line' && s.min === undefined && s.max === undefined) { const pad = Math.max(1, (hi - lo) * 0.15); lo -= pad; hi += pad; }
+    if (hi <= lo) hi = lo + 1;
+    const t = niceTicks(lo, hi, 4);
+    s.step = t[1] - t[0];
+    s.lo = t[0];
+    s.steps = t.length - 1;
+  }
+  // The same number of steps on both axes, so one set of grid lines fits both.
+  const steps = Math.max(...series.map((s) => s.steps));
+  for (const s of series) {
+    s.ticks = Array.from({ length: steps + 1 }, (_, i) => +(s.lo + i * s.step).toFixed(10));
+    s.hi = s.ticks.at(-1);
   }
   const fmtTick = (t) => String(+t.toFixed(2));
+  const room = (s) => Math.max(24, Math.ceil(Math.max(...s.ticks.map((t) => fmtTick(t).length)) * 6.5) + 10);
   const width = Math.max(260, container.clientWidth || 320);
-  const widest = Math.max(...panels.flatMap((p) => p.ticks.map((t) => fmtTick(t).length)));
-  const pad = { top: 16, right: 12, bottom: 22, left: Math.max(28, Math.ceil(widest * 6.5) + 10) };
-  const height = pad.top + 2 * o.panelHeight + o.gap + pad.bottom;
+  const pad = { top: 10, right: o.shared ? 12 : room(series[1]), bottom: 22, left: room(series[0]) };
+  const ih = o.height - pad.top - pad.bottom;
   const iw = width - pad.left - pad.right;
   const inset = 13;
   const xs = data.map((d) => d.x);
   const xLo = Math.min(...xs);
   const xHi = Math.max(...xs);
   const sx = (x) => pad.left + inset + (xHi === xLo ? (iw - 2 * inset) / 2 : ((x - xLo) / (xHi - xLo)) * (iw - 2 * inset));
-  panels[0].y0 = pad.top;
-  panels[1].y0 = pad.top + o.panelHeight + o.gap;
-  for (const p of panels) p.sy = (v) => p.y0 + o.panelHeight - ((v - p.lo) / (p.hi - p.lo)) * o.panelHeight;
+  for (const s of series) s.sy = (v) => pad.top + ih - ((v - s.lo) / (s.hi - s.lo)) * ih;
 
-  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': `${panels[0].title} and ${panels[1].title}` }, container);
-  const bw = Math.max(2, Math.min(24, iw / slotsOf(xs) - 2));
-  let pts = null;
-  for (const p of panels) {
-    for (const t of p.ticks) {
-      el('line', { x1: pad.left, x2: width - pad.right, y1: p.sy(t), y2: p.sy(t), class: t === 0 && p.kind === 'signed' ? 'zero' : 'grid' }, svg);
-      el('text', { x: pad.left - 6, y: p.sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, svg).textContent = fmtTick(t);
-    }
-    el('text', { x: pad.left, y: p.y0 - 5, class: 'panel-title' }, svg).textContent = p.title;
-    if (p.kind === 'line') {
-      const line = data.map((d) => [sx(d.x), Number.isFinite(d[p.key]) ? p.sy(d[p.key]) : NaN]);
-      drawLine(svg, line, data.length <= 60);
-      pts ||= line;
-    } else {
-      const base = p.sy(0);
-      for (const d of data) {
-        const v = d[p.key];
-        if (!Number.isFinite(v) || v === 0) continue;
-        const end = p.sy(v);
-        const dir = end < base ? 1 : -1;
-        const r = Math.min(4, bw / 2, Math.abs(base - end));
-        const x0 = sx(d.x) - bw / 2;
-        el('path', {
-          d: `M${x0},${base}V${end + dir * r}Q${x0},${end} ${x0 + r},${end}H${x0 + bw - r}Q${x0 + bw},${end} ${x0 + bw},${end + dir * r}V${base}Z`,
-          class: `series-bar${p.key === 'bottom' && p.kind === 'bar' ? ' muted-bar' : ''}${p.kind === 'signed' ? (dir > 0 ? ' pos' : ' neg') : ''}`,
-        }, svg);
-      }
-    }
+  // Legend: a swatch per measure (a bar or a line, in its colour).
+  const legend = document.createElement('div');
+  legend.className = 'chart-legend';
+  legend.innerHTML = series.map((s) => `<span class="legend-item s${s.n}"><i class="sw ${isBar(s) ? 'sw-bar' : 'sw-line'}"></i>${s.title}${o.shared ? '' : `<span class="legend-axis">${s.key === 'a' ? 'left' : 'right'}</span>`}</span>`).join('');
+  container.appendChild(legend);
+
+  const svg = el('svg', { viewBox: `0 0 ${width} ${o.height}`, width, height: o.height, role: 'img', 'aria-label': `${series[0].title} and ${series[1].title}` }, container);
+  series[0].ticks.forEach((t, i) => {
+    const y = series[0].sy(t);
+    el('line', { x1: pad.left, x2: width - pad.right, y1: y, y2: y, class: 'grid' }, svg);
+    el('text', { x: pad.left - 6, y: y + 4, class: `tick${o.shared ? '' : ' axis-1'}`, 'text-anchor': 'end' }, svg).textContent = fmtTick(t);
+    if (!o.shared) el('text', { x: width - pad.right + 6, y: y + 4, class: 'tick axis-2' }, svg).textContent = fmtTick(series[1].ticks[i]);
+  });
+  for (const s of o.shared ? series.slice(0, 1) : series) {
+    if (s.kind === 'signed') { const y = s.sy(0); el('line', { x1: pad.left, x2: width - pad.right, y1: y, y2: y, class: 'zero' }, svg); }
   }
-  el('text', { x: pad.left, y: height - 6, class: 'tick' }, svg).textContent = data[0].label;
-  if (data.length > 1) el('text', { x: width - pad.right, y: height - 6, class: 'tick', 'text-anchor': 'end' }, svg).textContent = data.at(-1).label;
+  // Bars first (behind), side by side when both measures are bars.
+  const bars = series.filter(isBar);
+  const slot = Math.max(2, Math.min(24, iw / slotsOf(xs) - 2));
+  const bw = bars.length === 2 ? Math.max(2, slot / 2 - 1) : slot;
+  bars.forEach((s, j) => {
+    const base = s.sy(Math.max(s.lo, Math.min(0, s.hi)));
+    const off = bars.length === 2 ? (j === 0 ? -bw / 2 - 0.5 : bw / 2 + 0.5) : 0;
+    for (const d of data) {
+      const v = d[s.key];
+      if (!Number.isFinite(v) || v === 0) continue;
+      const end = s.sy(v);
+      const dir = end < base ? 1 : -1;
+      const r = Math.min(4, bw / 2, Math.abs(base - end));
+      const x0 = sx(d.x) + off - bw / 2;
+      el('path', {
+        d: `M${x0},${base}V${end + dir * r}Q${x0},${end} ${x0 + r},${end}H${x0 + bw - r}Q${x0 + bw},${end} ${x0 + bw},${end + dir * r}V${base}Z`,
+        class: `series-bar s${s.n}`,
+      }, svg);
+    }
+  });
+  let pts = null;
+  let hover = 1; // the colour of the hover dot: the first line's
+  for (const s of series.filter((x) => !isBar(x))) {
+    const line = data.map((d) => [sx(d.x), Number.isFinite(d[s.key]) ? s.sy(d[s.key]) : NaN]);
+    drawLine(svg, line, data.length <= 60, s.n === 1 ? 'series-line' : 'series-line s2');
+    if (!pts) { pts = line; hover = s.n; }
+  }
+  el('text', { x: pad.left, y: o.height - 6, class: 'tick' }, svg).textContent = data[0].label;
+  if (data.length > 1) el('text', { x: width - pad.right, y: o.height - 6, class: 'tick', 'text-anchor': 'end' }, svg).textContent = data.at(-1).label;
   pts ||= data.map((d) => [sx(d.x), NaN]);
-  addTooltip(container, svg, data, pts, o.tip, pad.top, height - pad.bottom);
+  addTooltip(container, svg, data, pts, o.tip, pad.top, o.height - pad.bottom);
+  if (hover === 2) svg.querySelector('.hover-dot')?.classList.add('s2');
 }
 
 // A line broken where a value is missing, with dots.
@@ -304,7 +325,7 @@ function drawLine(svg, pts, dots, cls = 'series-line') {
     pen = true;
   }
   el('path', { d: path, class: cls }, svg);
-  if (dots) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: cls === 'series-line' ? 'series-dot' : 'series-dot alt' }, svg);
+  if (dots) for (const [x, y] of pts) if (Number.isFinite(y)) el('circle', { cx: x, cy: y, r: 3, class: cls === 'series-line' ? 'series-dot' : cls.replace('series-line', 'series-dot') }, svg);
 }
 
 // A small trend line for a table cell, as SVG markup; gaps where a value is

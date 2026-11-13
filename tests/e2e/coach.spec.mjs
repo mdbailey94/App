@@ -159,12 +159,18 @@ test('Data tab: the chart, 7/14/28 days, and the check-in record', async ({ page
   await signIn(page, testInfo);
   await page.goto('/coach.html#data');
 
-  // The chart picker. Default: readiness with the day before's load under
-  // it, one bar per day with 6+ swimmers (only 5 checked in today).
+  // The chart picker. Default: readiness with the day before's load on the
+  // same chart (left and right axes, two colours), one bar per day with 6+
+  // swimmers (only 5 checked in today).
   const chart = page.locator('#charts [data-t="picker"]');
-  await expect(chart.locator('.panel-title')).toHaveText(['Readiness', 'Training load (day before)']);
+  await expect(chart.locator('svg')).toHaveCount(1);
+  await expect(chart.locator('.legend-item')).toHaveText([/^Readiness\s*left$/, /^Training load \(day before\)\s*right$/]);
   await expect(chart.locator('.series-line')).toHaveCount(1);
-  await expect(chart.locator('.series-bar')).toHaveCount(6);
+  await expect(chart.locator('.series-bar.s2')).toHaveCount(6);
+  await expect(chart.locator('.tick.axis-2').first()).toBeVisible();
+  // Hover: both values, colour-keyed.
+  await chart.locator('svg').hover();
+  await expect(chart.locator('.chart-tip .tip-sw')).toHaveCount(2);
   // Quick picks: the team against its own usual (either side of a zero line), check-ins.
   await page.click('.preset:has-text("Vs usual")');
   await expect(page).toHaveURL(/a=vsUsual/);
@@ -189,7 +195,12 @@ test('Data tab: the chart, 7/14/28 days, and the check-in record', async ({ page
   // Training only: charted on the days the sessions happened.
   await page.selectOption('#charts select[name=who]', 'team');
   await page.click('.preset:has-text("Effort & how well")');
-  await expect(chart.locator('.panel-title')).toHaveText(['Morning effort', 'Morning: how well']);
+  await expect(chart.locator('.legend-item')).toHaveText([/^Morning effort/, /^Morning: how well/]);
+  await expect(chart.locator('.series-line')).toHaveCount(2);
+  await expect(chart.locator('.series-line.s2')).toHaveCount(1);
+  // Both out of 10: one shared axis, not two.
+  await expect(chart.locator('.tick.axis-2')).toHaveCount(0);
+  await expect(chart.locator('.legend-axis')).toHaveCount(0);
   await expect(page.locator('#charts [data-picker-note]')).toContainText('training days, up to today');
   // Training vs next-morning readiness: light / moderate / heavy thirds, by
   // load and by load against each swimmer's usual.
@@ -444,7 +455,7 @@ test('charts by weekday: Mondays only (the last 12), a quick pick for today’s 
   // With readiness: Monday's workouts, and that Monday morning's check-in (not Sunday's training).
   await page.selectOption('#charts select[name=b]', 'readiness');
   await expect(note).toContainText('(workouts done on Monday, with that Monday morning’s check-in)');
-  await expect(chart.locator('.panel-title')).toHaveText(['Morning load', 'Readiness']);
+  await expect(chart.locator('.legend-item')).toHaveText([/^Morning load/, /^Readiness/]);
   await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);
   await page.selectOption('#charts select[name=b]', '');
   await expect.poll(() => chart.locator('.series-bar').count()).toBeGreaterThan(0);

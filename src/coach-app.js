@@ -19,7 +19,7 @@ import {
   assessDay, MEET_LEVELS, meetLevel, PRACTICE_KEYS, sessionLoad, sessionRpe, shiftDate, SKIP_REASONS, trainingOnDay, wellnessScore,
 } from './readiness.js';
 import { dayIndex, esc, fmt, prettyDate, qrSvg, shareOrCopy, shortDate, statusBadge } from './ui.js';
-import { barChart, lineChart, pairChart, sparkline } from './charts.js';
+import { barChart, comboChart, lineChart, sparkline } from './charts.js';
 
 const view = document.getElementById('view');
 const tabs = document.getElementById('coach-tabs');
@@ -530,11 +530,13 @@ function drawPicker(root, athletes, { a, b, who, span, wd = '' }) {
   if (who === 'team' && [A, B].some((M) => M?.team > 1)) notes.push(`Team averages need ${MIN_TEAM}+ swimmers that day.`);
   if (B) {
     const sb = metricSeries(athletes, b, datesFor(B), who);
-    const panel = (M) => ({ kind: M.kind, min: M.min, max: M.max, title: title(M) });
-    pairChart(el, base.map((d, i) => ({ ...d, top: sa[i].value ?? NaN, bottom: sb[i].value ?? NaN })), {
-      top: panel(A),
-      bottom: panel(B),
-      tip: (d) => `${d.label}<br>${esc(title(A))}: <b>${show(A, d.top)}</b><br>${esc(title(B))}: <b>${show(B, d.bottom)}</b>`,
+    const axis = (M) => ({ kind: M.kind, min: M.min, max: M.max, title: esc(title(M)) });
+    const sw = (n) => `<i class="tip-sw s${n}"></i>`;
+    comboChart(el, base.map((d, i) => ({ ...d, a: sa[i].value ?? NaN, b: sb[i].value ?? NaN })), {
+      a: axis(A),
+      b: axis(B),
+      shared: A.kind === B.kind && (A.unit || '') === (B.unit || '') && A.min === B.min && A.max === B.max,
+      tip: (d) => `${d.label}<br>${sw(1)}${esc(title(A))}: <b>${show(A, d.a)}</b><br>${sw(2)}${esc(title(B))}: <b>${show(B, d.b)}</b>`,
     });
   } else if (b === 'team') {
     const st = metricSeries(athletes, a, datesFor(A), 'team');
