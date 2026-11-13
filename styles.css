@@ -9,6 +9,7 @@
   --accent: #2a78d6;
   --accent-ink: #ffffff;
   --series-1: #2a78d6;
+  --series-2: #c8630c;
   --band: rgba(42, 120, 214, 0.14);
   --grid: #e8e7e3;
   --good: #0ca30c;
@@ -29,6 +30,7 @@
     --muted: #9a998f;
     --accent: #3987e5;
     --series-1: #3987e5;
+    --series-2: #f0953f;
     --band: rgba(57, 135, 229, 0.2);
     --grid: #2a2a28;
   }
@@ -43,6 +45,7 @@
   --muted: #9a998f;
   --accent: #3987e5;
   --series-1: #3987e5;
+  --series-2: #f0953f;
   --band: rgba(57, 135, 229, 0.2);
   --grid: #2a2a28;
 }
@@ -213,8 +216,25 @@ summary { cursor: pointer; color: var(--accent); min-height: 32px; }
 .chart .series-bar.pos { fill: var(--good); }
 .chart .series-bar.neg { fill: var(--serious); }
 .chart .zero { stroke: var(--muted); stroke-width: 1; }
-.chart .muted-bar { fill: color-mix(in srgb, var(--series-1) 45%, var(--surface)); }
-.chart .panel-title { fill: var(--text-2); font-size: 12px; font-weight: 600; }
+.chart .series-bar.s2 { fill: var(--series-2); }
+.chart .series-line.s2 { stroke: var(--series-2); }
+.chart .series-dot.s2 { fill: var(--series-2); }
+.chart .hover-dot.s2 { fill: var(--series-2); }
+.chart .tick.axis-1 { fill: var(--series-1); }
+.chart .tick.axis-2 { fill: var(--series-2); }
+/* Two measures on one chart: bars sit behind a line, so let it show through. */
+.chart .series-bar.s1:has(~ .series-line), .chart .series-bar.s2:has(~ .series-line) { opacity: 0.55; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 13px; color: var(--text-2); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.legend-axis { font-weight: 400; color: var(--muted); font-size: 12px; }
+.legend-item .sw { display: inline-block; flex: none; }
+.sw-bar { width: 10px; height: 10px; border-radius: 3px; }
+.sw-line { width: 16px; height: 3px; border-radius: 2px; }
+.legend-item.s1 .sw { background: var(--series-1); }
+.legend-item.s2 .sw { background: var(--series-2); }
+.tip-sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.tip-sw.s1 { background: var(--series-1); }
+.tip-sw.s2 { background: var(--series-2); }
 .chart .guide { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .hover-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
 .chart-tip {
